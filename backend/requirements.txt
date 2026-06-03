@@ -1,0 +1,38 @@
+# ── Web Framework ─────────────────────────────────────────────────────────────
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+pydantic==2.10.3
+pydantic-settings==2.7.0
+python-multipart==0.0.20
+
+# ── Database ───────────────────────────────────────────────────────────────────
+sqlalchemy==2.0.36
+asyncpg==0.30.0          # async driver (app)
+psycopg2-binary==2.9.10  # sync driver (alembic)
+geoalchemy2==0.17.1      # PostGIS geometry columns
+alembic==1.14.0
+greenlet>=3.0.0          # required by SQLAlchemy async
+
+# ── Scraping ───────────────────────────────────────────────────────────────────
+scrapfly-sdk==0.8.28
+beautifulsoup4==4.12.3
+lxml==5.3.0
+
+# ── AI ────────────────────────────────────────────────────────────────────────
+anthropic==0.45.0
+
+# ── Auth / Security ───────────────────────────────────────────────────────────
+authlib==1.4.0
+httpx==0.28.1
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+
+# ── Notifications ─────────────────────────────────────────────────────────────
+fastapi-mail==1.4.1
+
+# ── Scheduling ────────────────────────────────────────────────────────────────
+apscheduler==3.11.0
+
+# ── Utilities ─────────────────────────────────────────────────────────────────
+python-dotenv==1.0.1
+python-slugify==8.0.4
