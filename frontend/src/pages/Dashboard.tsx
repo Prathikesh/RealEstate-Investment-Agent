@@ -89,7 +89,7 @@ export default function Dashboard() {
 
   const { data: topDeals, isLoading: dealsLoading } = useQuery({
     queryKey: ['properties', 'top-dashboard'],
-    queryFn: () => fetchProperties({ sort_by: 'score', page_size: 6, score_min: 60 }),
+    queryFn: () => fetchProperties({ sort_by: 'score', page_size: 12, score_min: 60 }),
   })
 
   const { data: newListings } = useQuery({
@@ -205,11 +205,11 @@ export default function Dashboard() {
         </div>
 
         {dealsLoading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {Array.from({ length: 6 }).map((_, i) => <CardSkeleton key={i} />)}
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+            {Array.from({ length: 12 }).map((_, i) => <CardSkeleton key={i} />)}
           </div>
         ) : topDeals?.items.length ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
             {topDeals.items.map(p => (
               <PropertyCardGrid key={p.id} property={p} />
             ))}

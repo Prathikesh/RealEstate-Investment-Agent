@@ -1,14 +1,16 @@
-import { useState } from 'react'
+import { useState, lazy, Suspense } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
-  Search, LayoutGrid, List, ChevronLeft, ChevronRight, SlidersHorizontal, Hash, X,
+  Search, LayoutGrid, List, Map, ChevronLeft, ChevronRight, SlidersHorizontal, Hash, X,
 } from 'lucide-react'
 import clsx from 'clsx'
-import { fetchProperties, fetchStats, type PropertyFilters } from '../api'
+import { fetchProperties, fetchStats, fetchMapProperties, type PropertyFilters } from '../api'
 import { useLang } from '../context/LanguageContext'
 import ScoreBadge from '../components/ScoreBadge'
 import PropertyCardGrid from '../components/PropertyCardGrid'
+
+const PropertyMapView = lazy(() => import('../components/PropertyMapView'))
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -55,7 +57,7 @@ function fmtCAD(v: number | null): string {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
-type ViewMode = 'grid' | 'list'
+type ViewMode = 'grid' | 'list' | 'map'
 
 export default function Properties() {
   const { lang } = useLang()
@@ -78,12 +80,19 @@ export default function Properties() {
     has_sqft:      params.get('has_sqft') === 'true' ? true : undefined,
   }
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isFetching } = useQuery({
     queryKey: ['properties', filters],
     queryFn: () => fetchProperties(filters),
   })
 
   const { data: stats } = useQuery({ queryKey: ['stats'], queryFn: fetchStats })
+
+  const { data: mapData, isLoading: mapLoading } = useQuery({
+    queryKey: ['properties-map'],
+    queryFn: fetchMapProperties,
+    enabled: view === 'map',
+    staleTime: 5 * 60 * 1000,
+  })
 
   function setFilter(key: string, value: string) {
     const next = new URLSearchParams(params)
@@ -153,6 +162,16 @@ export default function Properties() {
               )}
             >
               <List size={14} />
+            </button>
+            <button
+              onClick={() => setView('map')}
+              title="Map view"
+              className={clsx(
+                'p-1.5 rounded-md transition-colors',
+                view === 'map' ? 'bg-accent text-white' : 'text-muted hover:text-ink',
+              )}
+            >
+              <Map size={14} />
             </button>
           </div>
         </div>
@@ -384,14 +403,33 @@ export default function Properties() {
       )}
 
       {/* ── Content ────────────────────────────────────────────────────── */}
-      {view === 'grid' ? (
-        <GridView data={data?.items} isLoading={isLoading} />
+      {view === 'map' ? (
+        <Suspense fallback={<div className="rounded-2xl border border-surface-border bg-surface-card animate-pulse" style={{ height: 600 }} />}>
+          <PropertyMapView properties={mapData ?? []} isLoading={mapLoading} />
+        </Suspense>
       ) : (
-        <ListView data={data?.items} isLoading={isLoading} />
+        <div className="relative">
+          {isFetching && !isLoading && (
+            <div className="absolute inset-0 bg-white/60 backdrop-blur-[1px] z-10 flex items-start justify-center pt-12 rounded-xl">
+              <div className="flex items-center gap-2 bg-white shadow-card border border-surface-border px-4 py-2 rounded-full text-sm text-muted font-medium">
+                <svg className="animate-spin w-4 h-4 text-accent" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 000 16v-4l-3 3 3 3v-4a8 8 0 01-8-8z"/>
+                </svg>
+                Filtering…
+              </div>
+            </div>
+          )}
+          {view === 'grid' ? (
+            <GridView data={data?.items} isLoading={isLoading} />
+          ) : (
+            <ListView data={data?.items} isLoading={isLoading} />
+          )}
+        </div>
       )}
 
       {/* ── Empty state ────────────────────────────────────────────────── */}
-      {!isLoading && data?.items.length === 0 && (
+      {view !== 'map' && !isLoading && data?.items.length === 0 && (
         <div className="card py-12 text-center space-y-2">
           <p className="text-ink font-medium">No properties found</p>
           <p className="text-sm text-muted">Try adjusting your filters or expanding the search area.</p>
@@ -405,7 +443,7 @@ export default function Properties() {
       )}
 
       {/* ── Pagination ─────────────────────────────────────────────────── */}
-      {data && data.pages > 1 && (
+      {view !== 'map' && data && data.pages > 1 && (
         <div className="flex items-center justify-between">
           <p className="text-xs text-muted">
             Page {data.page} of {data.pages} · {data.total.toLocaleString()} listings

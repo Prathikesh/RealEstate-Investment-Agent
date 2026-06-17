@@ -100,17 +100,18 @@ class CentrisScraper(BaseScraper):
         """
         Fetch a single property detail page.
 
-        Strategy 1 (cheap ~5 credits): session-only, no ASP/JS.
-          Works when Centris accepts the request with valid session cookies.
+        Strategy 1 (cheap ~5 credits): no ASP/JS, no session.
+          Session is omitted to avoid proxy pool mismatch (search session uses
+          residential pool; cheap attempt without ASP needs datacenter pool).
 
-        Strategy 2 (full ~80 credits): ASP+JS with session.
+        Strategy 2 (full ~45 credits): ASP+JS with session.
           Fallback if strategy 1 returns blocked/empty content.
         """
-        # ── Strategy 1: cheap (session cookies, no ASP/JS) ───────────────────
+        # ── Strategy 1: cheap (datacenter, no session, no ASP/JS) ────────────
         try:
             cheap = ScrapeConfig(
                 url=url, asp=False, render_js=False, country="ca",
-                session=self._SESSION,
+                # No session= — avoids residential/datacenter pool mismatch
             )
             result = await self.client.async_scrape(cheap)
             cost = result.context.get("cost", {}).get("total", 0)

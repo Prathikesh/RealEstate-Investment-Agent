@@ -75,15 +75,30 @@
            transition-all duration-150;
   }
 
+  /* ── Price / financial numbers ──────────────────────────── */
+  .price-value {
+    @apply text-ink font-bold tabular-nums;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+  }
+  .price-lg {
+    @apply price-value text-2xl;
+  }
+  .metric-positive { @apply text-score-strong font-semibold; }
+  .metric-negative { @apply text-score-notrecommended font-semibold; }
+  .metric-neutral  { @apply text-muted; }
+
   /* ── Buttons ─────────────────────────────────────────────── */
   .btn-primary {
     @apply inline-flex items-center gap-1.5 px-4 py-2.5 bg-accent hover:bg-accent-hover
            text-white text-sm font-semibold rounded-xl shadow-sm
-           transition-all duration-150 active:scale-95;
+           hover:shadow-md hover:-translate-y-px
+           transition-all duration-200 active:scale-95 active:translate-y-0 active:shadow-sm;
   }
   .btn-ghost {
     @apply inline-flex items-center gap-1.5 px-3 py-2 border border-surface-border
-           text-muted hover:text-ink hover:bg-surface-hover text-sm rounded-xl
-           transition-all duration-150 active:scale-95;
+           text-muted hover:text-ink hover:bg-surface-hover hover:border-surface-border/80
+           hover:shadow-sm text-sm rounded-xl
+           transition-all duration-200 active:scale-95 active:shadow-none;
   }
 }

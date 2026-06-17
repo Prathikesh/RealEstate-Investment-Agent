@@ -19,6 +19,7 @@ from sqlalchemy.orm import selectinload
 
 from app.agent.constants import SOURCES
 from app.agent.full_analysis import run_full_analysis
+from app.agent.pipeline import InvestmentPipeline
 from app.api.deps import get_db
 from app.api.schemas import (
     CrossSitePrice, DataSourceSchema, FinancialProfileSchema, FullAnalysisResponse,
@@ -185,8 +186,8 @@ async def list_properties(
 async def get_stats(
     db: AsyncSession = Depends(get_db),
 ) -> StatsResponse:
-    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-    yesterday   = today_start - timedelta(days=1)
+    now        = datetime.now(timezone.utc)
+    cutoff_24h = now - timedelta(hours=24)
 
     total = await db.scalar(
         select(func.count()).select_from(Property)
@@ -195,7 +196,7 @@ async def get_stats(
 
     new_today = await db.scalar(
         select(func.count()).select_from(Property)
-        .where(Property.first_seen_at >= today_start)
+        .where(Property.first_seen_at >= cutoff_24h)
     ) or 0
 
     strong = await db.scalar(
@@ -209,10 +210,22 @@ async def get_stats(
         .where(Property.score < 80)
     ) or 0
 
+    market_price = await db.scalar(
+        select(func.count()).select_from(Property)
+        .where(Property.score >= 40)
+        .where(Property.score < 60)
+    ) or 0
+
+    not_recommended = await db.scalar(
+        select(func.count()).select_from(Property)
+        .where(Property.score.isnot(None))
+        .where(Property.score < 40)
+    ) or 0
+
     price_drops = await db.scalar(
         select(func.count()).select_from(Property)
         .where(Property.status == PropertyStatus.PRICE_CHANGED)
-        .where(Property.last_seen_at >= yesterday)
+        .where(Property.last_seen_at >= cutoff_24h)
     ) or 0
 
     avg_score = await db.scalar(
@@ -243,11 +256,53 @@ async def get_stats(
         new_today=new_today,
         strong_opportunities=strong,
         worth_investigating=investigating,
+        market_price=market_price,
+        not_recommended=not_recommended,
         price_drops_today=price_drops,
         avg_score=round(float(avg_score), 1) if avg_score else None,
         cities=cities,
         multi_site_properties=multi_site_count,
     )
+
+
+# ── Map data (must be before /{property_id} to avoid UUID parse collision) ────
+
+@router.get("/map")
+async def get_map_data(
+    db: AsyncSession = Depends(get_db),
+) -> list[dict]:
+    """Lightweight coordinates + score data for the map view. Max 1000 points."""
+    stmt = select(
+        Property.id,
+        Property.full_address,
+        Property.city,
+        Property.asking_price,
+        Property.score,
+        Property.score_category,
+        Property.photos,
+        func.ST_Y(Property.location).label("lat"),
+        func.ST_X(Property.location).label("lng"),
+    ).where(
+        Property.location.isnot(None),
+        Property.asking_price.isnot(None),
+    ).order_by(Property.score.desc().nullslast()).limit(1000)
+
+    rows = (await db.execute(stmt)).all()
+    return [
+        {
+            "id":             str(row.id),
+            "full_address":   row.full_address,
+            "city":           row.city,
+            "asking_price":   row.asking_price,
+            "score":          row.score,
+            "score_category": row.score_category.value if row.score_category else None,
+            "photo":          (row.photos or [None])[0],
+            "lat":            float(row.lat),
+            "lng":            float(row.lng),
+        }
+        for row in rows
+        if row.lat is not None and row.lng is not None
+    ]
 
 
 # ── Detail ────────────────────────────────────────────────────────────────────
@@ -287,10 +342,19 @@ async def trigger_analysis(
     if not prop:
         raise HTTPException(status_code=404, detail="Property not found")
 
-    prop.needs_reanalysis = True
-    await db.flush()
-
-    return {"status": "queued", "property_id": str(property_id)}
+    try:
+        pipeline = InvestmentPipeline(db, generate_brief=True)
+        await pipeline.run(prop, force_brief=True)
+        await db.commit()
+        return {
+            "status": "done",
+            "property_id": str(property_id),
+            "has_brief": bool(prop.ai_brief_en),
+            "score": prop.score,
+        }
+    except Exception as exc:
+        logger.error(f"Inline analysis failed for {property_id}: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Analysis failed")
 
 
 # ── Full Analysis (on-demand, not persisted) ──────────────────────────────────

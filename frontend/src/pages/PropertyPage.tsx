@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft, ExternalLink, RefreshCw, MapPin, Calendar,
   Building2, Ruler, AlertCircle, TrendingUp,
   DollarSign, Clock, BarChart2, Bookmark, BookmarkCheck, Sparkles,
+  ChevronLeft, ChevronRight,
 } from 'lucide-react'
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -46,22 +47,44 @@ function derivedPricePerSqft(prop: PropertyDetail): number | null {
 
 // ── Saved properties (localStorage) ──────────────────────────────────────────
 
-function useSaved(id: string | undefined) {
-  const key = 'qre_saved_ids'
+const SAVED_KEY = 'qre_saved_props'
+
+function useSaved(prop: PropertyDetail | undefined) {
+  const id = prop?.id
   const [saved, setSaved] = useState<boolean>(() => {
     if (!id) return false
     try {
-      const s = JSON.parse(localStorage.getItem(key) ?? '[]') as string[]
-      return s.includes(id)
+      const s = JSON.parse(localStorage.getItem(SAVED_KEY) ?? '{}') as Record<string, unknown>
+      return id in s
     } catch { return false }
   })
 
   const toggle = () => {
-    if (!id) return
+    if (!id || !prop) return
     try {
-      const s = JSON.parse(localStorage.getItem(key) ?? '[]') as string[]
-      const next = saved ? s.filter(x => x !== id) : [...s, id]
-      localStorage.setItem(key, JSON.stringify(next))
+      const s = JSON.parse(localStorage.getItem(SAVED_KEY) ?? '{}') as Record<string, unknown>
+      if (saved) {
+        delete s[id]
+      } else {
+        s[id] = {
+          id: prop.id,
+          full_address: prop.full_address,
+          city: prop.city,
+          asking_price: prop.asking_price,
+          property_type: prop.property_type,
+          score: prop.score,
+          score_category: prop.score_category,
+          photos: prop.photos,
+          cap_rate: prop.cap_rate,
+          monthly_cash_flow: prop.monthly_cash_flow,
+          bedrooms_total: prop.bedrooms_total,
+          sqft_total: prop.sqft_total,
+          discount_pct: prop.discount_pct,
+          primary_source: prop.primary_source,
+          savedAt: new Date().toISOString(),
+        }
+      }
+      localStorage.setItem(SAVED_KEY, JSON.stringify(s))
       setSaved(!saved)
     } catch { /* ignore */ }
   }
@@ -89,29 +112,28 @@ export default function PropertyPage() {
   const [activeTab, setActiveTab] = useState<TabKey>('aiBrief')
   const [lang, setLang] = useState<'en' | 'fr'>('en')
   const queryClient = useQueryClient()
-  const { saved, toggle: toggleSaved } = useSaved(id)
-
   const { data: prop, isLoading, error } = useQuery({
     queryKey: ['property', id],
     queryFn: () => fetchProperty(id!),
     enabled: !!id,
   })
 
+  const { saved, toggle: toggleSaved } = useSaved(prop)
+  const [photoIdx, setPhotoIdx] = useState(0)
+
   const reanalyze = useMutation({
     mutationFn: async () => {
-      await fetch(`/api/properties/${id}/analyze`, { method: 'POST' })
+      const res = await fetch(`/api/properties/${id}/analyze`, { method: 'POST' })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error((err as { detail?: string }).detail ?? 'Analysis failed')
+      }
+      return res.json()
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['property', id] })
     },
   })
-
-  // Auto-trigger analysis when no brief exists
-  useEffect(() => {
-    if (prop && !prop.ai_brief_en && !prop.ai_brief_fr && !reanalyze.isPending && !reanalyze.isSuccess) {
-      reanalyze.mutate()
-    }
-  }, [prop?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (isLoading) return <PropertySkeleton />
   if (error || !prop) return <NotFound t={t} />
@@ -215,7 +237,7 @@ export default function PropertyPage() {
           {prop.bedrooms_total && <SpecChip icon={null} label={`${prop.bedrooms_total} bed`} />}
           {prop.bathrooms_total && <SpecChip icon={null} label={`${prop.bathrooms_total} bath`} />}
           {pricePerSqft != null && (
-            <SpecChip icon={<DollarSign size={12} />} label={`${fmtCAD(pricePerSqft)}/${t('sqft')}`} />
+            <SpecChip icon={null} label={`${fmtCAD(pricePerSqft)}/${t('sqft')}`} />
           )}
         </div>
 
@@ -245,7 +267,7 @@ export default function PropertyPage() {
             className="btn-ghost disabled:opacity-50"
           >
             <RefreshCw size={13} className={reanalyze.isPending ? 'animate-spin' : ''} />
-            {reanalyze.isPending ? 'Analyzing…' : reanalyze.isSuccess ? t('queued') : t('reanalyze')}
+            {reanalyze.isPending ? 'Analyzing…' : reanalyze.isError ? 'Failed — Retry' : t('reanalyze')}
           </button>
           {/* Save / Bookmark */}
           <button
@@ -263,16 +285,56 @@ export default function PropertyPage() {
         </div>
       </div>
 
-      {/* Photo */}
+      {/* Photo carousel */}
       {prop.photos && prop.photos.length > 0 && (
-        <div className="rounded-2xl overflow-hidden border border-surface-border aspect-video bg-surface-card shadow-card">
+        <div className="relative rounded-2xl overflow-hidden border border-surface-border aspect-video bg-surface-card shadow-card group">
+          {/* Main photo */}
           <img
-            src={prop.photos[0]}
-            alt={prop.full_address}
-            className="w-full h-full object-cover"
-            onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
+            src={prop.photos[Math.min(photoIdx, prop.photos.length - 1)]}
+            alt={`${prop.full_address} — photo ${photoIdx + 1}`}
+            className="w-full h-full object-cover transition-opacity duration-300"
             referrerPolicy="no-referrer"
+            onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
           />
+
+          {/* Prev / Next buttons — only when >1 photo */}
+          {prop.photos.length > 1 && (
+            <>
+              <button
+                onClick={() => setPhotoIdx(i => (i - 1 + prop.photos.length) % prop.photos.length)}
+                className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/40 hover:bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-200 active:scale-95 backdrop-blur-sm"
+              >
+                <ChevronLeft size={18} />
+              </button>
+              <button
+                onClick={() => setPhotoIdx(i => (i + 1) % prop.photos.length)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/40 hover:bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-200 active:scale-95 backdrop-blur-sm"
+              >
+                <ChevronRight size={18} />
+              </button>
+
+              {/* Counter */}
+              <div className="absolute top-3 right-3 px-2.5 py-1 rounded-full bg-black/40 backdrop-blur-sm text-white text-xs font-semibold">
+                {photoIdx + 1} / {prop.photos.length}
+              </div>
+
+              {/* Dot indicators */}
+              <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5">
+                {prop.photos.slice(0, 12).map((_, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setPhotoIdx(i)}
+                    className={clsx(
+                      'rounded-full transition-all duration-200',
+                      i === photoIdx
+                        ? 'w-4 h-1.5 bg-white'
+                        : 'w-1.5 h-1.5 bg-white/50 hover:bg-white/80',
+                    )}
+                  />
+                ))}
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -316,7 +378,7 @@ function KeyMetric({ label, value, valueClass, prominent }: {
     <div>
       <p className="text-xs text-muted mb-0.5">{label}</p>
       <p className={clsx(
-        'font-mono font-bold tabular-nums',
+        'font-mono tabular-nums',
         prominent ? 'text-xl text-ink' : 'text-base',
         valueClass ?? 'text-ink',
       )}>
@@ -360,7 +422,7 @@ function FinCard({ label, value, valueClass, note, prominent }: {
     <div className="bg-surface border border-surface-border rounded-xl px-3 py-3">
       <p className="text-xs text-muted mb-1">{label}</p>
       <p className={clsx(
-        'font-mono font-bold tabular-nums',
+        'font-mono tabular-nums',
         prominent ? 'text-lg text-ink' : 'text-sm',
         valueClass ?? 'text-ink',
       )}>
@@ -373,46 +435,203 @@ function FinCard({ label, value, valueClass, note, prominent }: {
 
 // ── Verdict Banner ────────────────────────────────────────────────────────────
 
-function VerdictBanner({ category, score }: { category: string | null; score: number | null }) {
+function VerdictBanner({ prop }: { prop: PropertyDetail }) {
+  const category = prop.score_category
+  const score = prop.score
   if (!category || score == null) return null
 
-  const config: Record<string, { label: string; sub: string; bg: string; text: string; border: string; accent: string }> = {
+  const config: Record<string, {
+    label: string; headline: string
+    bg: string; text: string; border: string; accent: string
+    badgeBg: string; badgeText: string; badgeBorder: string
+  }> = {
     strong_opportunity: {
-      label: 'BUY IT',
-      sub: 'Strong investment opportunity — worth moving fast on this one.',
-      bg: 'bg-score-strong/10', text: 'text-score-strong', border: 'border-score-strong/30', accent: '#059669',
+      label: 'Strong Buy',
+      headline: 'This property merits serious consideration by investor clients.',
+      bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200',
+      accent: '#059669', badgeBg: 'bg-emerald-100', badgeText: 'text-emerald-700', badgeBorder: 'border-emerald-200',
     },
     worth_investigating: {
-      label: 'WORTH CHECKING',
-      sub: 'Good potential — do your due diligence before making an offer.',
-      bg: 'bg-score-worth/10', text: 'text-score-worth', border: 'border-score-worth/30', accent: '#2563EB',
+      label: 'Worth Investigating',
+      headline: 'Good potential — thorough due diligence is recommended before committing.',
+      bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200',
+      accent: '#2563EB', badgeBg: 'bg-blue-100', badgeText: 'text-blue-700', badgeBorder: 'border-blue-200',
     },
     market_price: {
-      label: 'FAIR PRICE',
-      sub: 'Priced at market value — no significant discount but not overpriced.',
-      bg: 'bg-score-market/10', text: 'text-score-market', border: 'border-score-market/30', accent: '#D97706',
+      label: 'Fairly Priced',
+      headline: 'Priced at market value — limited discount, limited upside at this price.',
+      bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200',
+      accent: '#D97706', badgeBg: 'bg-amber-100', badgeText: 'text-amber-700', badgeBorder: 'border-amber-200',
     },
     not_recommended: {
-      label: 'SKIP IT',
-      sub: 'Not a good deal at this price — look for better options.',
-      bg: 'bg-score-notrecommended/10', text: 'text-score-notrecommended', border: 'border-score-notrecommended/30', accent: '#DC2626',
+      label: 'Not Recommended',
+      headline: 'Challenges outweigh the opportunity at the current asking price.',
+      bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200',
+      accent: '#DC2626', badgeBg: 'bg-red-100', badgeText: 'text-red-700', badgeBorder: 'border-red-200',
     },
   }
 
   const c = config[category]
   if (!c) return null
 
+  // Build reasoning bullets from actual property data
+  const bullets: { text: string; positive: boolean | null }[] = []
+
+  if (prop.cap_rate != null) {
+    if (prop.cap_rate >= 6)
+      bullets.push({ text: `Cap rate ${prop.cap_rate.toFixed(2)}% — above the 6% Quebec strong-buy benchmark`, positive: true })
+    else if (prop.cap_rate >= 4.5)
+      bullets.push({ text: `Cap rate ${prop.cap_rate.toFixed(2)}% — within the acceptable 4.5–6% Quebec range`, positive: null })
+    else
+      bullets.push({ text: `Cap rate ${prop.cap_rate.toFixed(2)}% — below the 4.5% Quebec market floor`, positive: false })
+  }
+
+  if (prop.discount_pct != null) {
+    if (prop.discount_pct >= 10)
+      bullets.push({ text: `${prop.discount_pct.toFixed(1)}% below comparable median — significant value discount`, positive: true })
+    else if (prop.discount_pct >= 3)
+      bullets.push({ text: `${prop.discount_pct.toFixed(1)}% below comparable sales — modest market discount`, positive: true })
+    else if (prop.discount_pct >= -2)
+      bullets.push({ text: `Priced at market value (${Math.abs(prop.discount_pct).toFixed(1)}% vs comparables)`, positive: null })
+    else
+      bullets.push({ text: `${Math.abs(prop.discount_pct).toFixed(1)}% above comparable median — premium over market`, positive: false })
+  }
+
+  if (prop.monthly_cash_flow != null) {
+    const cf = prop.monthly_cash_flow
+    if (cf > 500)
+      bullets.push({ text: `Strong monthly cash flow: ${fmtCAD(cf)}/mo after mortgage at 20% down`, positive: true })
+    else if (cf > 0)
+      bullets.push({ text: `Positive cash flow: ${fmtCAD(cf)}/mo — marginal but break-even`, positive: true })
+    else if (cf > -300)
+      bullets.push({ text: `Slightly negative cash flow: ${fmtCAD(cf)}/mo — manageable with reserves`, positive: null })
+    else
+      bullets.push({ text: `Negative cash flow: ${fmtCAD(cf)}/mo — requires monthly capital injection`, positive: false })
+  }
+
+  if (prop.comparable_count != null) {
+    if (prop.comparable_count >= 7)
+      bullets.push({ text: `${prop.comparable_count} comparable sales found — high confidence valuation`, positive: true })
+    else if (prop.comparable_count >= 3)
+      bullets.push({ text: `${prop.comparable_count} comparable sales — moderate confidence`, positive: null })
+    else if (prop.comparable_count > 0)
+      bullets.push({ text: `Only ${prop.comparable_count} comparable found — limited market data`, positive: false })
+    else
+      bullets.push({ text: 'No comparable sales found — price cannot be independently verified', positive: false })
+  }
+
+  // Recommended investor next steps
+  const nextSteps: Record<string, string[]> = {
+    strong_opportunity: [
+      'Schedule a property inspection within 48 hours',
+      'Request rent rolls, leases, and expense statements from seller',
+      'Verify the municipal tax bill matches the listing data',
+      'Prepare an offer with a 72-hour financing condition',
+    ],
+    worth_investigating: [
+      'Review all listing photos and disclose condition details',
+      'Request rent rolls, leases, and 12-month expense history',
+      'Compare with 2–3 active listings in the same neighbourhood',
+      'Determine renovation potential before committing to a price',
+    ],
+    market_price: [
+      'Negotiate a 3–5% price reduction or seller concessions',
+      'Evaluate renovation potential to improve cap rate and returns',
+      'Consider the long-term appreciation outlook for this market',
+    ],
+    not_recommended: [
+      'Continue searching for better-priced alternatives in the area',
+      'Set a price drop alert — may become interesting if price falls',
+      'Calculate what asking price would make this deal viable',
+    ],
+  }
+
+  const steps = nextSteps[category] ?? []
+
+  // SVG score ring gauge
+  const radius = 32
+  const circumference = 2 * Math.PI * radius
+  const dashOffset = circumference - (score / 100) * circumference
+
   return (
-    <div className={clsx('rounded-2xl border p-5 flex items-center gap-5', c.bg, c.border)}>
-      <div
-        className="w-2 self-stretch rounded-full shrink-0"
-        style={{ backgroundColor: c.accent }}
-      />
-      <div className="flex-1 min-w-0">
-        <p className={clsx('text-2xl font-black tracking-tight font-mono', c.text)}>{c.label}</p>
-        <p className={clsx('text-sm font-medium mt-0.5', c.text + '/80')}>{c.sub}</p>
-        <p className="text-xs text-muted mt-1">AI Score: <span className="font-bold font-mono">{score}/100</span></p>
+    <div className={clsx('rounded-2xl border p-6 space-y-5', c.bg, c.border)}>
+
+      {/* Header: score ring + verdict */}
+      <div className="flex items-start gap-5">
+        <div className="relative shrink-0 w-20 h-20">
+          <svg viewBox="0 0 80 80" className="w-20 h-20 -rotate-90">
+            <circle cx="40" cy="40" r={radius} strokeWidth="6" fill="none" stroke="rgba(0,0,0,0.08)" />
+            <circle
+              cx="40" cy="40" r={radius}
+              strokeWidth="6" fill="none"
+              stroke={c.accent}
+              strokeLinecap="round"
+              strokeDasharray={circumference}
+              strokeDashoffset={dashOffset}
+              style={{ transition: 'stroke-dashoffset 0.8s cubic-bezier(0.4,0,0.2,1)' }}
+            />
+          </svg>
+          <div className="absolute inset-0 flex flex-col items-center justify-center">
+            <span className="text-2xl font-black font-mono text-ink leading-none">{score}</span>
+            <span className="text-[9px] text-muted font-semibold tracking-wide">/100</span>
+          </div>
+        </div>
+
+        <div className="flex-1 min-w-0 pt-1">
+          <p className={clsx('text-xl font-black tracking-tight', c.text)}>{c.label}</p>
+          <p className="text-sm text-muted mt-1 leading-snug">{c.headline}</p>
+          {prop.analysis_confidence && (
+            <span className={clsx(
+              'inline-block mt-2 px-2 py-0.5 rounded-full text-[10px] font-bold border',
+              c.badgeBg, c.badgeText, c.badgeBorder,
+            )}>
+              {prop.analysis_confidence.toUpperCase()} CONFIDENCE
+            </span>
+          )}
+        </div>
       </div>
+
+      {/* Reasoning bullets */}
+      {bullets.length > 0 && (
+        <div>
+          <p className="text-[10px] font-bold text-muted uppercase tracking-widest mb-2.5">Why this score</p>
+          <div className="space-y-2">
+            {bullets.map((b, i) => (
+              <div key={i} className="flex items-start gap-2.5">
+                <span className={clsx(
+                  'mt-0.5 shrink-0 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold',
+                  b.positive === true  ? 'bg-emerald-100 text-emerald-700' :
+                  b.positive === false ? 'bg-red-100 text-red-600' :
+                                        'bg-gray-100 text-gray-500',
+                )}>
+                  {b.positive === true ? '✓' : b.positive === false ? '✗' : '~'}
+                </span>
+                <span className="text-sm text-ink leading-snug">{b.text}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Next steps */}
+      {steps.length > 0 && (
+        <div className="pt-4 border-t border-black/5">
+          <p className="text-[10px] font-bold text-muted uppercase tracking-widest mb-2.5">Recommended next steps</p>
+          <ol className="space-y-1.5">
+            {steps.map((step, i) => (
+              <li key={i} className="flex items-start gap-2.5 text-sm text-ink">
+                <span className={clsx(
+                  'shrink-0 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold mt-0.5 border',
+                  c.badgeBg, c.badgeText, c.badgeBorder,
+                )}>
+                  {i + 1}
+                </span>
+                {step}
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
     </div>
   )
 }
@@ -424,7 +643,7 @@ function BriefTab({ prop, lang, setLang, t, reanalyze }: {
   lang: 'en' | 'fr'
   setLang: (l: 'en' | 'fr') => void
   t: (k: string) => string
-  reanalyze: { mutate: () => void; isPending: boolean; isSuccess: boolean }
+  reanalyze: { mutate: () => void; isPending: boolean; isSuccess: boolean; isError: boolean; error: Error | null }
 }) {
   const brief = lang === 'fr' ? prop.ai_brief_fr : prop.ai_brief_en
   const hasBrief = !!(prop.ai_brief_en || prop.ai_brief_fr)
@@ -465,7 +684,7 @@ function BriefTab({ prop, lang, setLang, t, reanalyze }: {
 
   return (
     <div className="space-y-4 animate-slide-up">
-      <VerdictBanner category={prop.score_category} score={prop.score} />
+      <VerdictBanner prop={prop} />
 
       {!hasBrief ? (
         <div className="card py-10 text-center space-y-4">
@@ -480,8 +699,13 @@ function BriefTab({ prop, lang, setLang, t, reanalyze }: {
               <Sparkles className="mx-auto text-accent" size={32} />
               <div>
                 <p className="text-ink text-sm font-semibold">AI analysis not yet generated</p>
-                <p className="text-xs text-muted mt-1">Get a plain-English summary of this deal</p>
+                <p className="text-xs text-muted mt-1">Get a plain-English investment brief for this property</p>
               </div>
+              {reanalyze.isError && (
+                <p className="text-xs text-score-notrecommended bg-red-50 border border-red-200 rounded-xl px-3 py-2 max-w-xs mx-auto">
+                  {reanalyze.error?.message ?? 'Analysis failed. Please try again.'}
+                </p>
+              )}
               <button
                 onClick={() => reanalyze.mutate()}
                 className="btn-primary mx-auto"
@@ -698,7 +922,19 @@ function ComparablesTab({ prop, t }: { prop: PropertyDetail; t: (k: string) => s
 // ── Price History tab ─────────────────────────────────────────────────────────
 
 function PriceHistoryTab({ prop, t }: { prop: PropertyDetail; t: (k: string) => string }) {
-  const history = prop.price_history ?? []
+  const rawHistory = prop.price_history ?? []
+
+  // Inject listing event if not already in history
+  const history = (() => {
+    const events = [...rawHistory]
+    const hasListedEvent = events.some(e => e.event === 'listed')
+    if (!hasListedEvent && prop.listed_at && prop.asking_price != null) {
+      events.unshift({ date: prop.listed_at, price: prop.asking_price, event: 'listed' })
+    }
+    return events
+  })()
+
+  const showChart = history.length >= 2
 
   return (
     <div className="space-y-4 animate-slide-up">
@@ -711,7 +947,7 @@ function PriceHistoryTab({ prop, t }: { prop: PropertyDetail; t: (k: string) => 
           <p className="text-muted text-sm py-6 text-center">{t('noPriceHistory')}</p>
         ) : (
           <>
-            <div className="h-56 mb-5">
+            {showChart && <div className="h-56 mb-5">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={history} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
                   <defs>
@@ -755,7 +991,7 @@ function PriceHistoryTab({ prop, t }: { prop: PropertyDetail; t: (k: string) => 
                   />
                 </AreaChart>
               </ResponsiveContainer>
-            </div>
+            </div>}
 
             <div className="relative pl-5 space-y-4">
               <div className="absolute left-0 top-2 bottom-2 w-px bg-surface-border" />
@@ -767,10 +1003,16 @@ function PriceHistoryTab({ prop, t }: { prop: PropertyDetail; t: (k: string) => 
                       {fmtCAD(ev.price)}
                     </span>
                     <span className={clsx(
-                      'text-xs px-1.5 py-0.5 rounded-lg',
-                      ev.event === 'reduced' ? 'bg-score-strong/15 text-score-strong' : 'bg-surface-hover text-muted',
+                      'text-xs px-1.5 py-0.5 rounded-lg font-medium',
+                      ev.event === 'reduced'  ? 'bg-emerald-100 text-emerald-700' :
+                      ev.event === 'listed'   ? 'bg-blue-100 text-blue-700' :
+                      ev.event === 'relisted' ? 'bg-purple-100 text-purple-700' :
+                                                'bg-surface-hover text-muted',
                     )}>
-                      {ev.event}
+                      {ev.event === 'listed'   ? 'Listed' :
+                       ev.event === 'reduced'  ? 'Price Reduced' :
+                       ev.event === 'relisted' ? 'Relisted' :
+                       ev.event.replace(/_/g, ' ')}
                     </span>
                   </div>
                   <p className="text-xs text-muted/70 mt-0.5">

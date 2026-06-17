@@ -117,3 +117,101 @@ async def scrape_status() -> dict:
     """Live scrape progress — polled every 2s by the frontend status bar."""
     from app.scrape_state import scrape_progress
     return scrape_progress.to_dict()
+
+
+@router.post("/backfill-photos")
+async def backfill_photos(
+    limit: int = 100,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """
+    Fetch og:image / data-src photos for properties that have none.
+    Uses direct httpx (no Scrapfly credits) — works for Centris og:image tags.
+    """
+    import asyncio
+    import httpx
+    from bs4 import BeautifulSoup
+    from sqlalchemy import update
+
+    stmt = (
+        select(Property.id, Property.listing_url, Property.primary_source)
+        .where(
+            Property.listing_url.isnot(None),
+            (Property.photos == None) | (Property.photos == []),  # noqa: E711
+        )
+        .limit(limit)
+    )
+    rows = (await db.execute(stmt)).all()
+
+    _HEADERS = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        ),
+        "Accept-Language": "fr-CA,fr;q=0.9,en;q=0.8",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Referer": "https://www.centris.ca/",
+    }
+
+    updated = failed = 0
+
+    async def fetch_photos(url: str) -> list[str]:
+        try:
+            async with httpx.AsyncClient(follow_redirects=True, timeout=10) as client:
+                resp = await client.get(url, headers=_HEADERS)
+            if resp.status_code != 200:
+                return []
+            soup = BeautifulSoup(resp.text, "html.parser")
+            photos: list[str] = []
+
+            # 1. og:image (always in static HTML, no JS needed)
+            og = soup.find("meta", property="og:image")
+            if og and og.get("content", "").startswith("http"):
+                photos.append(og["content"])
+
+            # 2. JSON-LD images
+            for script in soup.find_all("script", type="application/ld+json"):
+                try:
+                    import json as _json
+                    data = _json.loads(script.string or "")
+                    imgs = data.get("image") or []
+                    if isinstance(imgs, str):
+                        imgs = [imgs]
+                    for img in imgs:
+                        src = img if isinstance(img, str) else (img.get("url") or img.get("contentUrl") or "")
+                        if src.startswith("http") and src not in photos:
+                            photos.append(src)
+                except Exception:
+                    pass
+
+            # 3. data-src / data-lazy-src on img tags (lazy loading)
+            for img in soup.select("img[data-src], img[data-lazy-src]"):
+                src = img.get("data-src") or img.get("data-lazy-src") or ""
+                if src.startswith("http") and not src.endswith(".svg") and src not in photos:
+                    photos.append(src)
+
+            return photos[:20]  # cap at 20
+        except Exception:
+            return []
+
+    tasks = [fetch_photos(row.listing_url) for row in rows]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    for row, result in zip(rows, results):
+        if isinstance(result, list) and result:
+            await db.execute(
+                update(Property)
+                .where(Property.id == row.id)
+                .values(photos=result)
+            )
+            updated += 1
+        else:
+            failed += 1
+
+    await db.commit()
+    return {
+        "checked": len(rows),
+        "updated": updated,
+        "no_photos_found": failed,
+    }

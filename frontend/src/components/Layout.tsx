@@ -6,6 +6,7 @@ import {
 import clsx from 'clsx'
 import { useLang } from '../context/LanguageContext'
 import ScrapeProgressBar from './ScrapeProgressBar'
+import CompareBar from './CompareBar'
 
 export default function Layout() {
   const { t, lang, setLang } = useLang()
@@ -77,6 +78,9 @@ export default function Layout() {
           <Outlet />
         </div>
       </main>
+
+      {/* ── Compare bar (floats above all content) ──────────────────────── */}
+      <CompareBar />
     </div>
   )
 }

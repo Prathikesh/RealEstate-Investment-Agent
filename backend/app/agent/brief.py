@@ -1,12 +1,10 @@
 """
 Stage 4 — AI Brief Generator.
 
-Calls a local Ollama model to write a broker-focused investment brief.
+Calls Claude (Anthropic API) to write a broker-focused investment brief.
 All numbers are pre-calculated — the LLM only interprets and narrates.
-Only runs for properties scoring >= MIN_SCORE_FOR_BRIEF (40).
-
-Ollama must be running locally at the configured base URL (default: http://localhost:11434).
-If Ollama is unavailable, generate() returns None gracefully — the pipeline continues.
+Only runs for properties scoring >= MIN_SCORE_FOR_BRIEF (40),
+unless force=True (used for on-demand generation from the UI).
 
 Quebec market benchmarks used in prompts:
   - Good cap rate: 4.5–7%  (anything above 6% = strong)
@@ -17,7 +15,7 @@ Quebec market benchmarks used in prompts:
 import logging
 from typing import Optional
 
-import httpx
+import anthropic
 
 from app.agent.calculator import FinancialProfile
 from app.agent.scorer import ScoreResult
@@ -27,7 +25,6 @@ from app.models.property import Property
 logger = logging.getLogger(__name__)
 
 MIN_SCORE_FOR_BRIEF = 40
-OLLAMA_TIMEOUT = 180.0  # seconds — generous for CPU inference
 
 
 # Quebec market benchmarks for broker context
@@ -78,60 +75,45 @@ class BriefGenerator:
         score: ScoreResult,
         language: str = "en",
         extra_context: str = "",
+        force: bool = False,
     ) -> Optional[str]:
         """
-        Generate a broker-focused investment brief via local Ollama.
-        Returns None if:
-          - score is below MIN_SCORE_FOR_BRIEF
-          - Ollama is not running / times out
+        Generate a broker-focused investment brief via Claude (Anthropic API).
+        Returns None if score is below MIN_SCORE_FOR_BRIEF (unless force=True)
+        or if the API key is not configured.
         """
-        if score.total < MIN_SCORE_FOR_BRIEF:
+        if not force and score.total < MIN_SCORE_FOR_BRIEF:
             logger.debug(
                 f"Skipping brief for {prop.mls_number} — score {score.total} < {MIN_SCORE_FOR_BRIEF}"
             )
             return None
 
+        if not settings.anthropic_api_key:
+            logger.warning("ANTHROPIC_API_KEY not set — skipping brief generation")
+            return None
+
         system = self._system_prompt(language)
         user   = self._build_prompt(prop, fp, score, language, extra_context)
-        full_prompt = f"{system}\n\n{user}"
 
         try:
-            async with httpx.AsyncClient(timeout=OLLAMA_TIMEOUT) as client:
-                response = await client.post(
-                    f"{settings.ollama_base_url}/api/generate",
-                    json={
-                        "model":  settings.ollama_model,
-                        "prompt": full_prompt,
-                        "stream": False,
-                        "options": {
-                            "temperature": 0.3,   # low temp = factual, consistent
-                            "num_predict": 600,   # ~450 words output cap
-                        },
-                    },
-                )
-                response.raise_for_status()
-                data  = response.json()
-                brief = data.get("response", "").strip()
-                logger.info(
-                    f"Ollama brief generated for {prop.mls_number} "
-                    f"({len(brief)} chars, model={settings.ollama_model})"
-                )
-                return brief or None
+            client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+            message = await client.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=700,
+                system=system,
+                messages=[{"role": "user", "content": user}],
+            )
+            brief = message.content[0].text.strip() if message.content else ""
+            logger.info(
+                f"Claude brief generated for {prop.mls_number} ({len(brief)} chars)"
+            )
+            return brief or None
 
-        except httpx.ConnectError:
-            logger.warning(
-                f"Ollama not reachable at {settings.ollama_base_url} — "
-                f"skipping brief for {prop.mls_number}"
-            )
-            return None
-        except httpx.TimeoutException:
-            logger.warning(
-                f"Ollama timed out after {OLLAMA_TIMEOUT}s — "
-                f"skipping brief for {prop.mls_number}"
-            )
+        except anthropic.AuthenticationError:
+            logger.error("Anthropic API key invalid — check ANTHROPIC_API_KEY in .env")
             return None
         except Exception as exc:
-            logger.error(f"Ollama error for {prop.mls_number}: {exc}")
+            logger.error(f"Anthropic brief error for {prop.mls_number}: {exc}")
             return None
 
     def _system_prompt(self, language: str) -> str:

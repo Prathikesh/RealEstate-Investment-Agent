@@ -1,8 +1,9 @@
 import { Link } from 'react-router-dom'
-import { Building2, ArrowRight, ThumbsUp, ThumbsDown, Minus } from 'lucide-react'
+import { Building2, ArrowRight, ThumbsUp, ThumbsDown, Minus, GitCompareArrows } from 'lucide-react'
 import clsx from 'clsx'
 import ScoreBadge from './ScoreBadge'
 import { useLang } from '../context/LanguageContext'
+import { useCompare } from '../context/CompareContext'
 import type { PropertyCard } from '../api'
 
 // ── Formatting helpers ────────────────────────────────────────────────────────
@@ -17,22 +18,20 @@ function fmtCAD(v: number | null | undefined): string {
 // ── Photo / placeholder ───────────────────────────────────────────────────────
 
 function PropertyPhoto({ photos, address }: { photos: string[]; address: string }) {
-  if (photos.length > 0) {
-    return (
-      <img
-        src={photos[0]}
-        alt={address}
-        className="w-full h-full object-cover"
-        referrerPolicy="no-referrer"
-        onError={e => {
-          const el = e.currentTarget
-          el.style.display = 'none'
-          el.nextElementSibling?.classList.remove('hidden')
-        }}
-      />
-    )
-  }
-  return null
+  if (photos.length === 0) return null
+  return (
+    <img
+      src={photos[0]}
+      alt={address}
+      className="w-full h-full object-cover"
+      referrerPolicy="no-referrer"
+      onError={e => {
+        const el = e.currentTarget
+        el.style.display = 'none'
+        el.nextElementSibling?.classList.remove('hidden')
+      }}
+    />
+  )
 }
 
 function PhotoPlaceholder({ type }: { type: string }) {
@@ -55,7 +54,7 @@ function MiniCard({
 }) {
   return (
     <div className="bg-surface rounded-lg px-2.5 py-2 text-center border border-surface-border">
-      <p className={clsx('text-xs font-mono font-semibold tabular-nums leading-tight', valueClass ?? 'text-ink')}>
+      <p className={clsx('text-xs font-mono tabular-nums leading-tight', valueClass ?? 'text-ink')}>
         {value}
       </p>
       <p className="text-[10px] text-muted mt-0.5 leading-tight">{label}</p>
@@ -105,6 +104,8 @@ interface Props {
 
 export default function PropertyCardGrid({ property: p, className }: Props) {
   const { lang } = useLang()
+  const { toggle, has, isFull } = useCompare()
+  const inCompare = has(p.id)
 
   const belowMarketClass =
     p.discount_pct != null && p.discount_pct > 5  ? 'text-score-strong' :
@@ -136,7 +137,7 @@ export default function PropertyCardGrid({ property: p, className }: Props) {
       {/* ── Photo ────────────────────────────────────────────────────────── */}
       <div className="relative aspect-video bg-surface overflow-hidden">
         <PropertyPhoto photos={p.photos ?? []} address={p.full_address} />
-        <div className="hidden w-full h-full flex-col items-center justify-center gap-2">
+        <div className="hidden flex w-full h-full flex-col items-center justify-center gap-2">
           <PhotoPlaceholder type={p.property_type} />
         </div>
 
@@ -144,8 +145,25 @@ export default function PropertyCardGrid({ property: p, className }: Props) {
         <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent pointer-events-none" />
 
         {/* Score badge — top right */}
-        <div className="absolute top-3 right-3">
+        <div className="absolute top-3 right-3 flex flex-col items-end gap-1.5">
           <ScoreBadge score={p.score} category={p.score_category} size="card" />
+          {/* Compare toggle */}
+          <button
+            onClick={e => {
+              e.preventDefault()
+              toggle({ id: p.id, full_address: p.full_address, asking_price: p.asking_price, city: p.city, photos: p.photos ?? [], property_type: p.property_type, score: p.score, score_category: p.score_category })
+            }}
+            title={inCompare ? 'Remove from compare' : isFull ? 'Compare list full (max 3)' : 'Add to compare'}
+            className={clsx(
+              'w-7 h-7 rounded-full flex items-center justify-center shadow transition-all',
+              inCompare
+                ? 'bg-accent text-white'
+                : 'bg-white/90 text-muted hover:text-accent hover:bg-white',
+              isFull && !inCompare && 'opacity-40 cursor-not-allowed',
+            )}
+          >
+            <GitCompareArrows size={13} />
+          </button>
         </div>
 
         {/* Badges — top left */}
@@ -189,7 +207,7 @@ export default function PropertyCardGrid({ property: p, className }: Props) {
           <p className="text-sm text-ink font-medium leading-snug truncate group-hover:text-accent transition-colors">
             {p.full_address}
           </p>
-          <p className="text-xl font-bold font-mono text-ink mt-1 tabular-nums">
+          <p className="text-xl font-mono text-ink mt-1 tabular-nums">
             {fmtCAD(p.asking_price)}
           </p>
         </div>

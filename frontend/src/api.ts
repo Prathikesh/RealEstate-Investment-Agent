@@ -102,6 +102,8 @@ export interface StatsResponse {
   new_today: number
   strong_opportunities: number
   worth_investigating: number
+  market_price: number
+  not_recommended: number
   price_drops_today: number
   avg_score: number | null
   cities: string[]
@@ -267,5 +269,22 @@ export interface FullAnalysisResponse {
 
 export async function fetchFullAnalysis(id: string): Promise<FullAnalysisResponse> {
   const { data } = await http.get<FullAnalysisResponse>(`/properties/${id}/full-analysis`)
+  return data
+}
+
+export interface MapProperty {
+  id:             string
+  full_address:   string
+  city:           string
+  asking_price:   number | null
+  score:          number | null
+  score_category: string | null
+  photo:          string | null
+  lat:            number
+  lng:            number
+}
+
+export async function fetchMapProperties(): Promise<MapProperty[]> {
+  const { data } = await http.get<MapProperty[]>('/properties/map')
   return data
 }

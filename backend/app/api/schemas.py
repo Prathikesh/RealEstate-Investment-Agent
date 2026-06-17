@@ -195,6 +195,8 @@ class StatsResponse(BaseModel):
     new_today:             int
     strong_opportunities:  int   # score 80+
     worth_investigating:   int   # score 60-79
+    market_price:          int   # score 40-59
+    not_recommended:       int   # score < 40
     price_drops_today:     int
     avg_score:             Optional[float]
     cities:                list[str]

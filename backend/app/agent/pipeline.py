@@ -37,6 +37,7 @@ class InvestmentPipeline:
         prop: Property,
         strategy: str = "both",
         language: str = "en",
+        force_brief: bool = False,
     ) -> Property:
         """
         Run the full pipeline for one property.
@@ -91,10 +92,10 @@ class InvestmentPipeline:
 
         # Stage 4 (optional)
         brief_en = brief_fr = None
-        if self.brief_generator and score.total >= 40:
-            brief_en = await self.brief_generator.generate(prop, fp, score, language="en")
-            if score.total >= 60:
-                brief_fr = await self.brief_generator.generate(prop, fp, score, language="fr")
+        if self.brief_generator and (force_brief or score.total >= 40):
+            brief_en = await self.brief_generator.generate(prop, fp, score, language="en", force=force_brief)
+            if force_brief or score.total >= 60:
+                brief_fr = await self.brief_generator.generate(prop, fp, score, language="fr", force=force_brief)
 
         # Write results back to property (calc_fields written directly to model)
         self._update_property(prop, comp_set, fp, score, brief_en, brief_fr, calc_fields)

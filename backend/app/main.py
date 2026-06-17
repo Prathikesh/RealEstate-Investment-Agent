@@ -11,6 +11,7 @@ from app.config import settings
 from app.api.routes.properties import router as properties_router
 from app.api.routes.brokers import router as brokers_router
 from app.api.routes.admin import router as admin_router
+from app.api.routes.images import router as images_router
 from app.scheduler import create_scheduler
 
 
@@ -40,6 +41,7 @@ app.add_middleware(
 app.include_router(properties_router)
 app.include_router(brokers_router)
 app.include_router(admin_router)
+app.include_router(images_router)
 
 
 @app.get("/health")
