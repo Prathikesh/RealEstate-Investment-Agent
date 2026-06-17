@@ -11,7 +11,7 @@ import logging
 from dataclasses import dataclass
 from typing import Optional
 
-from geoalchemy2.functions import ST_DWithin, ST_Distance
+from geoalchemy2.functions import ST_DWithin, ST_Distance, ST_GeomFromEWKB
 from geoalchemy2.types import Geography
 from sqlalchemy import select, cast, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -58,9 +58,12 @@ class ComparableFinder:
     async def find(self, prop: Property) -> ComparableSet:
         """Main entry point. Returns best comparable set found."""
         if prop.location is not None:
-            result = await self._geo_search(prop)
-            if result and result.count >= MIN_COMPS:
-                return result
+            try:
+                result = await self._geo_search(prop)
+                if result and result.count >= MIN_COMPS:
+                    return result
+            except Exception as exc:
+                logger.warning(f"Geo search failed for {prop.mls_number} — falling back to city: {exc}")
 
         # Fallback: city-based (no coordinates needed)
         return await self._city_search(prop)
@@ -84,8 +87,9 @@ class ComparableFinder:
 
     async def _query_radius(self, prop: Property, radius_km: float) -> list[Property]:
         """PostGIS ST_DWithin query using geography type for accurate km distances."""
-        prop_geo   = cast(prop.location,     Geography)
-        target_geo = cast(prop.location,     Geography)  # same point for distance calc
+        # Use ST_GeomFromEWKB to correctly deserialize the WKBElement loaded from DB.
+        # cast(WKBElement, Geography) generates ST_GeogFromText(hex) which fails on binary WKB.
+        prop_geo = cast(ST_GeomFromEWKB(prop.location), Geography)
 
         stmt = (
             select(

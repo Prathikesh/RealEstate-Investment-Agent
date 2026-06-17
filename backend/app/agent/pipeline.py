@@ -19,6 +19,7 @@ from app.agent.calculator import FinancialCalculator
 from app.agent.comparables import ComparableFinder
 from app.agent.scorer import OpportunityScorer
 from app.models.property import AnalysisConfidence, Property, ScoreCategory
+from app.services.calc_client import analyze as calc_engine_analyze
 
 logger = logging.getLogger(__name__)
 
@@ -44,15 +45,41 @@ class InvestmentPipeline:
         """
         logger.info(f"Pipeline starting: {prop.mls_number} — {prop.full_address}")
 
-        # Stage 1
+        # Stage 1 — comparables
         comp_set = await self.comp_finder.find(prop)
         logger.info(
             f"  Comps: {comp_set.count} found | "
             f"median={comp_set.median_price} | confidence={comp_set.confidence}"
         )
 
-        # Stage 2
+        # Stage 2a — colleague's calculation engine (accurate Quebec taxes + investment metrics)
+        calc_fields = await calc_engine_analyze(prop)
+        if calc_fields:
+            logger.info(
+                f"  CalcEngine: welcome_tax={calc_fields.get('welcome_tax','—')} | "
+                f"cap={calc_fields.get('cap_rate','—')}% | "
+                f"noi={calc_fields.get('noi_annual','—')} | "
+                f"cf/mo={calc_fields.get('monthly_cash_flow','—')}"
+            )
+        else:
+            logger.debug("  CalcEngine: unavailable, using estimates")
+
+        # Stage 2b — our financial calculator (provides fallback + comparables analysis)
         fp = self.calculator.calculate(prop, comp_set)
+
+        # Merge calc engine results into FinancialProfile so scorer uses accurate values
+        if calc_fields:
+            if "cap_rate"          in calc_fields: fp.cap_rate          = calc_fields["cap_rate"]
+            if "noi_annual"        in calc_fields: fp.noi_annual        = calc_fields["noi_annual"]
+            if "monthly_cash_flow" in calc_fields: fp.monthly_cash_flow = calc_fields["monthly_cash_flow"]
+            if "welcome_tax"       in calc_fields: fp.welcome_tax       = calc_fields["welcome_tax"]
+            if "monthly_mortgage"  in calc_fields: fp.monthly_mortgage  = calc_fields["monthly_mortgage"]
+            if "municipal_taxes_annual" in calc_fields:
+                fp.municipal_taxes_annual = calc_fields["municipal_taxes_annual"]
+                fp.taxes_are_estimated    = False
+            if "school_taxes_annual" in calc_fields:
+                fp.school_taxes_annual = calc_fields["school_taxes_annual"]
+
         logger.info(
             f"  Financials: cap={fp.cap_rate}% | "
             f"cf={fp.monthly_cash_flow}/mo | discount={fp.discount_pct}%"
@@ -69,8 +96,8 @@ class InvestmentPipeline:
             if score.total >= 60:
                 brief_fr = await self.brief_generator.generate(prop, fp, score, language="fr")
 
-        # Write results back to property
-        self._update_property(prop, comp_set, fp, score, brief_en, brief_fr)
+        # Write results back to property (calc_fields written directly to model)
+        self._update_property(prop, comp_set, fp, score, brief_en, brief_fr, calc_fields)
         return prop
 
     async def run_pending(
@@ -96,18 +123,21 @@ class InvestmentPipeline:
 
         for prop in properties:
             try:
-                await self.run(prop, strategy=strategy, language=language)
+                # Use a savepoint so a single property failure doesn't
+                # abort the whole PostgreSQL transaction for the batch.
+                async with self.session.begin_nested():
+                    await self.run(prop, strategy=strategy, language=language)
                 stats["processed"] += 1
                 stats["scores"].append(prop.score)
             except Exception as exc:  # noqa: BLE001
                 logger.error(f"Pipeline error for {prop.mls_number}: {exc}")
                 stats["errors"] += 1
+                # Savepoint was auto-rolled back; session is still usable.
 
-        await self.session.flush()
         return stats
 
     @staticmethod
-    def _update_property(prop, comp_set, fp, score, brief_en, brief_fr) -> None:
+    def _update_property(prop, comp_set, fp, score, brief_en, brief_fr, calc_fields: dict | None = None) -> None:
         now = datetime.now(timezone.utc)
 
         # Comparable data
@@ -117,15 +147,25 @@ class InvestmentPipeline:
         prop.value_gap               = fp.value_gap
         prop.discount_pct            = fp.discount_pct
 
-        # Financial metrics
-        prop.cap_rate             = fp.cap_rate
-        prop.noi_annual           = fp.noi_annual
-        prop.grm                  = fp.grm
-        prop.monthly_cash_flow    = fp.monthly_cash_flow
-        prop.cash_on_cash_return  = fp.cash_on_cash_return
-        prop.welcome_tax          = fp.welcome_tax
-        prop.down_payment_20pct   = fp.down_payment
-        prop.monthly_mortgage     = fp.monthly_mortgage
+        # Financial metrics — use colleague's calc engine values when available,
+        # otherwise fall back to our own estimates from FinancialCalculator
+        prop.cap_rate            = fp.cap_rate           # already merged from calc_fields
+        prop.noi_annual          = fp.noi_annual
+        prop.grm                 = fp.grm
+        prop.monthly_cash_flow   = fp.monthly_cash_flow
+        prop.cash_on_cash_return = fp.cash_on_cash_return
+        prop.welcome_tax         = fp.welcome_tax
+        prop.down_payment_20pct  = fp.down_payment
+        prop.monthly_mortgage    = fp.monthly_mortgage
+
+        # Write calc engine tax values directly to property (they're not in FinancialProfile)
+        if calc_fields:
+            if "municipal_taxes_annual" in calc_fields:
+                prop.municipal_taxes_annual = calc_fields["municipal_taxes_annual"]
+            if "school_taxes_annual" in calc_fields:
+                prop.school_taxes_annual = calc_fields["school_taxes_annual"]
+            if "down_payment_20pct" in calc_fields:
+                prop.down_payment_20pct = calc_fields["down_payment_20pct"]
 
         # Score
         prop.score          = score.total
@@ -143,3 +183,7 @@ class InvestmentPipeline:
 
         prop.last_analyzed_at = now
         prop.needs_reanalysis  = False
+
+        # Compute price_per_sqft if not already set by the scraper
+        if prop.price_per_sqft is None and prop.asking_price and prop.sqft_total and prop.sqft_total > 0:
+            prop.price_per_sqft = round(prop.asking_price / prop.sqft_total, 2)

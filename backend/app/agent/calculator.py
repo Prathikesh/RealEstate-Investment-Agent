@@ -4,32 +4,31 @@ Pure math, no LLM. All Quebec-specific formulas.
 
 Inputs:  Property record + ComparableSet
 Outputs: FinancialProfile dataclass with every metric the brief and scorer need
+
+All financial constants are imported from constants.py, which documents
+the official government source and last-verified date for each value.
 """
 from dataclasses import dataclass
 from typing import Optional
 
 from app.agent.comparables import ComparableSet
+from app.agent.constants import (
+    AMORTIZATION_YRS,
+    DEFAULT_RENT_PER_UNIT,
+    DOWN_PAYMENT_PCT,
+    INSURANCE_RATE,
+    MAINTENANCE_RATE,
+    MGMT_RATE,
+    MORTGAGE_RATE,
+    MUNICIPAL_TAX_RATE_FALLBACK,
+    MUNICIPAL_TAX_RATES_BY_CITY,
+    SCHOOL_TAX_RATE_FALLBACK,
+    VACANCY_RATE,
+    WELCOME_TAX_BRACKETS,
+    WELCOME_TAX_MONTREAL_EXTRA_RATE,
+    WELCOME_TAX_MONTREAL_EXTRA_THRESHOLD,
+)
 from app.models.property import Property
-
-# ── Quebec rent estimates when listing doesn't disclose income ────────────────
-# Based on SCHL / Centris average rents, 2024
-RENT_BY_UNIT_TYPE: dict[str, float] = {
-    "3.5":  950.0,
-    "4.5":  1150.0,
-    "5.5":  1400.0,
-}
-DEFAULT_RENT_PER_UNIT = 1200.0   # conservative fallback
-
-# ── Mortgage assumptions ──────────────────────────────────────────────────────
-MORTGAGE_RATE     = 0.052        # 5.2% annual
-AMORTIZATION_YRS  = 25
-DOWN_PAYMENT_PCT  = 0.20
-
-# ── Operating expense ratios (when not disclosed) ────────────────────────────
-VACANCY_RATE       = 0.05        # 5%
-INSURANCE_RATE     = 0.002       # 0.2% of value / year
-MAINTENANCE_RATE   = 0.01        # 1% of value / year
-MGMT_RATE          = 0.00        # 0% (self-managed typical for small plexes)
 
 
 @dataclass
@@ -71,6 +70,9 @@ class FinancialProfile:
     welcome_tax:          Optional[float]
     total_cash_needed:    Optional[float]   # down + welcome_tax + ~1% closing
 
+    # True when taxes were estimated from city rate; False = taken from listing
+    taxes_are_estimated:  bool = True
+
 
 class FinancialCalculator:
 
@@ -89,11 +91,24 @@ class FinancialCalculator:
         rent_annual = rent_monthly * 12 if rent_monthly else None
 
         # ── Operating expenses ────────────────────────────────────────────────
-        vacancy        = (rent_annual or 0) * VACANCY_RATE
-        muni_tax       = prop.municipal_taxes_annual or (price * 0.012 if price else 0)
-        school_tax     = prop.school_taxes_annual    or (price * 0.002 if price else 0)
-        insurance      = (price or 0) * INSURANCE_RATE
-        maintenance    = (price or 0) * MAINTENANCE_RATE
+        taxes_from_listing = bool(prop.municipal_taxes_annual or prop.school_taxes_annual)
+        vacancy    = (rent_annual or 0) * VACANCY_RATE
+        # Tax estimation priority:
+        #   1. Disclosed annual tax from listing   ← most accurate
+        #   2. evaluation_fonciere × city rate     ← good (assessed value, not asking price)
+        #   3. asking_price × city rate            ← rough fallback
+        eval_fonciere = getattr(prop, "evaluation_fonciere", None)
+        muni_tax   = (
+            prop.municipal_taxes_annual or
+            self._estimate_muni_tax(eval_fonciere, prop.city) if eval_fonciere else
+            self._estimate_muni_tax(price, prop.city)
+        )
+        school_tax = (
+            prop.school_taxes_annual or
+            ((eval_fonciere or price or 0) * SCHOOL_TAX_RATE_FALLBACK)
+        )
+        insurance  = (price or 0) * INSURANCE_RATE
+        maintenance = (price or 0) * MAINTENANCE_RATE
         total_expenses = vacancy + muni_tax + school_tax + insurance + maintenance
 
         # ── NOI ───────────────────────────────────────────────────────────────
@@ -112,8 +127,8 @@ class FinancialCalculator:
             grm = price / rent_annual
 
         # ── Mortgage ──────────────────────────────────────────────────────────
-        down_payment   = (price * DOWN_PAYMENT_PCT) if price else None
-        loan_amount    = (price * (1 - DOWN_PAYMENT_PCT)) if price else None
+        down_payment     = (price * DOWN_PAYMENT_PCT) if price else None
+        loan_amount      = (price * (1 - DOWN_PAYMENT_PCT)) if price else None
         monthly_mortgage = self._monthly_mortgage(loan_amount) if loan_amount else None
 
         # ── Cash flow ─────────────────────────────────────────────────────────
@@ -153,6 +168,7 @@ class FinancialCalculator:
             insurance_annual=round(insurance, 0),
             maintenance_annual=round(maintenance, 0),
             total_expenses_annual=round(total_expenses, 0),
+            taxes_are_estimated=not taxes_from_listing,
             # Metrics
             noi_annual=round(noi_annual, 0) if noi_annual is not None else None,
             cap_rate=round(cap_rate, 2) if cap_rate is not None else None,
@@ -168,6 +184,34 @@ class FinancialCalculator:
             total_cash_needed=round(total_cash_needed, 0) if total_cash_needed else None,
         )
 
+    # ── Municipal tax estimation ──────────────────────────────────────────────
+
+    @staticmethod
+    def _estimate_muni_tax(price: Optional[float], city: Optional[str]) -> float:
+        """
+        Estimate annual municipal tax from asking price using per-city residential
+        tax rates.  City-specific rates are more accurate than the provincial average,
+        especially for Montreal (0.67% vs 1.2% blanket).
+
+        NOTE: This multiplies the ASKING PRICE by the tax rate.  Real tax bills use
+        the municipal ASSESSED value (évaluation foncière), which is typically lower
+        than market price (the ratio varies by city and triennial roll year).
+        Use the disclosed listing value whenever possible.
+        """
+        if not price:
+            return 0.0
+        city_key = (city or "").lower().strip()
+        # Try exact match first, then partial match for city variants
+        rate = MUNICIPAL_TAX_RATES_BY_CITY.get(city_key)
+        if rate is None:
+            for key, r in MUNICIPAL_TAX_RATES_BY_CITY.items():
+                if key in city_key or city_key in key:
+                    rate = r
+                    break
+        if rate is None:
+            rate = MUNICIPAL_TAX_RATE_FALLBACK
+        return price * rate
+
     # ── Rent estimation ───────────────────────────────────────────────────────
 
     @staticmethod
@@ -176,7 +220,6 @@ class FinancialCalculator:
         if prop.rental_income_monthly and prop.rental_income_monthly > 0:
             return prop.rental_income_monthly, False
 
-        # Infer unit count from property type when not explicitly stored
         units = prop.unit_count or FinancialCalculator._infer_units(prop.property_type)
         return DEFAULT_RENT_PER_UNIT * units, True
 
@@ -208,24 +251,28 @@ class FinancialCalculator:
     @staticmethod
     def _welcome_tax(price: float, city: Optional[str] = None) -> float:
         """
-        Droits de mutation immobilière — Quebec 2024 brackets.
-        Montreal adds a 3% bracket above $2M.
-        """
-        brackets = [
-            (58_900,    0.005),
-            (294_600,   0.010),
-            (500_000,   0.015),
-            (1_000_000, 0.020),
-            (2_000_000, 0.025),
-        ]
-        is_montreal = city and "montr" in city.lower()
-        if is_montreal:
-            brackets.append((float("inf"), 0.030))
-        else:
-            brackets.append((float("inf"), 0.025))
+        Droits de mutation immobilière — RLRQ c. D-15.1 (2026 indexed brackets).
+        Source: https://www.legisquebec.gouv.qc.ca/en/document/cs/D-15.1
+        Brackets are indexed annually by Quebec CPI.
+        Last verified: 2026-06-11
 
-        tax   = 0.0
-        prev  = 0.0
+        Montreal may apply up to 3 % on the portion exceeding $500,000 (city by-law).
+        """
+        is_montreal = city and "montr" in city.lower()
+
+        # Build bracket list — add Montreal extra rate if applicable
+        brackets = list(WELCOME_TAX_BRACKETS)
+        if is_montreal:
+            # Replace the infinite bracket with a $500k ceiling, then add 3 % above
+            brackets = [
+                (WELCOME_TAX_MONTREAL_EXTRA_THRESHOLD, 0.015),
+                (float("inf"), WELCOME_TAX_MONTREAL_EXTRA_RATE),
+            ]
+            # Prepend the base brackets up to $315,000
+            brackets = list(WELCOME_TAX_BRACKETS[:-1]) + brackets
+
+        tax  = 0.0
+        prev = 0.0
         for ceiling, rate in brackets:
             if price <= prev:
                 break

@@ -1,13 +1,17 @@
 """
 APScheduler — automated scraping + AI pipeline.
 
-Jobs:
-  scrape_job   : runs every SCRAPE_INTERVAL_HOURS  (default 6h)
-                 → Centris plex + Realtor.ca city bboxes → dedup → DB
-  pipeline_job : runs 30 min after each scrape
-                 → AI pipeline on all needs_reanalysis=True properties
+Scrape targets per cycle (Quebec properties only):
+  Realtor.ca  : 50  properties  (1 page × 50 records, Montreal bbox)
+  Centris     : 25  properties  (~2 pages, plex category)
+  ReMax        : 15  properties  (1 page × 15 records, multi-family)
 
-Both jobs are fire-and-forget coroutines; errors are logged but never crash the app.
+API key fallback:
+  SCRAPFLY_API_KEY   — primary key
+  SCRAPFLY_API_KEY_2 — fallback when primary runs out of credits
+
+Progress is tracked in app.scrape_state.scrape_progress and polled
+by GET /api/admin/scrape-status every 2 seconds from the frontend.
 """
 import asyncio
 import json
@@ -21,145 +25,229 @@ from scrapfly import ScrapeConfig
 from app.config import settings
 from app.database import AsyncSessionLocal
 from app.scrapers.centris import CentrisScraper
-from app.scrapers.realtor import RealtorScraper, QUEBEC_CITY_BBOXES, API_URL, API_HEADERS
+from app.scrapers.realtor import RealtorScraper, API_URL, API_HEADERS
 from app.scrapers.deduplicator import PropertyDeduplicator
 from app.agent.pipeline import InvestmentPipeline
+from app.scrape_state import scrape_progress
 
 logger = logging.getLogger(__name__)
 
-# ── Centris targets ────────────────────────────────────────────────────────────
-CENTRIS_CATEGORIES = ["plex", "condo", "house"]
-CENTRIS_PAGES_PER_CATEGORY = 10   # ~200 listings per run
 
-# ── Realtor targets ────────────────────────────────────────────────────────────
-REALTOR_RECORDS_PER_PAGE = 50
-REALTOR_MAX_PER_CITY = 200        # cap per city per run
+# ── API keys ───────────────────────────────────────────────────────────────────
+
+def _api_keys() -> list[str]:
+    return [k for k in [settings.scrapfly_api_key, settings.scrapfly_api_key_2] if k]
 
 
-# ── Scrape job ────────────────────────────────────────────────────────────────
+# ── Targets ────────────────────────────────────────────────────────────────────
+
+REALTOR_TARGET = 50
+CENTRIS_TARGET = 50
+REMAX_TARGET   = 50
+
+REALTOR_BBOX = {
+    "LatitudeMax": "45.7050", "LatitudeMin": "45.4100",
+    "LongitudeMax": "-73.4750", "LongitudeMin": "-73.9800",
+}
+
+
+# ── Dedup helper ───────────────────────────────────────────────────────────────
+
+async def _save(raw_list, source_key: str) -> tuple[int, int, int]:
+    """Dedup + save a batch. Returns (new, updated, errors)."""
+    new = updated = errors = 0
+    async with AsyncSessionLocal() as session:
+        dedup = PropertyDeduplicator(session)
+        for raw in raw_list:
+            try:
+                _, is_new = await dedup.process(raw)
+                if is_new:
+                    new += 1
+                else:
+                    updated += 1
+            except Exception as exc:
+                logger.warning(f"[{source_key}] dedup error: {exc}")
+                errors += 1
+        await session.commit()
+
+    # Update global progress
+    sp = scrape_progress.sources[source_key]
+    sp.done    += new + updated
+    sp.message  = f"{sp.done} saved"
+    scrape_progress.total_new     += new
+    scrape_progress.total_updated += updated
+    scrape_progress.total_errors  += errors
+    return new, updated, errors
+
+
+# ── Scrape job ─────────────────────────────────────────────────────────────────
 
 async def scrape_job() -> None:
-    start = datetime.now(timezone.utc)
-    logger.info("=== Scrape job started ===")
+    now = datetime.now(timezone.utc)
+    scrape_progress.reset()
+    scrape_progress.started_at = now.isoformat()
+    logger.info("=== Scrape job started (Realtor=%d, Centris=%d, ReMax=%d) ===",
+                REALTOR_TARGET, CENTRIS_TARGET, REMAX_TARGET)
 
-    total_new = total_updated = total_errors = 0
+    keys = _api_keys()
 
-    # ── Centris ───────────────────────────────────────────────────────────────
+    # ── 1. Realtor.ca ─────────────────────────────────────────────────────────
+    scrape_progress.current_source = "realtor"
+    scrape_progress.sources["realtor"].status  = "running"
+    scrape_progress.sources["realtor"].message = "Connecting..."
+    scrape_progress.message = "Scraping Realtor.ca..."
+    logger.info("--- Realtor.ca ---")
+
     try:
-        async with CentrisScraper(api_key=settings.scrapfly_api_key) as scraper:
-            for category in CENTRIS_CATEGORIES:
-                for page in range(1, CENTRIS_PAGES_PER_CATEGORY + 1):
-                    try:
-                        raw_list = await scraper.scrape_listings(category=category, page=page)
-                        if not raw_list:
-                            break
+        scraper = RealtorScraper(api_keys=keys)
+        body = scraper._build_body(
+            bbox=REALTOR_BBOX,
+            page=1,
+            records_per_page=REALTOR_TARGET,
+            property_type_group_id=3,   # 3=Multi-family/Revenue (duplex, triplex, plex)
+            transaction_type_id=2,
+        )
+        config = ScrapeConfig(
+            url=API_URL, method="POST", body=body,
+            headers=API_HEADERS, country="ca", asp=False, render_js=False,
+        )
+        result = await scraper.client.async_scrape(config)
 
-                        async with AsyncSessionLocal() as session:
-                            dedup = PropertyDeduplicator(session)
-                            for raw in raw_list:
-                                try:
-                                    _, is_new = await dedup.process(raw)
-                                    if is_new:
-                                        total_new += 1
-                                    else:
-                                        total_updated += 1
-                                except Exception as exc:
-                                    logger.warning(f"Centris dedup error: {exc}")
-                                    total_errors += 1
-                            await session.commit()
-
-                        await asyncio.sleep(2)
-
-                    except Exception as exc:
-                        logger.error(f"Centris [{category}] page {page} error: {exc}")
-                        total_errors += 1
-                        await asyncio.sleep(5)
-                        break
-
-    except Exception as exc:
-        logger.error(f"Centris scraper init error: {exc}")
-
-    # ── Realtor.ca ────────────────────────────────────────────────────────────
-    try:
-        scraper = RealtorScraper(api_key=settings.scrapfly_api_key)
-
-        for city_name, bbox in QUEBEC_CITY_BBOXES.items():
-            city_count = 0
-            page = 1
-
-            while city_count < REALTOR_MAX_PER_CITY:
-                try:
-                    body = scraper._build_body(
-                        bbox=bbox,
-                        page=page,
-                        records_per_page=REALTOR_RECORDS_PER_PAGE,
-                        property_type_group_id=1,
-                        transaction_type_id=2,
-                    )
-                    config = ScrapeConfig(
-                        url=API_URL,
-                        method="POST",
-                        body=body,
-                        headers=API_HEADERS,
-                        country="ca",
-                        asp=False,
-                        render_js=False,
-                    )
-                    result = await scraper.client.async_scrape(config)
-
-                    if result.upstream_status_code != 200:
-                        break
-
-                    data = json.loads(result.content)
-                    raw_results = data.get("Results", [])
-                    paging = data.get("Paging", {})
-                    total_pages = int(paging.get("TotalPages", 1))
-
-                    if not raw_results:
-                        break
-
-                    raw_list = [p for p in (scraper._parse_result(r) for r in raw_results) if p]
-
-                    async with AsyncSessionLocal() as session:
-                        dedup = PropertyDeduplicator(session)
-                        for raw in raw_list:
-                            try:
-                                _, is_new = await dedup.process(raw)
-                                if is_new:
-                                    total_new += 1
-                                else:
-                                    total_updated += 1
-                                city_count += 1
-                            except Exception as exc:
-                                logger.warning(f"Realtor dedup error: {exc}")
-                                total_errors += 1
-                        await session.commit()
-
-                    if page >= total_pages:
-                        break
-
-                    page += 1
-                    await asyncio.sleep(2)
-
-                except Exception as exc:
-                    logger.error(f"Realtor [{city_name}] page {page} error: {exc}")
-                    total_errors += 1
-                    await asyncio.sleep(5)
-                    break
+        if result.upstream_status_code == 200:
+            data       = json.loads(result.content)
+            raw_all    = data.get("Results", [])
+            raw_list   = [p for p in (scraper._parse_result(r) for r in raw_all) if p]
+            scrape_progress.sources["realtor"].message = f"Parsing {len(raw_list)} results..."
+            logger.info(f"[realtor] {len(raw_list)} results")
+            await _save(raw_list, "realtor")
+            scrape_progress.sources["realtor"].status = "done"
+        else:
+            scrape_progress.sources["realtor"].status  = "error"
+            scrape_progress.sources["realtor"].message = f"HTTP {result.upstream_status_code}"
+            logger.error(f"[realtor] API returned {result.upstream_status_code}")
 
         await scraper.close()
 
     except Exception as exc:
+        scrape_progress.sources["realtor"].status  = "error"
+        scrape_progress.sources["realtor"].message = str(exc)[:80]
         logger.error(f"Realtor scraper error: {exc}")
 
-    elapsed = round((datetime.now(timezone.utc) - start).total_seconds(), 1)
+    scrape_progress.elapsed_seconds = (datetime.now(timezone.utc) - now).total_seconds()
+    await asyncio.sleep(3)
+
+    # ── 2. Centris ────────────────────────────────────────────────────────────
+    scrape_progress.current_source = "centris"
+    scrape_progress.sources["centris"].status  = "running"
+    scrape_progress.sources["centris"].message = "Connecting..."
+    scrape_progress.message = "Scraping Centris..."
+    logger.info("--- Centris ---")
+
+    try:
+        async with CentrisScraper(api_keys=keys) as scraper:
+            centris_done = 0
+            for page in range(1, 4):
+                if centris_done >= CENTRIS_TARGET:
+                    break
+                try:
+                    scrape_progress.sources["centris"].message = f"Page {page}..."
+                    raw_list = await scraper.scrape_listings(category="plex", page=page)
+                    if not raw_list:
+                        break
+
+                    remaining = CENTRIS_TARGET - centris_done
+                    raw_list  = raw_list[:remaining]
+
+                    await _save(raw_list, "centris")
+                    centris_done += len(raw_list)
+                    logger.info(f"[centris] page {page}: {len(raw_list)} → total={centris_done}")
+                    await asyncio.sleep(3)
+
+                except Exception as exc:
+                    logger.error(f"[centris] page {page} error: {exc}")
+                    scrape_progress.total_errors += 1
+                    break
+
+        scrape_progress.sources["centris"].status = "done"
+
+    except Exception as exc:
+        scrape_progress.sources["centris"].status  = "error"
+        scrape_progress.sources["centris"].message = str(exc)[:80]
+        logger.error(f"Centris scraper error: {exc}")
+
+    scrape_progress.elapsed_seconds = (datetime.now(timezone.utc) - now).total_seconds()
+    await asyncio.sleep(3)
+
+    # ── 3. ReMax (remax-quebec.com) ───────────────────────────────────────────
+    scrape_progress.current_source = "remax"
+    scrape_progress.sources["remax"].status  = "running"
+    scrape_progress.sources["remax"].target  = REMAX_TARGET
+    scrape_progress.sources["remax"].message = "Loading sitemap..."
+    scrape_progress.message = "Scraping ReMax Québec..."
+    logger.info("--- ReMax ---")
+
+    try:
+        from app.scrapers.remax import RemaxScraper
+        async with RemaxScraper(api_keys=keys) as scraper:
+            remax_done = 0
+            page_size  = 10   # scrape 10 listings at a time
+            page       = 1
+
+            while remax_done < REMAX_TARGET:
+                scrape_progress.sources["remax"].message = f"Page {page}..."
+                try:
+                    raw_list = await scraper.scrape_listings(
+                        category="multi_family",
+                        page=page,
+                        page_size=page_size,
+                    )
+                    if not raw_list:
+                        logger.info(f"[remax] No more results at page {page}")
+                        break
+
+                    remaining = REMAX_TARGET - remax_done
+                    raw_list  = raw_list[:remaining]
+
+                    await _save(raw_list, "remax")
+                    remax_done += len(raw_list)
+                    scrape_progress.sources["remax"].done = remax_done
+                    scrape_progress.sources["remax"].pct  = round(remax_done / REMAX_TARGET * 100)
+                    logger.info(f"[remax] page {page}: {len(raw_list)} → total={remax_done}")
+                    page += 1
+                    await asyncio.sleep(2)
+
+                except Exception as exc:
+                    logger.error(f"[remax] page {page} error: {exc}")
+                    scrape_progress.total_errors += 1
+                    break
+
+        scrape_progress.sources["remax"].status = "done"
+
+    except Exception as exc:
+        scrape_progress.sources["remax"].status  = "error"
+        scrape_progress.sources["remax"].message = str(exc)[:80]
+        logger.error(f"ReMax scraper error: {exc}")
+
+    # ── Finish ────────────────────────────────────────────────────────────────
+    scrape_progress.elapsed_seconds = (datetime.now(timezone.utc) - now).total_seconds()
+    scrape_progress.running        = False
+    scrape_progress.current_source = ""
+    scrape_progress.finished_at    = datetime.now(timezone.utc).isoformat()
+    scrape_progress.message = (
+        f"Done — {scrape_progress.total_new} new, "
+        f"{scrape_progress.total_updated} updated, "
+        f"{scrape_progress.total_errors} errors"
+    )
     logger.info(
-        f"=== Scrape job done in {elapsed}s — "
-        f"new={total_new} updated={total_updated} errors={total_errors} ==="
+        "=== Scrape job done in %.1fs — new=%d updated=%d errors=%d ===",
+        scrape_progress.elapsed_seconds,
+        scrape_progress.total_new,
+        scrape_progress.total_updated,
+        scrape_progress.total_errors,
     )
 
 
-# ── Pipeline job ──────────────────────────────────────────────────────────────
+# ── Pipeline job ───────────────────────────────────────────────────────────────
 
 async def pipeline_job() -> None:
     start = datetime.now(timezone.utc)
@@ -175,36 +263,34 @@ async def pipeline_job() -> None:
             await session.commit()
 
         total_processed += stats["processed"]
-        total_errors += stats.get("errors", 0)
+        total_errors    += stats.get("errors", 0)
 
         if stats["processed"] < batch_size:
-            break   # no more pending
+            break
 
     elapsed = round((datetime.now(timezone.utc) - start).total_seconds(), 1)
     logger.info(
-        f"=== Pipeline job done in {elapsed}s — "
-        f"processed={total_processed} errors={total_errors} ==="
+        "=== Pipeline job done in %ss — processed=%d errors=%d ===",
+        elapsed, total_processed, total_errors,
     )
 
 
-# ── Scheduler setup ───────────────────────────────────────────────────────────
+# ── Scheduler setup ────────────────────────────────────────────────────────────
 
 def create_scheduler() -> AsyncIOScheduler:
-    interval_hours = settings.scrape_interval_hours   # default 6
+    interval_hours = settings.scrape_interval_hours
 
     scheduler = AsyncIOScheduler(timezone="UTC")
 
-    # Scrape every N hours
     scheduler.add_job(
         scrape_job,
         trigger=IntervalTrigger(hours=interval_hours),
         id="scrape_job",
-        name="Scrape Centris + Realtor.ca",
+        name="Scrape Realtor + Centris + ReMax (Quebec)",
         replace_existing=True,
-        misfire_grace_time=300,   # allow up to 5 min late start
+        misfire_grace_time=300,
     )
 
-    # Pipeline runs 30 min after each scrape cycle (offset)
     scheduler.add_job(
         pipeline_job,
         trigger=IntervalTrigger(hours=interval_hours, start_date=_offset_start(minutes=30)),
@@ -218,6 +304,5 @@ def create_scheduler() -> AsyncIOScheduler:
 
 
 def _offset_start(minutes: int):
-    """Return a start datetime that offsets the first run by N minutes from now."""
     from datetime import timedelta
     return datetime.now(timezone.utc) + timedelta(minutes=minutes)

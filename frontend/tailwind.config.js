@@ -4,27 +4,58 @@ export default {
   theme: {
     extend: {
       colors: {
+        // Page background — subtle cool tint, never flat white
         surface: {
-          DEFAULT: '#0F1117',
-          card:    '#1A1D27',
-          hover:   '#222535',
-          border:  '#2A2D3A',
+          DEFAULT: '#EEF2F7',
+          card:    '#FFFFFF',
+          hover:   '#E8EDF5',
+          border:  '#D8E0EC',
+        },
+        // Dark sidebar
+        sidebar: {
+          DEFAULT: '#111827',
+          hover:   '#1F2937',
+          active:  '#1E3A5F',
+          border:  '#1F2937',
+          text:    '#9CA3AF',
+          heading: '#6B7280',
         },
         accent: {
-          DEFAULT: '#6C5CE7',
-          hover:   '#5649c0',
+          DEFAULT: '#2563EB',
+          hover:   '#1D4ED8',
+          light:   '#EFF6FF',
         },
         score: {
-          strong:         '#00D68F',  // green   80-100
-          worth:          '#6C5CE7',  // purple  60-79
-          market:         '#FFB800',  // amber   40-59
-          notrecommended: '#FF4757',  // red     <40
+          strong:         '#059669',
+          worth:          '#2563EB',
+          market:         '#D97706',
+          notrecommended: '#DC2626',
         },
-        muted: '#8B8D97',
+        muted: '#6B7280',
+        ink:   '#111827',
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
-        mono: ['JetBrains Mono', 'monospace'],
+        sans: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
+        mono: ['"DM Mono"', 'monospace'],
+      },
+      borderRadius: {
+        xl: '12px',
+        '2xl': '16px',
+      },
+      boxShadow: {
+        card: '0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)',
+        'card-hover': '0 4px 12px rgba(0,0,0,0.10), 0 2px 4px rgba(0,0,0,0.05)',
+        sidebar: '4px 0 24px rgba(0,0,0,0.12)',
+      },
+      animation: {
+        'fade-in': 'fadeIn 0.2s ease-out',
+        'slide-up': 'slideUp 0.25s ease-out',
+        'scale-in': 'scaleIn 0.15s ease-out',
+      },
+      keyframes: {
+        fadeIn:  { from: { opacity: '0' },                      to: { opacity: '1' } },
+        slideUp: { from: { opacity: '0', transform: 'translateY(8px)' }, to: { opacity: '1', transform: 'translateY(0)' } },
+        scaleIn: { from: { opacity: '0', transform: 'scale(0.96)' },     to: { opacity: '1', transform: 'scale(1)' } },
       },
     },
   },

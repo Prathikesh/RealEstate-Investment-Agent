@@ -6,6 +6,7 @@ Options:
   --limit 100          process only N properties (default: all)
   --no-brief           skip Claude API calls (faster, no cost)
   --strategy both      buy_and_hold | buy_fix_sell | both
+  --force              re-analyze all properties regardless of needs_reanalysis flag
 """
 import argparse
 import asyncio
@@ -23,17 +24,26 @@ logging.basicConfig(
 )
 logger = logging.getLogger("pipeline_runner")
 
-from sqlalchemy import select, func
+from sqlalchemy import select, func, update
 
 from app.database import AsyncSessionLocal
 from app.models.property import Property, ScoreCategory
 from app.agent.pipeline import InvestmentPipeline
 
 
-async def main(limit: int, generate_brief: bool, strategy: str) -> None:
+async def main(limit: int, generate_brief: bool, strategy: str, force: bool) -> None:
     start = time.time()
 
     async with AsyncSessionLocal() as session:
+        if force:
+            await session.execute(
+                update(Property)
+                .where(Property.asking_price.isnot(None))
+                .values(needs_reanalysis=True)
+            )
+            await session.commit()
+            print("--force: reset needs_reanalysis=True on all properties.")
+
         pending = await session.scalar(
             select(func.count()).select_from(Property)
             .where(Property.needs_reanalysis == True)
@@ -90,7 +100,6 @@ async def main(limit: int, generate_brief: bool, strategy: str) -> None:
         avg_score = await session.scalar(
             select(func.avg(Property.score)).where(Property.score.isnot(None))
         )
-
     elapsed = round(time.time() - start, 1)
 
     print(f"\n{'='*60}")
@@ -102,7 +111,7 @@ async def main(limit: int, generate_brief: bool, strategy: str) -> None:
     cat_map = {r[0].value if r[0] else "none": r[1] for r in rows}
     for cat in category_order:
         count = cat_map.get(cat, 0)
-        bar = "█" * (count // 5)
+        bar = "#" * (count // 5)
         print(f"    {cat:25s} {count:4d}  {bar}")
     print(f"{'='*60}\n")
 
@@ -113,10 +122,14 @@ if __name__ == "__main__":
     parser.add_argument("--no-brief",  action="store_true")
     parser.add_argument("--strategy",  default="both",
                         choices=["both", "buy_and_hold", "buy_fix_sell"])
+    parser.add_argument("--force",     action="store_true",
+                        help="Re-analyze all properties regardless of needs_reanalysis flag")
     args = parser.parse_args()
 
     asyncio.run(main(
         limit=args.limit,
         generate_brief=not args.no_brief,
         strategy=args.strategy,
+        force=args.force,
     ))
+    

@@ -9,7 +9,7 @@ export default function WatchingPlaceholder() {
         <Bookmark size={24} className="text-accent" />
       </div>
       <div>
-        <h2 className="text-lg font-bold text-white">{t('watching')}</h2>
+        <h2 className="text-lg font-bold text-ink">{t('watching')}</h2>
         <p className="text-sm text-muted mt-1 max-w-xs">
           Watch list requires broker authentication (Phase 3). Use the "Watch" button on any property detail page to save listings.
         </p>

@@ -12,11 +12,18 @@ class Settings(BaseSettings):
     # Database
     database_url: str
 
-    # Scrapfly
+    # Scrapfly — add SCRAPFLY_API_KEY_2, _3 etc. to .env for automatic fallback
     scrapfly_api_key: str
+    scrapfly_api_key_2: str = ""
+    scrapfly_api_key_3: str = ""
+    scrapfly_api_key_4: str = ""
 
-    # Anthropic
-    anthropic_api_key: str
+    # Anthropic (optional — only needed if using Claude for brief generation)
+    anthropic_api_key: str = ""
+
+    # Ollama (local LLM for brief generation)
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_model: str = "llama3"
 
     # Google OAuth
     google_client_id: str

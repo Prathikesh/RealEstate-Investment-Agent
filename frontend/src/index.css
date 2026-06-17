@@ -4,55 +4,86 @@
 
 @layer base {
   body {
-    @apply bg-surface text-slate-200 antialiased;
+    @apply bg-surface text-ink antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  * {
+    @apply transition-colors duration-150;
   }
 
   ::-webkit-scrollbar        { @apply w-1.5 h-1.5; }
-  ::-webkit-scrollbar-track  { @apply bg-surface; }
-  ::-webkit-scrollbar-thumb  { @apply bg-surface-border rounded-full; }
+  ::-webkit-scrollbar-track  { @apply bg-transparent; }
+  ::-webkit-scrollbar-thumb  { @apply bg-surface-border rounded-full hover:bg-muted/40; }
 }
 
 @layer components {
   /* ── Cards ─────────────────────────────────────────────── */
   .card {
-    @apply bg-surface-card border border-surface-border rounded-xl p-5;
+    @apply bg-surface-card border border-surface-border rounded-2xl p-5 shadow-card;
+  }
+  .card-hover {
+    @apply card transition-all duration-200 hover:shadow-card-hover hover:-translate-y-0.5;
   }
 
-  /* ── Score badges (inline pill) ─────────────────────────── */
+  /* ── Page animation ─────────────────────────────────────── */
+  .page-enter {
+    @apply animate-fade-in;
+  }
+  .section-enter {
+    @apply animate-slide-up;
+  }
+
+  /* ── Score badges ────────────────────────────────────────── */
   .badge-strong {
     @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold
-           bg-score-strong/15 text-score-strong border border-score-strong/25;
+           bg-score-strong/10 text-score-strong border border-score-strong/25;
   }
   .badge-worth {
     @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold
-           bg-score-worth/15 text-score-worth border border-score-worth/25;
+           bg-score-worth/10 text-score-worth border border-score-worth/25;
   }
   .badge-market {
     @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold
-           bg-score-market/15 text-score-market border border-score-market/25;
+           bg-score-market/10 text-score-market border border-score-market/25;
   }
   .badge-not {
     @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold
-           bg-score-notrecommended/15 text-score-notrecommended border border-score-notrecommended/25;
+           bg-score-notrecommended/10 text-score-notrecommended border border-score-notrecommended/25;
   }
 
-  /* ── Stat card gradient left borders ────────────────────── */
-  .stat-border-green  { border-left: 3px solid #00D68F; }
-  .stat-border-purple { border-left: 3px solid #6C5CE7; }
-  .stat-border-amber  { border-left: 3px solid #FFB800; }
-  .stat-border-red    { border-left: 3px solid #FF4757; }
-  .stat-border-blue   { border-left: 3px solid #3b82f6; }
-  .stat-border-muted  { border-left: 3px solid #2A2D3A; }
+  /* ── Left border accents on stat cards ──────────────────── */
+  .stat-border-green  { border-left: 3px solid #059669; }
+  .stat-border-blue   { border-left: 3px solid #2563EB; }
+  .stat-border-amber  { border-left: 3px solid #D97706; }
+  .stat-border-red    { border-left: 3px solid #DC2626; }
+  .stat-border-purple { border-left: 3px solid #7C3AED; }
+  .stat-border-muted  { border-left: 3px solid #D8E0EC; }
 
   /* ── Form inputs ─────────────────────────────────────────── */
   .input {
-    @apply w-full px-3 py-2 bg-surface-card border border-surface-border rounded-lg
-           text-sm text-slate-200 placeholder:text-muted
-           focus:outline-none focus:border-accent/50 transition-colors;
+    @apply w-full px-3 py-2.5 bg-white border border-surface-border rounded-xl
+           text-sm text-ink placeholder:text-muted
+           focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/15
+           transition-all duration-150;
   }
 
   .select {
-    @apply px-3 py-2 bg-surface-card border border-surface-border rounded-lg
-           text-sm text-slate-300 focus:outline-none focus:border-accent/50 transition-colors;
+    @apply px-3 py-2.5 bg-white border border-surface-border rounded-xl
+           text-sm text-ink
+           focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/15
+           transition-all duration-150;
+  }
+
+  /* ── Buttons ─────────────────────────────────────────────── */
+  .btn-primary {
+    @apply inline-flex items-center gap-1.5 px-4 py-2.5 bg-accent hover:bg-accent-hover
+           text-white text-sm font-semibold rounded-xl shadow-sm
+           transition-all duration-150 active:scale-95;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center gap-1.5 px-3 py-2 border border-surface-border
+           text-muted hover:text-ink hover:bg-surface-hover text-sm rounded-xl
+           transition-all duration-150 active:scale-95;
   }
 }

@@ -9,6 +9,22 @@ from typing import Any, Optional
 from pydantic import BaseModel, ConfigDict, field_validator
 
 
+class CrossSitePrice(BaseModel):
+    """Per-source price row for cross-site comparison."""
+    model_config = ConfigDict(from_attributes=True)
+
+    source:       str
+    price:        Optional[float]
+    source_url:   Optional[str]
+    last_seen_at: datetime
+    is_lowest:    bool
+
+    agent_name:   Optional[str] = None
+    agent_phone:  Optional[str] = None
+    agent_email:  Optional[str] = None
+    agency_name:  Optional[str] = None
+
+
 class PropertyCard(BaseModel):
     """Compact property representation for list/dashboard views."""
     model_config = ConfigDict(from_attributes=True)
@@ -47,6 +63,10 @@ class PropertyCard(BaseModel):
 
     first_seen_at:   datetime
     last_seen_at:    datetime
+
+    multi_site_count:     Optional[int]   = None
+    lowest_price_source:  Optional[str]   = None
+    lowest_price:         Optional[float] = None
 
     @field_validator("property_type", mode="before")
     @classmethod
@@ -103,6 +123,16 @@ class PropertyDetail(BaseModel):
     active_sources:  Optional[list[str]]
     primary_source:  Optional[str]
     listing_url:     Optional[str]
+
+    multi_site_count:     Optional[int]   = None
+    lowest_price_source:  Optional[str]   = None
+    lowest_price:         Optional[float] = None
+    cross_site_prices:    Optional[list[CrossSitePrice]] = None
+
+    agent_name:   Optional[str] = None
+    agent_phone:  Optional[str] = None
+    agent_email:  Optional[str] = None
+    agency_name:  Optional[str] = None
 
     photos:          Optional[list[str]]
     description:     Optional[str]
@@ -168,3 +198,124 @@ class StatsResponse(BaseModel):
     price_drops_today:     int
     avg_score:             Optional[float]
     cities:                list[str]
+    multi_site_properties: int = 0
+
+
+# ── Full Analysis schemas ─────────────────────────────────────────────────────
+
+class RiskItemSchema(BaseModel):
+    label:       str
+    severity:    str   # "low" | "medium" | "high" | "critical"
+    description: str
+    mitigation:  str
+
+
+class RiskAssessmentSchema(BaseModel):
+    items:        list[RiskItemSchema]
+    overall_risk: str
+
+
+class YearSnapshotSchema(BaseModel):
+    year:                 int
+    property_value:       float
+    monthly_rent:         float
+    noi:                  float
+    monthly_cash_flow:    float
+    equity:               float
+    cumulative_cash_flow: float
+
+
+class FiveYearProjectionSchema(BaseModel):
+    snapshots:         list[YearSnapshotSchema]
+    total_return_pct:  Optional[float]
+    annualized_return: Optional[float]
+
+
+class RenovationScenarioSchema(BaseModel):
+    label:                  str
+    renovation_cost:        float
+    rent_increase_per_unit: float
+    new_monthly_rent:       Optional[float]
+    new_noi:                Optional[float]
+    new_cap_rate:           Optional[float]
+    new_cash_flow:          Optional[float]
+    payback_years:          Optional[float]
+    roi_pct:                Optional[float]
+
+
+class RenovationROISchema(BaseModel):
+    scenarios: list[RenovationScenarioSchema]
+
+
+class NeighbourhoodContextSchema(BaseModel):
+    sample_size:              int
+    city_avg_price:           Optional[float]
+    city_avg_price_per_sqft:  Optional[float]
+    city_avg_cap_rate:        Optional[float]
+    city_avg_days_on_market:  Optional[float]
+    city_avg_score:           Optional[float]
+    price_vs_avg_pct:         Optional[float]
+    cap_rate_vs_avg_pct:      Optional[float]
+    score_vs_avg_pct:         Optional[float]
+    price_percentile:         Optional[float]
+    cap_rate_percentile:      Optional[float]
+    score_percentile:         Optional[float]
+
+
+class FinancialProfileSchema(BaseModel):
+    comparable_count:         int
+    comparable_median_price:  Optional[float]
+    comparable_mean_price:    Optional[float]
+    value_gap:                Optional[float]
+    discount_pct:             Optional[float]
+    analysis_confidence:      str
+    search_radius_km:         Optional[float]
+    gross_rent_monthly:       Optional[float]
+    gross_rent_annual:        Optional[float]
+    rent_is_estimated:        bool
+    vacancy_loss_annual:      float
+    municipal_taxes_annual:   float
+    school_taxes_annual:      float
+    insurance_annual:         float
+    maintenance_annual:       float
+    total_expenses_annual:    float
+    noi_annual:               Optional[float]
+    cap_rate:                 Optional[float]
+    grm:                      Optional[float]
+    monthly_cash_flow:        Optional[float]
+    cash_on_cash_return:      Optional[float]
+    asking_price:             Optional[float]
+    down_payment:             Optional[float]
+    loan_amount:              Optional[float]
+    monthly_mortgage:         Optional[float]
+    welcome_tax:              Optional[float]
+    total_cash_needed:        Optional[float]
+
+
+class ScoreResultSchema(BaseModel):
+    total:      int
+    category:   str
+    components: dict[str, float]
+    strategy:   str
+
+
+class DataSourceSchema(BaseModel):
+    name:      str
+    url:       str
+    publisher: str
+    frequency: str
+    verified:  str
+
+
+class FullAnalysisResponse(BaseModel):
+    property_id:   str
+    full_address:  str
+    financial:     FinancialProfileSchema
+    score:         ScoreResultSchema
+    risk:          RiskAssessmentSchema
+    projection:    FiveYearProjectionSchema
+    renovation:    RenovationROISchema
+    neighbourhood: NeighbourhoodContextSchema
+    ai_brief:      Optional[str]
+    computed_at:   str
+    sources:       list[DataSourceSchema]

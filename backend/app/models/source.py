@@ -50,6 +50,12 @@ class PropertySource(Base):
     # Most recent price seen on this source
     last_price: Mapped[Optional[float]] = mapped_column(Float)
 
+    # Agent / dealer contact for this specific source listing
+    agent_name:  Mapped[Optional[str]] = mapped_column(String(200))
+    agent_phone: Mapped[Optional[str]] = mapped_column(String(50))
+    agent_email: Mapped[Optional[str]] = mapped_column(String(200))
+    agency_name: Mapped[Optional[str]] = mapped_column(String(200))
+
     # Data quality flags — what fields this source actually provides
     has_price: Mapped[bool] = mapped_column(Boolean, default=False)
     has_rental_income: Mapped[bool] = mapped_column(Boolean, default=False)

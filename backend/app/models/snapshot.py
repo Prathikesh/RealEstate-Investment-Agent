@@ -18,6 +18,7 @@ from app.database import Base
 class ScraperSource(str, enum.Enum):
     CENTRIS = "centris"
     REALTOR = "realtor"
+    REMAX = "remax"
     DUPROPRIO = "duproprio"
     ROYALLEPAGE = "royallepage"
     ZOLO = "zolo"

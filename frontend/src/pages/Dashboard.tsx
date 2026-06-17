@@ -1,49 +1,79 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Home, Zap, TrendingUp, BarChart2, ArrowDownCircle, Activity } from 'lucide-react'
+import {
+  Home, Zap, TrendingUp, BarChart2, ArrowDownCircle, Activity, Globe,
+  Clock, ChevronRight, Sparkles,
+} from 'lucide-react'
 import { fetchStats, fetchProperties } from '../api'
 import { useLang } from '../context/LanguageContext'
 import PropertyCardGrid from '../components/PropertyCardGrid'
-
-// ── Stat card ─────────────────────────────────────────────────────────────────
-
-interface StatCardProps {
-  label:      string
-  value:      string | number
-  icon:       React.ReactNode
-  iconColor:  string
-  borderClass:string
-  loading?:   boolean
-}
-
-function StatCard({ label, value, icon, iconColor, borderClass, loading }: StatCardProps) {
-  return (
-    <div className={`card flex flex-col gap-3 ${borderClass}`}>
-      <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${iconColor}`}>
-        {icon}
-      </div>
-      {loading ? (
-        <div className="space-y-1.5">
-          <div className="h-7 w-20 bg-surface-border rounded animate-pulse" />
-          <div className="h-3 w-24 bg-surface-border/60 rounded animate-pulse" />
-        </div>
-      ) : (
-        <div>
-          <p className="text-2xl font-bold text-white font-mono tabular-nums">{value}</p>
-          <p className="text-xs text-muted mt-0.5">{label}</p>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── New listings sidebar ──────────────────────────────────────────────────────
 
 function fmtCAD(v: number | null): string {
   if (v == null) return '—'
   return new Intl.NumberFormat('en-CA', {
     style: 'currency', currency: 'CAD', maximumFractionDigits: 0,
   }).format(v)
+}
+
+function timeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime()
+  const hours = Math.floor(diff / 3600000)
+  if (hours < 1) return 'Just now'
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  return `${days}d ago`
+}
+
+// ── Metric strip item ─────────────────────────────────────────────────────────
+
+interface MetricProps {
+  label: string
+  value: string | number
+  sublabel: string
+  icon: React.ReactNode
+  iconColor: string
+  iconBg: string
+  loading?: boolean
+  to?: string
+}
+
+function Metric({ label, value, sublabel, icon, iconColor, iconBg, loading, to }: MetricProps) {
+  const inner = (
+    <div className="flex items-center gap-3 py-4 px-5 min-w-0">
+      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${iconBg}`}>
+        <span className={iconColor}>{icon}</span>
+      </div>
+      <div className="min-w-0">
+        {loading ? (
+          <>
+            <div className="h-6 w-14 bg-surface-border rounded animate-pulse mb-1" />
+            <div className="h-3 w-20 bg-surface-border/60 rounded animate-pulse" />
+          </>
+        ) : (
+          <>
+            <p className="text-xl font-bold text-ink font-mono tabular-nums leading-tight">{value}</p>
+            <p className="text-xs text-muted mt-0.5 leading-tight">{sublabel}</p>
+          </>
+        )}
+      </div>
+    </div>
+  )
+
+  if (to) {
+    return (
+      <Link to={to} className="block hover:bg-surface-hover rounded-xl transition-all duration-150 group">
+        {inner}
+        <p className="text-[10px] text-muted/60 px-5 pb-2 font-medium group-hover:text-accent transition-colors">{label}</p>
+      </Link>
+    )
+  }
+
+  return (
+    <div>
+      {inner}
+      <p className="text-[10px] text-muted/60 px-5 pb-2 font-medium">{label}</p>
+    </div>
+  )
 }
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -64,79 +94,113 @@ export default function Dashboard() {
 
   const { data: newListings } = useQuery({
     queryKey: ['properties', 'newest-dashboard'],
-    queryFn: () => fetchProperties({ sort_by: 'newest', page_size: 6 }),
+    queryFn: () => fetchProperties({ sort_by: 'newest', page_size: 8 }),
   })
 
   return (
-    <div className="p-6 space-y-6 max-w-[1400px]">
+    <div className="p-6 space-y-6 max-w-[1400px] animate-slide-up">
 
       {/* Header */}
-      <div>
-        <h1 className="text-xl font-bold text-white">{t('dashboard')}</h1>
-        <p className="text-sm text-muted mt-0.5">Quebec real estate investment overview</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-ink">{t('dashboard')}</h1>
+          <p className="text-sm text-muted mt-0.5">Quebec real estate investment overview</p>
+        </div>
+        <Link
+          to="/properties?listed_within=24h"
+          className="btn-primary shadow-md"
+        >
+          <Sparkles size={14} />
+          New today
+        </Link>
       </div>
 
-      {/* ── Stats row ──────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
-        <StatCard
-          label={t('propertiesInArea')}
-          value={stats?.total_properties.toLocaleString() ?? '—'}
-          icon={<Home size={16} className="text-blue-400" />}
-          iconColor="bg-blue-400/15"
-          borderClass="stat-border-blue"
-          loading={statsLoading}
-        />
-        <StatCard
-          label={t('newToday')}
-          value={stats?.new_today ?? '—'}
-          icon={<Zap size={16} className="text-accent" />}
-          iconColor="bg-accent/15"
-          borderClass="stat-border-purple"
-          loading={statsLoading}
-        />
-        <StatCard
-          label={t('strongOpps')}
-          value={stats?.strong_opportunities ?? '—'}
-          icon={<TrendingUp size={16} className="text-score-strong" />}
-          iconColor="bg-score-strong/15"
-          borderClass="stat-border-green"
-          loading={statsLoading}
-        />
-        <StatCard
-          label={t('worthInvest')}
-          value={stats?.worth_investigating ?? '—'}
-          icon={<BarChart2 size={16} className="text-score-worth" />}
-          iconColor="bg-score-worth/15"
-          borderClass="stat-border-purple"
-          loading={statsLoading}
-        />
-        <StatCard
-          label={t('priceDrops')}
-          value={stats?.price_drops_today ?? '—'}
-          icon={<ArrowDownCircle size={16} className="text-score-notrecommended" />}
-          iconColor="bg-score-notrecommended/15"
-          borderClass="stat-border-red"
-          loading={statsLoading}
-        />
-        <StatCard
-          label={t('avgScore')}
-          value={stats?.avg_score != null ? `${stats.avg_score}/100` : '—'}
-          icon={<Activity size={16} className="text-muted" />}
-          iconColor="bg-surface-hover"
-          borderClass="stat-border-muted"
-          loading={statsLoading}
-        />
+      {/* ── Metrics strip ──────────────────────────────────────────────── */}
+      <div className="bg-surface-card border border-surface-border rounded-2xl shadow-card overflow-hidden">
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 divide-x divide-y sm:divide-y-0 divide-surface-border">
+          <Metric
+            label="Total properties"
+            value={stats?.total_properties.toLocaleString() ?? '—'}
+            sublabel="in database"
+            icon={<Home size={18} />}
+            iconColor="text-blue-600"
+            iconBg="bg-blue-50"
+            loading={statsLoading}
+          />
+          <Metric
+            label="New listings"
+            value={stats?.new_today ?? '—'}
+            sublabel="added today"
+            icon={<Zap size={18} />}
+            iconColor="text-accent"
+            iconBg="bg-accent/10"
+            loading={statsLoading}
+            to="/properties?listed_within=24h"
+          />
+          <Metric
+            label="Great deals"
+            value={stats?.strong_opportunities ?? '—'}
+            sublabel="score 80+"
+            icon={<TrendingUp size={18} />}
+            iconColor="text-score-strong"
+            iconBg="bg-score-strong/10"
+            loading={statsLoading}
+            to="/properties?score_min=80&sort_by=score"
+          />
+          <Metric
+            label="Worth checking"
+            value={stats?.worth_investigating ?? '—'}
+            sublabel="score 60–79"
+            icon={<BarChart2 size={18} />}
+            iconColor="text-score-worth"
+            iconBg="bg-score-worth/10"
+            loading={statsLoading}
+            to="/properties?score_min=60&score_max=79"
+          />
+          <Metric
+            label="Price drops"
+            value={stats?.price_drops_today ?? '—'}
+            sublabel="since yesterday"
+            icon={<ArrowDownCircle size={18} />}
+            iconColor="text-red-500"
+            iconBg="bg-red-50"
+            loading={statsLoading}
+            to="/properties?status=price_changed"
+          />
+          <Metric
+            label="Avg deal score"
+            value={stats?.avg_score != null ? `${stats.avg_score.toFixed(0)}` : '—'}
+            sublabel="out of 100"
+            icon={<Activity size={18} />}
+            iconColor="text-muted"
+            iconBg="bg-surface-hover"
+            loading={statsLoading}
+          />
+          <Metric
+            label="Multi-site listings"
+            value={stats?.multi_site_properties ?? '—'}
+            sublabel="compare prices"
+            icon={<Globe size={18} />}
+            iconColor="text-blue-600"
+            iconBg="bg-blue-50"
+            loading={statsLoading}
+            to="/properties?multi_site=true"
+          />
+        </div>
       </div>
 
-      {/* ── Top opportunities (grid) ────────────────────────────────────── */}
+      {/* ── Top opportunities ──────────────────────────────────────────── */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="font-semibold text-slate-200">{t('topOpps')}</h2>
+          <div>
+            <h2 className="font-bold text-ink text-base">{t('topOpps')}</h2>
+            <p className="text-xs text-muted">Best investment opportunities right now</p>
+          </div>
           <Link
             to="/properties?sort_by=score&score_min=60"
-            className="text-xs text-accent hover:underline"
+            className="flex items-center gap-1 text-sm text-accent hover:underline font-semibold"
           >
-            {t('viewAll')}
+            View all <ChevronRight size={14} />
           </Link>
         </div>
 
@@ -155,69 +219,110 @@ export default function Dashboard() {
             <p className="text-muted text-sm">
               No scored properties yet — run the AI pipeline to generate scores.
             </p>
-            <p className="text-xs text-surface-border mt-1">
-              uvicorn app.main:app → APScheduler will trigger automatically.
-            </p>
           </div>
         )}
       </div>
 
-      {/* ── New listings ────────────────────────────────────────────────── */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="font-semibold text-slate-200">{t('newListings')}</h2>
-          <Link to="/properties?sort_by=newest" className="text-xs text-accent hover:underline">
-            {t('viewAll')}
-          </Link>
-        </div>
-        <div className="card p-0 divide-y divide-surface-border">
-          {newListings?.items.map(p => (
-            <Link
-              key={p.id}
-              to={`/properties/${p.id}`}
-              className="flex items-center justify-between px-5 py-3 hover:bg-surface-hover transition-colors"
-            >
-              <div className="min-w-0">
-                <p className="text-sm text-slate-300 truncate hover:text-white">{p.full_address}</p>
-                <p className="text-xs text-muted">{p.city} · {p.property_type.replace(/_/g, ' ')}</p>
-              </div>
-              <p className="text-sm font-mono font-semibold text-slate-200 shrink-0 ml-4 tabular-nums">
-                {fmtCAD(p.asking_price)}
-              </p>
+      {/* ── New listings + Quick filters ────────────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* New listings — 2/3 */}
+        <div className="lg:col-span-2 space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="font-bold text-ink text-base">{t('newListings')}</h2>
+              <p className="text-xs text-muted">Recently added to database</p>
+            </div>
+            <Link to="/properties?sort_by=newest" className="flex items-center gap-1 text-sm text-accent hover:underline font-semibold">
+              View all <ChevronRight size={14} />
             </Link>
-          ))}
-          {!newListings?.items.length && (
-            <div className="px-5 py-8 text-center text-muted text-sm">
-              No new listings recorded today.
+          </div>
+          <div className="bg-surface-card border border-surface-border rounded-2xl overflow-hidden shadow-card divide-y divide-surface-border">
+            {newListings?.items.map(p => (
+              <Link
+                key={p.id}
+                to={`/properties/${p.id}`}
+                className="flex items-center justify-between px-5 py-4 hover:bg-surface-hover transition-all duration-150 group"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm text-ink font-semibold truncate group-hover:text-accent transition-colors">{p.full_address}</p>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <p className="text-xs text-muted">{p.city} · {p.property_type.replace(/_/g, ' ')}</p>
+                    {p.is_new && (
+                      <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-accent text-white">NEW</span>
+                    )}
+                  </div>
+                </div>
+                <div className="text-right shrink-0 ml-4">
+                  <p className="text-sm font-mono font-bold text-ink tabular-nums">
+                    {fmtCAD(p.asking_price)}
+                  </p>
+                  <p className="text-[10px] text-muted flex items-center gap-0.5 justify-end mt-0.5">
+                    <Clock size={9} /> {timeAgo(p.first_seen_at)}
+                  </p>
+                </div>
+              </Link>
+            ))}
+            {!newListings?.items.length && (
+              <div className="px-5 py-8 text-center text-muted text-sm">
+                No new listings recorded today.
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Right sidebar: coverage + quick filters */}
+        <div className="space-y-4">
+          {/* Quick filters */}
+          <div>
+            <h2 className="font-bold text-ink text-base mb-3">Quick Filters</h2>
+            <div className="bg-surface-card border border-surface-border rounded-2xl p-4 shadow-card space-y-1">
+              {[
+                { label: 'New last 24h',       to: '/properties?listed_within=24h',               color: 'text-accent',                  bg: 'bg-accent/8' },
+                { label: 'Best deals (80+)',   to: '/properties?score_min=80&sort_by=score',       color: 'text-score-strong',            bg: 'bg-score-strong/8' },
+                { label: 'Price drops',        to: '/properties?status=price_changed',             color: 'text-red-500',                 bg: 'bg-red-50' },
+                { label: 'On multiple sites',  to: '/properties?multi_site=true',                  color: 'text-blue-600',                bg: 'bg-blue-50' },
+                { label: 'Highest yield',      to: '/properties?sort_by=score&score_min=50',       color: 'text-score-market',            bg: 'bg-score-market/8' },
+              ].map(link => (
+                <Link
+                  key={link.to}
+                  to={link.to}
+                  className={`flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-semibold ${link.color} ${link.bg} hover:opacity-80 transition-all duration-150`}
+                >
+                  {link.label}
+                  <ChevronRight size={14} />
+                </Link>
+              ))}
+            </div>
+          </div>
+
+          {/* Cities coverage */}
+          {stats?.cities && stats.cities.length > 0 && (
+            <div>
+              <h2 className="font-bold text-ink text-base mb-3">{t('coverage')}</h2>
+              <div className="bg-surface-card border border-surface-border rounded-2xl p-4 shadow-card">
+                <div className="flex flex-wrap gap-2">
+                  {stats.cities.map(city => (
+                    <Link
+                      key={city}
+                      to={`/properties?city=${encodeURIComponent(city)}`}
+                      className="px-3 py-1.5 bg-surface border border-surface-border rounded-full text-xs text-muted hover:text-accent hover:border-accent/40 hover:bg-accent/5 transition-all duration-150 font-medium"
+                    >
+                      {city}
+                    </Link>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
         </div>
       </div>
-
-      {/* ── Coverage ────────────────────────────────────────────────────── */}
-      {stats?.cities && stats.cities.length > 0 && (
-        <div className="space-y-3">
-          <h2 className="font-semibold text-slate-200">{t('coverage')}</h2>
-          <div className="flex flex-wrap gap-2">
-            {stats.cities.map(city => (
-              <Link
-                key={city}
-                to={`/properties?city=${encodeURIComponent(city)}`}
-                className="px-3 py-1 bg-surface-card border border-surface-border rounded-full text-xs text-muted hover:text-slate-200 hover:border-accent/40 transition-colors"
-              >
-                {city}
-              </Link>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   )
 }
 
 function CardSkeleton() {
   return (
-    <div className="bg-surface-card border border-surface-border rounded-xl overflow-hidden animate-pulse">
+    <div className="bg-surface-card border border-surface-border rounded-2xl overflow-hidden animate-pulse shadow-card">
       <div className="aspect-video bg-surface-hover" />
       <div className="p-4 space-y-3">
         <div className="h-3 w-24 bg-surface-border rounded" />

@@ -1,7 +1,12 @@
 """
 Centris.ca scraper — Quebec's primary MLS platform.
 Uses French URLs (/fr/) — English equivalents return 404.
-Requires Scrapfly ASP + JS rendering (16 credits/page).
+
+Session strategy:
+  - Search pages use ASP+JS + Scrapfly session to establish cookies.
+  - Detail pages first try cheap (session-only, no ASP/JS).
+  - If cheap fails, fall back to full ASP+JS with same session.
+  - This saves ~75 credits per detail page when cheap works.
 
 Card structure (confirmed from live HTML):
   div.property-thumbnail-item
@@ -9,12 +14,19 @@ Card structure (confirmed from live HTML):
     meta[itemprop="name"]         ← full descriptive name (address + type + city)
     a.property-thumbnail-summary-link[href]  ← /fr/triplex~a-vendre~area/MLS
     div.price                     ← "874 900 $"
+
+Detail page key patterns:
+  .carac-container > .carac-title + .carac-value   ← most specs
+  table rows in #divRevenuDepense                   ← income/expense financials
+  script[type="application/ld+json"]               ← coordinates (GeoCoordinates)
 """
+import json as _json
 import re
 from pathlib import Path
 from typing import Optional
 
 from bs4 import BeautifulSoup, Tag
+from scrapfly import ScrapeConfig
 
 from app.scrapers.base import BaseScraper, RawProperty
 
@@ -45,6 +57,10 @@ class CentrisScraper(BaseScraper):
     SOURCE = "centris"
     BASE_URL = "https://www.centris.ca"
 
+    # Scrapfly session name — shared across search + detail pages so cookies persist.
+    # This allows detail pages to pass Centris's session-validation checks.
+    _SESSION = "centris-session"
+
     # ── Public API ────────────────────────────────────────────────────────────
 
     async def scrape_listings(
@@ -55,6 +71,7 @@ class CentrisScraper(BaseScraper):
     ) -> list[RawProperty]:
         """
         Fetch one page of search results (~20 properties).
+        Uses a named Scrapfly session so cookies are available for detail pages.
         city examples: "montreal", "laval", "longueuil"
         """
         base = SEARCH_URLS.get(category, SEARCH_URLS["plex"])
@@ -62,7 +79,16 @@ class CentrisScraper(BaseScraper):
             base = f"{base}~{city.lower().replace(' ', '-')}"
         url = base if page == 1 else f"{base}?view=Thumbnail&uc={page}"
 
-        result = await self.fetch(url, asp=True, render_js=True)
+        config = ScrapeConfig(
+            url=url, asp=True, render_js=True, country="ca",
+            session=self._SESSION,
+        )
+        result = await self.client.async_scrape(config)
+        cost = result.context.get("cost", {})
+        self.logger.info(
+            f"[centris] {result.upstream_status_code} "
+            f"| credits={cost.get('total', '?')} | {url[-70:]}"
+        )
 
         if result.upstream_status_code != 200:
             self.logger.error(f"Search page returned {result.upstream_status_code}")
@@ -71,20 +97,71 @@ class CentrisScraper(BaseScraper):
         return self._parse_search_page(result.content, page_url=url)
 
     async def scrape_detail(self, url: str) -> Optional[RawProperty]:
-        """Fetch a single property detail page for full financial data."""
-        result = await self.fetch(url, asp=True, render_js=True)
-        if result.upstream_status_code != 200:
-            self.logger.error(f"Detail page {result.upstream_status_code}: {url}")
-            return None
-        return self._parse_detail_page(result.content, source_url=url)
+        """
+        Fetch a single property detail page.
 
-    async def probe(self, save_to: str = "centris_raw.html") -> str:
-        """Save raw HTML to disk for parser development."""
-        result = await self.fetch(SEARCH_URLS["plex"], asp=True, render_js=True)
-        html = result.content
-        Path(save_to).write_text(html, encoding="utf-8")
-        self.logger.info(f"Saved {len(html):,} bytes → {save_to}")
-        return html
+        Strategy 1 (cheap ~5 credits): session-only, no ASP/JS.
+          Works when Centris accepts the request with valid session cookies.
+
+        Strategy 2 (full ~80 credits): ASP+JS with session.
+          Fallback if strategy 1 returns blocked/empty content.
+        """
+        # ── Strategy 1: cheap (session cookies, no ASP/JS) ───────────────────
+        try:
+            cheap = ScrapeConfig(
+                url=url, asp=False, render_js=False, country="ca",
+                session=self._SESSION,
+            )
+            result = await self.client.async_scrape(cheap)
+            cost = result.context.get("cost", {}).get("total", 0)
+            self.logger.info(
+                f"[centris] detail-cheap: {result.upstream_status_code} "
+                f"| credits={cost} | {url[-55:]}"
+            )
+            if result.upstream_status_code == 200 and len(result.content) > 8_000:
+                prop = self._parse_detail_page(result.content, source_url=url)
+                if prop and prop.asking_price:
+                    await self._geocode_prop(prop)
+                    return prop
+        except Exception as exc:
+            self.logger.warning(f"Cheap detail attempt failed: {exc}")
+
+        # ── Strategy 2: full ASP+JS with session ─────────────────────────────
+        try:
+            full = ScrapeConfig(
+                url=url, asp=True, render_js=True, country="ca",
+                session=self._SESSION,
+            )
+            result = await self.client.async_scrape(full)
+            cost = result.context.get("cost", {}).get("total", 0)
+            self.logger.info(
+                f"[centris] detail-full: {result.upstream_status_code} "
+                f"| credits={cost} | {url[-55:]}"
+            )
+            if result.upstream_status_code == 200:
+                prop = self._parse_detail_page(result.content, source_url=url)
+                if prop:
+                    await self._geocode_prop(prop)
+                return prop
+        except Exception as exc:
+            self.logger.error(f"Full detail failed: {url} — {exc}")
+
+        return None
+
+    async def _geocode_prop(self, prop: RawProperty) -> None:
+        """Populate raw_data['lat'/'lng'] via geocoder if not already extracted from page."""
+        if prop.raw_data.get("lat"):
+            return
+        try:
+            from app.scrapers.geocoder import geocode
+            coords = await geocode(prop.full_address, prop.city)
+            if coords:
+                prop.raw_data["lat"], prop.raw_data["lng"] = coords
+                self.logger.debug(
+                    f"Geocoded {prop.full_address} → {coords}"
+                )
+        except Exception as exc:
+            self.logger.warning(f"Geocoding failed for {prop.full_address}: {exc}")
 
     # ── Search page parser ────────────────────────────────────────────────────
 
@@ -124,10 +201,9 @@ class CentrisScraper(BaseScraper):
         property_type = PROPERTY_TYPE_MAP.get(slug, "triplex")
 
         # ── Address & city from schema.org name meta ──────────────────────────
-        # Format: "Triplex à vendre à Montréal (Mercier/...), Montréal (Île), 3115 - 3119, Rue De Cadillac, MLS - Centris.ca"
         name_meta = card.select_one("meta[itemprop='name']")
         name_content = name_meta["content"] if name_meta else ""
-        full_address, city, neighborhood = self._parse_name_meta(name_content)
+        full_address, city, neighborhood, _, _ = self._parse_name_meta(name_content)
 
         # ── Price ─────────────────────────────────────────────────────────────
         price_tag = card.select_one(".price") or card.select_one(".price-section")
@@ -167,41 +243,149 @@ class CentrisScraper(BaseScraper):
         mls_match = re.search(r"/(\d{7,9})(?:[/?]|$)", source_url)
         mls_number = mls_match.group(1) if mls_match else None
 
-        # Property type
+        # Property type from URL slug
         type_match = re.search(r"/fr/([^~]+)~a-vendre", source_url)
         slug = type_match.group(1).lower() if type_match else "plex"
         property_type = PROPERTY_TYPE_MAP.get(slug, "triplex")
 
-        # Price
-        price_tag = soup.select_one(".price") or soup.select_one(".price-section")
+        # ── Build comprehensive key-value dict from the whole page ────────────
+        carac = self._build_carac_dict(soup)
+
+        # ── Coordinates from JSON-LD / data attributes ────────────────────────
+        lat, lng = self._extract_coordinates(soup)
+
+        # ── Price ─────────────────────────────────────────────────────────────
+        price_tag = (
+            soup.select_one(".price") or
+            soup.select_one(".price-section") or
+            soup.select_one("[class*='asking-price']")
+        )
         asking_price = self._parse_price(price_tag.get_text() if price_tag else "")
 
-        # Address from page title or meta
-        name_meta = soup.select_one("meta[itemprop='name']") or soup.select_one("meta[property='og:title']")
+        # ── Address ───────────────────────────────────────────────────────────
+        name_meta = (
+            soup.select_one("meta[itemprop='name']") or
+            soup.select_one("meta[property='og:title']")
+        )
         name_content = name_meta.get("content", "") if name_meta else ""
-        full_address, city, neighborhood = self._parse_name_meta(name_content)
+        full_address, city, neighborhood, street_number, street_name = self._parse_name_meta(name_content)
 
-        # Specs
-        sqft      = self._extract_int_by_label(soup, ["pi²", "sq. ft", "sqft", "superficie"])
-        year_built = self._extract_int_by_label(soup, ["année de construction", "year built", "construit en"])
-        unit_count = self._extract_int_by_label(soup, ["logements", "unités", "units"])
+        # Postal code — look in address elements or structured data
+        postal_code = self._extract_postal_code(soup)
 
-        # Quebec taxes & income (present on most plex listings)
-        muni_tax      = self._extract_money_by_label(soup, ["taxe municipal", "municipal tax", "taxes municipal"])
-        school_tax    = self._extract_money_by_label(soup, ["taxe scolaire", "school tax"])
-        rental_income = self._extract_money_by_label(soup, ["revenus locatifs", "revenu locatif", "rental income", "loyers"])
+        # ── Physical specs ────────────────────────────────────────────────────
+        # Unit count — "nombre d'unités" = "Résidentiel (2)" or "Résidentiel (2), Commercial (1)"
+        unit_raw = (
+            carac.get("nombre d'unités") or carac.get("nombre d'unites") or
+            carac.get("logements") or carac.get("unités") or ""
+        )
+        unit_count = self._parse_unit_count(unit_raw)
 
-        # Description
-        desc_tag = soup.select_one(".description") or soup.select_one("[class*='description']")
+        # Fallback: derive unit count from URL slug (duplex→2, triplex→3, etc.)
+        if not unit_count:
+            unit_count = {"duplex": 2, "triplex": 3, "quadruplex": 4, "quintuplex": 5}.get(slug)
+
+        # sqft — "superficie habitable" in pc (pieds carrés = sqft, no conversion)
+        sqft = (
+            self._extract_microdata_int(soup, "floorSize", "floorspace") or
+            self._lookup_sqft(carac,
+                "superficie habitable", "superficie du bâtiment",
+                "superficie", "pi²", "sq. ft", "living area")
+        )
+
+        lot_sqft = self._lookup_sqft(carac,
+            "superficie du terrain", "lot", "land size", "superficie totale du terrain")
+
+        year_built = self._lookup_int(carac,
+            "année de construction", "year built", "construit en", "construction")
+
+        floors = self._lookup_int(carac,
+            "étage", "niveaux", "floors", "niveau", "nombre d'étages", "nombre d'etages")
+
+        parking = self._lookup_int(carac,
+            "stationnement total", "stationnement", "parking", "garage")
+
+        # Bedrooms/bathrooms — check schema.org microdata first (most reliable on Centris)
+        bedrooms  = self._extract_microdata_int(soup, "numberOfBedrooms", "numberOfRooms") or \
+                    self._parse_bedrooms(
+                        carac.get("unité principale") or carac.get("unite principale") or
+                        carac.get("chambre", "") or carac.get("chambres", "") or ""
+                    ) or \
+                    self._lookup_int(carac, "chambres", "chambre", "bedrooms", "bedroom")
+        bathrooms = self._extract_microdata_float(soup, "numberOfBathroomsTotal", "numberOfBathrooms") or \
+                    self._parse_bathrooms(
+                        carac.get("unité principale") or carac.get("unite principale") or
+                        carac.get("salle de bain", "") or ""
+                    ) or \
+                    self._lookup_int(carac, "salles de bain", "salle de bain", "bathrooms", "bathroom")
+
+        # ── Financial fields ──────────────────────────────────────────────────
+        # Annual rental income — Centris labels it "revenus bruts potentiels"
+        rental_annual = self._lookup_money(carac,
+            "revenus bruts potentiels", "revenus locatifs", "revenu locatif",
+            "revenus bruts", "rental income", "loyers")
+        rental_income = round(rental_annual / 12, 2) if rental_annual else None
+
+        # Monthly rental fallback
+        if not rental_income:
+            rental_income = self._lookup_money(carac,
+                "loyer mensuel", "monthly rent", "revenu mensuel")
+
+        # Taxes — Centris labels them "municipales (2026)" and "scolaires (2025)"
+        # Use partial key match: "municipales" matches "municipales (2026)" etc.
+        municipal_tax = self._lookup_money(carac, "municipales")
+        school_tax    = self._lookup_money(carac, "scolaires")
+        condo_fees    = self._lookup_money(carac,
+            "frais de condo", "condo fee", "frais mensuels", "charges mensuelles")
+
+        # Évaluation foncière = land value ("terrain") + building value ("bâtiment")
+        # Centris shows these separately — total assessed value = sum of both
+        terrain  = self._lookup_money(carac, "terrain")
+        batiment = self._lookup_money(carac, "bâtiment", "batiment")
+        evaluation = None
+        if terrain and batiment:
+            evaluation = terrain + batiment
+        elif terrain or batiment:
+            evaluation = terrain or batiment
+
+        # Insurance — real amount from listing (better than our 0.2% estimate)
+        insurance_annual = self._lookup_money(carac, "assurances", "insurance")
+
+        # ── Days on market / listing date ─────────────────────────────────────
+        days_on_market = self._extract_days_on_market(soup, carac)
+        listed_at      = self._extract_listed_date(soup, carac)
+
+        # ── Description ───────────────────────────────────────────────────────
+        desc_tag = (
+            soup.select_one(".description") or
+            soup.select_one("[class*='description']") or
+            soup.select_one("#description") or
+            soup.select_one("[itemprop='description']")
+        )
         description = desc_tag.get_text(separator="\n", strip=True) if desc_tag else None
 
-        # Full-size photos from detail page
-        photos = list({
-            img.get("src") or img.get("data-src", "")
-            for img in soup.select("img[src], img[data-src]")
-            if (img.get("src") or img.get("data-src", "")).startswith("http")
-            and not (img.get("src") or "").endswith(".svg")
-        } - {""})
+        # ── Agent / broker contact ────────────────────────────────────────────
+        agent_name, agent_phone, agent_email, agency_name = self._extract_agent(soup)
+
+        # ── Photos — gallery (detail page has full-size) ─────────────────────
+        photos = self._extract_photos(soup)
+
+        # ── Per-unit data for plexes (store in raw_data for future use) ───────
+        units_data = self._extract_units_data(soup, carac)
+
+        # Store full carac dict + coordinates in raw_data
+        raw_data: dict = {
+            "source_url": source_url,
+            "mls": mls_number,
+            "carac": carac,
+        }
+        if lat and lng:
+            raw_data["lat"] = lat
+            raw_data["lng"] = lng
+        if units_data:
+            raw_data["units"] = units_data
+        if insurance_annual:
+            raw_data["insurance_annual"] = insurance_annual
 
         return RawProperty(
             source=self.SOURCE,
@@ -209,60 +393,524 @@ class CentrisScraper(BaseScraper):
             source_listing_id=mls_number,
             mls_number=mls_number,
             full_address=full_address,
+            street_number=street_number,
+            street_name=street_name,
             city=city,
             neighborhood=neighborhood,
+            postal_code=postal_code,
             property_type=property_type,
             asking_price=asking_price,
             sqft_total=sqft,
+            lot_sqft=lot_sqft,
             year_built=year_built,
+            floors=floors,
+            bedrooms_total=bedrooms,
+            bathrooms_total=bathrooms,
+            parking_spaces=parking,
             unit_count=unit_count,
             rental_income_monthly=rental_income,
-            municipal_taxes_annual=muni_tax,
+            municipal_taxes_annual=municipal_tax,
             school_taxes_annual=school_tax,
+            condo_fees_monthly=condo_fees,
+            evaluation_fonciere=evaluation,
             description=description,
             photos=photos,
-            raw_data={"source_url": source_url, "mls": mls_number},
+            days_on_market=days_on_market,
+            listed_at=listed_at,
+            agent_name=agent_name,
+            agent_phone=agent_phone,
+            agent_email=agent_email,
+            agency_name=agency_name,
+            raw_data=raw_data,
         )
 
-    # ── Helpers ───────────────────────────────────────────────────────────────
+    # ── Coordinate extractor ──────────────────────────────────────────────────
 
     @staticmethod
-    def _parse_name_meta(content: str) -> tuple[Optional[str], Optional[str], Optional[str]]:
+    def _extract_coordinates(soup: BeautifulSoup) -> tuple[Optional[float], Optional[float]]:
         """
-        Parse Centris schema.org name content into (full_address, city, neighborhood).
-        Input: "Triplex à vendre à Montréal (Mercier/Hochelaga), Montréal (Île), 3115 - 3119, Rue Cadillac, 16288482 - Centris.ca"
+        Extract lat/lng from the detail page HTML.
+        Checks in order: JSON-LD GeoCoordinates → data-lat/lng attrs → JS variables.
+        Returns (lat, lng) or (None, None).
+        """
+        # Pattern 1 — JSON-LD schema.org
+        for script in soup.select("script[type='application/ld+json']"):
+            try:
+                text = script.string or ""
+                if not text.strip():
+                    continue
+                data = _json.loads(text)
+                items = data if isinstance(data, list) else [data]
+                for item in items:
+                    geo = item.get("geo") or {}
+                    if not geo:
+                        for sub in item.get("@graph", []):
+                            geo = sub.get("geo", {})
+                            if geo:
+                                break
+                    if geo.get("latitude") and geo.get("longitude"):
+                        return float(geo["latitude"]), float(geo["longitude"])
+            except (ValueError, TypeError, AttributeError):
+                pass
+
+        # Pattern 2 — data-lat / data-lng HTML attributes
+        for el in soup.select("[data-lat][data-lng]"):
+            try:
+                lat, lng = float(el["data-lat"]), float(el["data-lng"])
+                if 44 <= lat <= 63 and -80 <= lng <= -57:
+                    return lat, lng
+            except (ValueError, TypeError, KeyError):
+                pass
+
+        for el in soup.select("[data-latitude][data-longitude]"):
+            try:
+                lat, lng = float(el["data-latitude"]), float(el["data-longitude"])
+                if 44 <= lat <= 63 and -80 <= lng <= -57:
+                    return lat, lng
+            except (ValueError, TypeError, KeyError):
+                pass
+
+        # Pattern 3 — inline JS variable ("lat": 45.xxx, "lng": -73.xxx)
+        for script in soup.find_all("script"):
+            text = script.string or ""
+            if not text or "lat" not in text.lower():
+                continue
+            m_lat = re.search(r'"lat(?:itude)?"\s*:\s*(-?\d{2}\.\d{4,})', text)
+            m_lng = re.search(r'"l(?:ng|ong(?:itude)?)?"\s*:\s*(-?\d{2,3}\.\d{4,})', text)
+            if m_lat and m_lng:
+                try:
+                    lat, lng = float(m_lat.group(1)), float(m_lng.group(1))
+                    if 44 <= lat <= 63 and -80 <= lng <= -57:
+                        return lat, lng
+                except (ValueError, TypeError):
+                    pass
+
+        return None, None
+
+    # ── Carac dict builder ────────────────────────────────────────────────────
+
+    @staticmethod
+    def _build_carac_dict(soup: BeautifulSoup) -> dict[str, str]:
+        """
+        Build a {label_lower: value_text} dict from all structured key-value
+        pairs on the page. Handles every HTML pattern Centris uses:
+          1. .carac-container with .carac-title + .carac-value siblings
+          2. dt/dd definition lists
+          3. Table rows (income/expense section)
+          4. li with two child spans
+          5. Generic two-child div containers
+        Storing ALL pairs means we never miss a field even if Centris changes layout.
+        """
+        result: dict[str, str] = {}
+
+        # Pattern 1 — .carac-container (main specs section)
+        for container in soup.select(
+            ".carac-container, [class*='carac-container'], "
+            "[class*='spec-item'], [class*='feature-item']"
+        ):
+            title_el = (
+                container.select_one(".carac-title") or
+                container.select_one("[class*='carac-title']") or
+                container.select_one("[class*='spec-label']") or
+                container.select_one("[class*='label']")
+            )
+            value_el = (
+                container.select_one(".carac-value") or
+                container.select_one("[class*='carac-value']") or
+                container.select_one("[class*='spec-value']") or
+                container.select_one("[class*='value']")
+            )
+            if title_el and value_el and title_el is not value_el:
+                label = title_el.get_text(strip=True).lower()
+                value = value_el.get_text(strip=True)
+                if label and value:
+                    result[label] = value
+
+        # Pattern 2 — dl/dt/dd (some Centris sections use definition lists)
+        for dl in soup.select("dl"):
+            dts = dl.select("dt")
+            dds = dl.select("dd")
+            for dt, dd in zip(dts, dds):
+                label = dt.get_text(strip=True).lower()
+                value = dd.get_text(strip=True)
+                if label and value:
+                    result[label] = value
+
+        # Pattern 3 — table rows (revenus et dépenses, évaluation)
+        for table in soup.select("table"):
+            for row in table.select("tr"):
+                cells = row.select("td, th")
+                if len(cells) >= 2:
+                    label = cells[0].get_text(strip=True).lower()
+                    value = cells[-1].get_text(strip=True)
+                    if label and value and label != value:
+                        result[label] = value
+
+        # Pattern 4 — li elements with two spans (teaser / summary bar)
+        for li in soup.select("li"):
+            spans = li.select("span")
+            if len(spans) >= 2:
+                label = spans[0].get_text(strip=True).lower()
+                value = spans[-1].get_text(strip=True)
+                if label and value and label != value and len(label) < 80:
+                    result.setdefault(label, value)  # don't overwrite Pattern 1/2/3
+
+        # Pattern 5 — labeled sections with header + value in sibling divs
+        for section in soup.select(
+            "[class*='info-row'], [class*='detail-row'], [class*='data-row']"
+        ):
+            children = [c for c in section.children if getattr(c, "name", None)]
+            if len(children) == 2:
+                label = children[0].get_text(strip=True).lower()
+                value = children[1].get_text(strip=True)
+                if label and value and len(label) < 80:
+                    result.setdefault(label, value)
+
+        return result
+
+    # ── Carac dict lookup helpers ─────────────────────────────────────────────
+
+    @staticmethod
+    def _lookup_money(carac: dict[str, str], *keys: str) -> Optional[float]:
+        for key in keys:
+            for label, val in carac.items():
+                if key in label:
+                    digits = re.sub(r"[^\d]", "", val)
+                    if digits and int(digits) > 0:
+                        return float(digits)
+        return None
+
+    @staticmethod
+    def _lookup_int(carac: dict[str, str], *keys: str) -> Optional[int]:
+        for key in keys:
+            for label, val in carac.items():
+                if key in label:
+                    nums = re.findall(r"\d+", val)
+                    if nums:
+                        return int(nums[0])
+        return None
+
+    @staticmethod
+    def _lookup_float(carac: dict[str, str], *keys: str) -> Optional[float]:
+        for key in keys:
+            for label, val in carac.items():
+                if key in label:
+                    nums = re.findall(r"\d+\.?\d*", val)
+                    if nums:
+                        return float(nums[0])
+        return None
+
+    @staticmethod
+    def _lookup_sqft(carac: dict[str, str], *keys: str) -> Optional[int]:
+        """Extract sqft, converting m² to sqft if needed."""
+        for key in keys:
+            for label, val in carac.items():
+                if key in label:
+                    nums = re.findall(r"[\d\s,]+\.?\d*", val)
+                    if nums:
+                        raw = float(re.sub(r"[^\d.]", "", nums[0].replace(" ", "").replace(",", "")))
+                        # Convert m² to sqft if unit is metric
+                        if re.search(r"m2|m²|mètre|metre", val, re.IGNORECASE):
+                            raw = raw * 10.764
+                        if 50 < raw < 50_000:
+                            return int(raw)
+        return None
+
+    # ── Specialised extractors ────────────────────────────────────────────────
+
+    @staticmethod
+    def _extract_postal_code(soup: BeautifulSoup) -> Optional[str]:
+        """Find a Canadian postal code (A1A 1A1) anywhere on the page."""
+        # Check structured data first
+        for el in soup.select("[itemprop='postalCode'], [class*='postal'], [class*='zip']"):
+            text = el.get_text(strip=True)
+            m = re.search(r"[A-Z]\d[A-Z]\s?\d[A-Z]\d", text.upper())
+            if m:
+                return m.group().replace(" ", "")
+        # Fallback: scan whole page text
+        page_text = soup.get_text()
+        m = re.search(r"\b([A-Z]\d[A-Z])\s*(\d[A-Z]\d)\b", page_text.upper())
+        if m:
+            return m.group(1) + m.group(2)
+        return None
+
+    @staticmethod
+    def _extract_days_on_market(soup: BeautifulSoup, carac: dict[str, str]) -> Optional[int]:
+        # Try carac dict first
+        for key in ("temps sur le marché", "days on market", "jours sur le marché", "sur le marché"):
+            for label, val in carac.items():
+                if key in label:
+                    nums = re.findall(r"\d+", val)
+                    if nums:
+                        n = int(nums[0])
+                        if "semaine" in val.lower() or "week" in val.lower():
+                            return n * 7
+                        if "mois" in val.lower() or "month" in val.lower():
+                            return n * 30
+                        return n
+        # Fallback: look for "X jours" anywhere
+        text = soup.get_text()
+        m = re.search(r"(\d+)\s*jours?", text, re.IGNORECASE)
+        if m:
+            return int(m.group(1))
+        return None
+
+    @staticmethod
+    def _extract_listed_date(soup: BeautifulSoup, carac: dict[str, str]) -> Optional[str]:
+        """Return ISO date string (YYYY-MM-DD) if listing date is found."""
+        for key in ("date d'inscription", "listed", "date de mise en marché", "inscrit le"):
+            for label, val in carac.items():
+                if key in label:
+                    m = re.search(r"(\d{4}[-/]\d{2}[-/]\d{2})", val)
+                    if m:
+                        return m.group(1).replace("/", "-")
+                    # French date: "15 janvier 2025"
+                    m2 = re.search(r"(\d{1,2})\s+(\w+)\s+(\d{4})", val)
+                    if m2:
+                        return f"{m2.group(3)}-01-01"  # rough fallback
+        # Check meta tags
+        for meta in soup.select("meta[property='article:published_time'], meta[name='date']"):
+            content = meta.get("content", "")
+            m = re.search(r"(\d{4}-\d{2}-\d{2})", content)
+            if m:
+                return m.group(1)
+        return None
+
+    def _extract_agent(self, soup: BeautifulSoup) -> tuple[
+        Optional[str], Optional[str], Optional[str], Optional[str]
+    ]:
+        """Extract broker/agent contact from the broker card on the detail page."""
+        broker_card = (
+            soup.select_one(".broker-info") or
+            soup.select_one("[class*='broker']") or
+            soup.select_one("[class*='courtier']") or
+            soup.select_one("[class*='agent']")
+        )
+        if not broker_card:
+            return None, None, None, None
+
+        name_tag   = broker_card.select_one("[class*='name']") or broker_card.select_one("strong")
+        phone_tag  = (
+            broker_card.select_one("[href^='tel:']") or
+            broker_card.select_one("[class*='phone']") or
+            broker_card.select_one("[class*='telephone']")
+        )
+        email_tag  = broker_card.select_one("[href^='mailto:']")
+        agency_tag = (
+            broker_card.select_one("[class*='agency']") or
+            broker_card.select_one("[class*='agence']") or
+            broker_card.select_one("[class*='firm']")
+        )
+
+        agent_name   = name_tag.get_text(strip=True) if name_tag else None
+        agent_phone  = (
+            phone_tag.get("href", "").replace("tel:", "").strip()
+            if phone_tag else None
+        )
+        agent_email  = (
+            email_tag.get("href", "").replace("mailto:", "").strip()
+            if email_tag else None
+        )
+        agency_name  = agency_tag.get_text(strip=True) if agency_tag else None
+
+        return agent_name, agent_phone, agent_email, agency_name
+
+    @staticmethod
+    def _extract_photos(soup: BeautifulSoup) -> list[str]:
+        """Extract all full-size photos, preferring gallery/slideshow images."""
+        seen: set[str] = set()
+        photos: list[str] = []
+
+        # Priority 1: gallery / carousel images
+        for img in soup.select(
+            "[class*='gallery'] img, [class*='carousel'] img, "
+            "[class*='slider'] img, [class*='photo'] img"
+        ):
+            src = img.get("src") or img.get("data-src") or img.get("data-lazy-src", "")
+            if src and src.startswith("http") and not src.endswith(".svg") and src not in seen:
+                seen.add(src)
+                photos.append(src)
+
+        # Priority 2: all other images (skip icons/logos)
+        for img in soup.select("img[src], img[data-src]"):
+            src = img.get("src") or img.get("data-src", "")
+            if (src and src.startswith("http") and not src.endswith(".svg")
+                    and src not in seen
+                    and not any(skip in src for skip in ["logo", "icon", "placeholder", "blank"])):
+                seen.add(src)
+                photos.append(src)
+
+        return photos
+
+    @staticmethod
+    def _extract_units_data(soup: BeautifulSoup, carac: dict[str, str]) -> list[dict]:
+        """
+        Extract per-unit details for plex listings.
+        Centris shows a table like:
+          Logement 1 | 3.5 pièces | 850 pi² | 950 $/mois | Occupé
+          Logement 2 | 4.5 pièces | 1050 pi² | 1100 $/mois | Vacant
+
+        Returns list of dicts: [{unit: 1, rooms: "3.5", sqft: 850, rent: 950, occupied: True}, ...]
+        """
+        units = []
+
+        # Look for unit tables
+        for table in soup.select("table"):
+            header_text = table.get_text().lower()
+            if not any(kw in header_text for kw in ["logement", "unit", "loyer", "appartement"]):
+                continue
+            rows = table.select("tr")
+            for row in rows[1:]:  # skip header row
+                cells = [c.get_text(strip=True) for c in row.select("td")]
+                if not cells:
+                    continue
+                unit_data: dict = {}
+                row_text = " ".join(cells).lower()
+
+                # Unit number
+                m = re.search(r"logement\s*(\d+)|unit\s*(\d+)|appart\w*\s*(\d+)", row_text)
+                if m:
+                    unit_data["unit"] = int(next(g for g in m.groups() if g))
+
+                # Room type (3.5, 4.5 pièces)
+                m = re.search(r"(\d+\.?\d*)\s*pièces?", row_text)
+                if m:
+                    unit_data["rooms"] = m.group(1)
+
+                # sqft
+                m = re.search(r"(\d[\d\s,]*)\s*pi²", row_text)
+                if m:
+                    unit_data["sqft"] = int(re.sub(r"[^\d]", "", m.group(1)))
+
+                # Monthly rent
+                for cell in cells:
+                    m = re.search(r"(\d[\d\s,]*)\s*\$/?\s*mois", cell, re.IGNORECASE)
+                    if not m:
+                        m = re.search(r"\$\s*(\d[\d\s,]+)", cell)
+                    if m:
+                        unit_data["rent_monthly"] = float(re.sub(r"[^\d]", "", m.group(1)))
+                        break
+
+                # Occupancy
+                if "vacant" in row_text:
+                    unit_data["occupied"] = False
+                elif any(kw in row_text for kw in ["occupé", "occupied", "locataire"]):
+                    unit_data["occupied"] = True
+
+                if unit_data:
+                    units.append(unit_data)
+
+        # Also look in carac dict for individual unit entries
+        for label, val in carac.items():
+            m = re.match(r"logement\s*(\d+)", label)
+            if m:
+                unit_num = int(m.group(1))
+                rent_m = re.search(r"(\d[\d\s,]*)\s*\$", val)
+                rent = float(re.sub(r"[^\d]", "", rent_m.group(1))) if rent_m else None
+                units.append({"unit": unit_num, "rent_monthly": rent, "raw": val})
+
+        return units
+
+    # ── Address parser ────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _parse_name_meta(content: str) -> tuple[
+        Optional[str], Optional[str], Optional[str], Optional[str], Optional[str]
+    ]:
+        """
+        Parse Centris schema.org name → (full_address, city, neighborhood, street_number, street_name).
+        Input: "Triplex à vendre à Montréal (Mercier/Hochelaga), Montréal (Île), 3115 - 3119, Rue De Cadillac, MLS - Centris.ca"
         """
         if not content:
-            return None, None, None
+            return None, None, None, None, None
 
         # Strip trailing MLS and branding
         content = re.sub(r",?\s*\d{7,9}\s*-\s*Centris\.ca$", "", content, flags=re.IGNORECASE).strip()
 
-        # City: specifically match "à vendre à CITY" — avoids capturing "vendre" from "à vendre"
+        # City: match "à vendre à CITY"
         city_match = re.search(r"à vendre à\s+([A-ZÀ-Ÿ][^(,]+)", content)
         city = city_match.group(1).strip() if city_match else None
 
-        # Neighborhood: first parenthesized value (e.g. "Mercier/Hochelaga-Maisonneuve")
+        # Neighborhood: first parenthesized value
         neighborhood_match = re.search(r"\(([^)]+)\)", content)
         neighborhood = neighborhood_match.group(1).strip() if neighborhood_match else None
 
-        # Street address: find the numeric street-number segment, take it + the next segment
+        # Street address: find numeric street-number segment
         parts = [p.strip() for p in content.split(",")]
         street_num_idx = None
         for i, part in enumerate(parts):
-            # Street number looks like "3115" or "3115 - 3119" or "10650 - 10652"
             if re.match(r"^\d+[\s\-–]*\d*$", part.strip()):
                 street_num_idx = i
                 break
 
+        street_number = street_name = full_address = None
         if street_num_idx is not None and street_num_idx + 1 < len(parts):
-            street_num  = parts[street_num_idx]
-            street_name = parts[street_num_idx + 1]
-            full_address = f"{street_num}, {street_name}, {city}" if city else f"{street_num}, {street_name}"
-        else:
-            full_address = None
+            street_number = parts[street_num_idx].strip()
+            street_name   = parts[street_num_idx + 1].strip()
+            full_address  = f"{street_number}, {street_name}, {city}" if city else f"{street_number}, {street_name}"
 
-        return full_address, city, neighborhood
+        return full_address, city, neighborhood, street_number, street_name
+
+    # ── Shared helpers ────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _extract_microdata_int(soup: BeautifulSoup, *props: str) -> Optional[int]:
+        """Extract integer from schema.org itemprop microdata attributes."""
+        for prop in props:
+            el = soup.select_one(f"[itemprop='{prop}']")
+            if el:
+                val = el.get("content") or el.get_text(strip=True)
+                nums = re.findall(r"\d+", str(val))
+                if nums:
+                    return int(nums[0])
+        return None
+
+    @staticmethod
+    def _extract_microdata_float(soup: BeautifulSoup, *props: str) -> Optional[float]:
+        """Extract float from schema.org itemprop microdata attributes."""
+        for prop in props:
+            el = soup.select_one(f"[itemprop='{prop}']")
+            if el:
+                val = el.get("content") or el.get_text(strip=True)
+                nums = re.findall(r"\d+\.?\d*", str(val))
+                if nums:
+                    return float(nums[0])
+        return None
+
+    @staticmethod
+    def _parse_unit_count(text: str) -> Optional[int]:
+        """
+        Parse "Résidentiel (2)" or "Résidentiel (2), Commercial (1)" → 2.
+        Returns only the residential unit count.
+        """
+        if not text:
+            return None
+        m = re.search(r"r[ée]sidentiel\s*\((\d+)\)", text, re.IGNORECASE)
+        if m:
+            return int(m.group(1))
+        # Fallback: first parenthesised number
+        m = re.search(r"\((\d+)\)", text)
+        if m:
+            return int(m.group(1))
+        # Plain number
+        nums = re.findall(r"\d+", text)
+        return int(nums[0]) if nums else None
+
+    @staticmethod
+    def _parse_bedrooms(text: str) -> Optional[int]:
+        """Parse "4 pièces, 2 chambres, 1 salle de bain" → 2 bedrooms."""
+        if not text:
+            return None
+        m = re.search(r"(\d+)\s*chambre", text, re.IGNORECASE)
+        return int(m.group(1)) if m else None
+
+    @staticmethod
+    def _parse_bathrooms(text: str) -> Optional[float]:
+        """Parse "4 pièces, 2 chambres, 1 salle de bain" → 1.0 bathrooms."""
+        if not text:
+            return None
+        m = re.search(r"(\d+\.?\d*)\s*salle", text, re.IGNORECASE)
+        return float(m.group(1)) if m else None
 
     @staticmethod
     def _parse_price(text: str) -> Optional[float]:
@@ -270,23 +918,3 @@ class CentrisScraper(BaseScraper):
             return None
         digits = re.sub(r"[^\d]", "", text)
         return float(digits) if digits else None
-
-    @staticmethod
-    def _extract_int_by_label(soup: BeautifulSoup, labels: list[str]) -> Optional[int]:
-        for label in labels:
-            for el in soup.find_all(string=re.compile(label, re.IGNORECASE)):
-                nums = re.findall(r"\d[\d\s,]*", el.parent.get_text() if el.parent else "")
-                if nums:
-                    return int(re.sub(r"[^\d]", "", nums[0]))
-        return None
-
-    @staticmethod
-    def _extract_money_by_label(soup: BeautifulSoup, labels: list[str]) -> Optional[float]:
-        for label in labels:
-            for el in soup.find_all(string=re.compile(label, re.IGNORECASE)):
-                nums = re.findall(r"[\d\s,]+", el.parent.get_text() if el.parent else "")
-                if nums:
-                    val = re.sub(r"[^\d]", "", nums[0])
-                    if val:
-                        return float(val)
-        return None

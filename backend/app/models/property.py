@@ -124,6 +124,14 @@ class Property(Base):
     primary_source: Mapped[Optional[str]] = mapped_column(String(50))
     listing_url: Mapped[Optional[str]] = mapped_column(String(1000))
 
+    # ── Agent / Dealer Contact ─────────────────────────────────────────────────
+    # Stored on Property for fast composite matching (no JOIN needed)
+    # Filled on create; updated via _fill_gaps when blank
+    agent_name:  Mapped[Optional[str]] = mapped_column(String(200))
+    agent_phone: Mapped[Optional[str]] = mapped_column(String(50))
+    agent_email: Mapped[Optional[str]] = mapped_column(String(200))
+    agency_name: Mapped[Optional[str]] = mapped_column(String(200))
+
     # ── Media & Description ───────────────────────────────────────────────────
     photos: Mapped[Optional[list]] = mapped_column(JSONB, default=list)
     description: Mapped[Optional[str]] = mapped_column(Text)
@@ -134,6 +142,9 @@ class Property(Base):
     municipal_taxes_annual: Mapped[Optional[float]] = mapped_column(Float)
     school_taxes_annual: Mapped[Optional[float]] = mapped_column(Float)
     condo_fees_monthly: Mapped[Optional[float]] = mapped_column(Float)
+    # Évaluation foncière — city's assessed value (≠ market price, triennial roll)
+    # When present, used instead of asking_price for tax estimation → much more accurate
+    evaluation_fonciere: Mapped[Optional[float]] = mapped_column(Float)
     # Raw dump of all expense fields from listing — source of truth for recalculation
     raw_expenses: Mapped[Optional[dict]] = mapped_column(JSONB, default=dict)
 

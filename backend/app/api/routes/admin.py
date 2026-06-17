@@ -105,5 +105,15 @@ async def run_scrape() -> dict:
     """Trigger one scrape cycle immediately (runs in background)."""
     import asyncio
     from app.scheduler import scrape_job
+    from app.scrape_state import scrape_progress
+    if scrape_progress.running:
+        return {"status": "already running"}
     asyncio.create_task(scrape_job())
     return {"status": "scrape job started in background"}
+
+
+@router.get("/scrape-status")
+async def scrape_status() -> dict:
+    """Live scrape progress — polled every 2s by the frontend status bar."""
+    from app.scrape_state import scrape_progress
+    return scrape_progress.to_dict()

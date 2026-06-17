@@ -1,9 +1,14 @@
 """
 Property deduplicator — takes RawProperty from any scraper and upserts into DB.
 
-Deduplication strategy:
-  1. MLS number — primary key shared by Centris, Realtor, Zolo
-  2. Address hash — fallback for DuProprio (no MLS); SHA-256 of normalized address+city
+Deduplication strategy (4-tier cascade):
+  1. MLS number        — exact match; shared by Centris, Realtor, Zolo
+  2. Address hash      — SHA-256 of normalized address+city; fallback for DuProprio
+  3. Composite score   — weighted signals: agent email/phone, postal code, type, price
+                         Threshold ≥ 60 pts → treat as duplicate
+                         Covers ReMax, Royal LePage, and other non-MLS sites
+  4. PostGIS proximity — ST_DWithin 15 m + same property_type; final fallback
+                         Only runs when lat/lng present in raw_data
 
 On each call:
   - Finds or creates the properties row
@@ -19,7 +24,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from geoalchemy2.elements import WKTElement
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -71,22 +76,121 @@ class PropertyDeduplicator:
 
         return existing, is_new
 
-    # ── Find ──────────────────────────────────────────────────────────────────
+    # ── Find (4-tier cascade) ─────────────────────────────────────────────────
 
     async def _find_existing(self, raw: RawProperty) -> Optional[Property]:
+        # Tier 1: MLS exact match
         if raw.mls_number:
-            return (await self.session.scalars(
+            found = (await self.session.scalars(
                 select(Property).where(Property.mls_number == raw.mls_number)
             )).first()
+            if found:
+                return found
 
+        # Tier 2: Address hash exact match
         if raw.full_address:
-            return (await self.session.scalars(
+            found = (await self.session.scalars(
                 select(Property).where(
                     Property.address_hash == self._address_hash(raw)
                 )
             )).first()
+            if found:
+                return found
+
+        # Tier 3: Composite fingerprint (requires postal_code or agent contact)
+        if raw.postal_code or raw.agent_email or raw.agent_phone or raw.agent_name:
+            candidates = await self._composite_candidates(raw)
+            for candidate in candidates:
+                if self._composite_score(candidate, raw) >= 60:
+                    return candidate
+
+        # Tier 4: PostGIS proximity fallback (only when coordinates available)
+        found = await self._find_by_proximity(raw)
+        if found:
+            return found
 
         return None
+
+    async def _composite_candidates(self, raw: RawProperty) -> list[Property]:
+        """Fetch candidate properties in same city+type to score against."""
+        stmt = select(Property).where(
+            func.lower(Property.city) == (raw.city or "").lower()
+        )
+        raw_type = PROPERTY_TYPE_MAP.get(raw.property_type or "", None)
+        if raw_type:
+            stmt = stmt.where(Property.property_type == raw_type)
+        return list((await self.session.scalars(stmt.limit(50))).all())
+
+    def _composite_score(self, existing: Property, raw: RawProperty) -> int:
+        """
+        Weighted confidence score for cross-site deduplication.
+        Score ≥ 60 → treat as the same property.
+        """
+        score = 0
+
+        # Agent email — strongest signal (40 pts)
+        if existing.agent_email and raw.agent_email:
+            if existing.agent_email.lower().strip() == raw.agent_email.lower().strip():
+                score += 40
+
+        # Agent phone — strong signal (35 pts)
+        if existing.agent_phone and raw.agent_phone:
+            if self._normalize_phone(existing.agent_phone) == self._normalize_phone(raw.agent_phone):
+                score += 35
+
+        # Postal code (25 pts)
+        if existing.postal_code and raw.postal_code:
+            if existing.postal_code.replace(" ", "").upper() == raw.postal_code.replace(" ", "").upper():
+                score += 25
+
+        # Property type (15 pts)
+        raw_type = PROPERTY_TYPE_MAP.get(raw.property_type or "", None)
+        if raw_type and existing.property_type == raw_type:
+            score += 15
+
+        # Price proximity ±2% (15 pts)
+        if existing.asking_price and raw.asking_price and existing.asking_price > 0:
+            if abs(existing.asking_price - raw.asking_price) / existing.asking_price <= 0.02:
+                score += 15
+
+        # Agent name normalized (15 pts)
+        if existing.agent_name and raw.agent_name:
+            if self._normalize_text(existing.agent_name) == self._normalize_text(raw.agent_name):
+                score += 15
+
+        # Agency name normalized (10 pts)
+        if existing.agency_name and raw.agency_name:
+            if self._normalize_text(existing.agency_name) == self._normalize_text(raw.agency_name):
+                score += 10
+
+        # Unit count (10 pts)
+        if existing.unit_count and raw.unit_count and existing.unit_count == raw.unit_count:
+            score += 10
+
+        return score
+
+    async def _find_by_proximity(self, raw: RawProperty) -> Optional[Property]:
+        """PostGIS: find property within 15 metres of coordinates + same type."""
+        lat = raw.raw_data.get("lat")
+        lng = raw.raw_data.get("lng")
+        if not lat or not lng:
+            return None
+        try:
+            point_wkt = f"SRID=4326;POINT({float(lng)} {float(lat)})"
+        except (ValueError, TypeError):
+            return None
+
+        stmt = select(Property).where(
+            func.ST_DWithin(
+                func.ST_Transform(Property.location, 3857),
+                func.ST_Transform(func.ST_GeomFromEWKT(point_wkt), 3857),
+                15,
+            )
+        )
+        raw_type = PROPERTY_TYPE_MAP.get(raw.property_type or "", None)
+        if raw_type:
+            stmt = stmt.where(Property.property_type == raw_type)
+        return (await self.session.scalars(stmt)).first()
 
     # ── Create ────────────────────────────────────────────────────────────────
 
@@ -130,10 +234,15 @@ class PropertyDeduplicator:
             listing_url=raw.source_url,
             photos=raw.photos or [],
             description=raw.description,
+            agent_name=raw.agent_name,
+            agent_phone=raw.agent_phone,
+            agent_email=raw.agent_email,
+            agency_name=raw.agency_name,
             rental_income_monthly=raw.rental_income_monthly,
             municipal_taxes_annual=raw.municipal_taxes_annual,
             school_taxes_annual=raw.school_taxes_annual,
             condo_fees_monthly=raw.condo_fees_monthly,
+            evaluation_fonciere=raw.evaluation_fonciere,
             raw_expenses={},
             is_new=True,
             needs_reanalysis=True,
@@ -192,10 +301,15 @@ class PropertyDeduplicator:
             ("neighborhood",            raw.neighborhood),
             ("postal_code",             raw.postal_code),
             ("description",             raw.description),
+            ("agent_name",              raw.agent_name),
+            ("agent_phone",             raw.agent_phone),
+            ("agent_email",             raw.agent_email),
+            ("agency_name",             raw.agency_name),
             ("rental_income_monthly",   raw.rental_income_monthly),
             ("municipal_taxes_annual",  raw.municipal_taxes_annual),
             ("school_taxes_annual",     raw.school_taxes_annual),
             ("condo_fees_monthly",      raw.condo_fees_monthly),
+            ("evaluation_fonciere",     raw.evaluation_fonciere),
         ]
         for attr, value in pairs:
             if value and not getattr(prop, attr):
@@ -244,6 +358,10 @@ class PropertyDeduplicator:
                 source_listing_id=raw.source_listing_id,
                 is_active=True,
                 last_price=raw.asking_price,
+                agent_name=raw.agent_name,
+                agent_phone=raw.agent_phone,
+                agent_email=raw.agent_email,
+                agency_name=raw.agency_name,
                 has_price=raw.asking_price is not None,
                 has_rental_income=raw.rental_income_monthly is not None,
                 has_expenses=(
@@ -264,6 +382,10 @@ class PropertyDeduplicator:
                     "source_url":        raw.source_url,
                     "is_active":         True,
                     "last_price":        raw.asking_price,
+                    "agent_name":        raw.agent_name,
+                    "agent_phone":       raw.agent_phone,
+                    "agent_email":       raw.agent_email,
+                    "agency_name":       raw.agency_name,
                     "has_price":         raw.asking_price is not None,
                     "has_rental_income": raw.rental_income_monthly is not None,
                     "has_expenses":      raw.municipal_taxes_annual is not None,
@@ -316,6 +438,16 @@ class PropertyDeduplicator:
         except ValueError:
             logger.warning(f"Unknown scraper source: '{source}'")
             return None
+
+    @staticmethod
+    def _normalize_text(s: str) -> str:
+        """Strip punctuation, spaces, and lowercase for fuzzy name comparison."""
+        return re.sub(r"[^a-z0-9]", "", s.lower())
+
+    @staticmethod
+    def _normalize_phone(s: str) -> str:
+        """Strip all non-digit characters for phone comparison."""
+        return re.sub(r"[^0-9]", "", s)
 
     @staticmethod
     def _address_hash(raw: RawProperty) -> str:

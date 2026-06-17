@@ -62,6 +62,11 @@ backend/probe_*.html
 backend/probe_*.py
 backend/inspect_html.py
 backend/*.html
+backend/scripts/debug_*.py
+backend/scripts/test_*.py
+backend/remax_*.json
+backend/remax_*.txt
+frontend/tsconfig.tsbuildinfo
 
 # ── Misc ─────────────────────────────────────────────────────────────────────
 .cache/
