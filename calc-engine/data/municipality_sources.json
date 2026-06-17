@@ -1,0 +1,277 @@
+{
+  "_comment": "Registry of official sources for municipality mill rates and school board tax rates. Add entries here for municipalities not covered by dedicated scrapers.",
+
+  "MTL": {
+    "name": "Ville de Montréal",
+    "mill_rate_url": "https://montreal.ca/en/articles/property-taxes-rates-services",
+    "keyword": "general",
+    "is_pdf": false,
+    "fallback_mill_rate": "10.2427",
+    "source_law": "City of Montreal Charter, CQLR c C-11.4, s 244",
+    "scraper_class": "MontrealScraper"
+  },
+  "QC": {
+    "name": "Ville de Québec",
+    "mill_rate_url": "https://www.ville.quebec.qc.ca/citoyens/taxes/taux.aspx",
+    "keyword": "résidentiel",
+    "is_pdf": false,
+    "fallback_mill_rate": "8.2700",
+    "source_law": "Charte de la Ville de Québec, RLRQ c C-11.5",
+    "scraper_class": "QuebecCityScraper"
+  },
+  "LAV": {
+    "name": "Ville de Laval",
+    "mill_rate_url": "https://www.laval.ca/Pages/Fr/Citoyens/taxes-et-evaluations.aspx",
+    "keyword": "résidentiel",
+    "is_pdf": false,
+    "fallback_mill_rate": "7.8400",
+    "source_law": "Charte de la Ville de Laval, RLRQ c C-11.3",
+    "scraper_class": "LavalScraper"
+  },
+  "LNG": {
+    "name": "Ville de Longueuil",
+    "mill_rate_url": "https://www.longueuil.quebec/fr/taxes-et-finances/taxe-fonciere",
+    "keyword": "résidentiel",
+    "is_pdf": false,
+    "fallback_mill_rate": "8.9200",
+    "source_law": "Charte de la Ville de Longueuil, RLRQ c C-11.3",
+    "scraper_class": "LongueuilScraper"
+  },
+  "BRS": {
+    "name": "Ville de Brossard",
+    "mill_rate_url": "https://www.brossard.ca/residents/taxes-et-evaluation/",
+    "keyword": "résidentiel",
+    "is_pdf": false,
+    "fallback_mill_rate": "7.6500",
+    "source_law": "Loi sur les cités et villes, RLRQ c C-19",
+    "scraper_class": "GenericMunicipalityScraper"
+  },
+  "SHB": {
+    "name": "Ville de Sherbrooke",
+    "mill_rate_url": "https://www.sherbrooke.ca/fr/services-municipaux/taxes-et-finances/taxes-municipales",
+    "keyword": "résidentiel",
+    "is_pdf": false,
+    "fallback_mill_rate": "9.1200",
+    "source_law": "Charte de la Ville de Sherbrooke, RLRQ c C-11.1",
+    "scraper_class": "GenericMunicipalityScraper"
+  },
+  "GTN": {
+    "name": "Ville de Gatineau",
+    "mill_rate_url": "https://www.gatineau.ca/guichet_municipal/taxe_fonciere_evaluation_immobiliere/taux_taxation/default.aspx",
+    "keyword": "résidentiel",
+    "is_pdf": false,
+    "fallback_mill_rate": "8.4800",
+    "source_law": "Charte de la Ville de Gatineau, RLRQ c C-11.1",
+    "scraper_class": "GenericMunicipalityScraper"
+  },
+  "SGN": {
+    "name": "Ville de Saguenay",
+    "mill_rate_url": "https://www.ville.saguenay.ca/fr/services-aux-citoyens/taxes-et-finances/taxes-municipales",
+    "keyword": "résidentiel",
+    "is_pdf": false,
+    "fallback_mill_rate": "10.5600",
+    "source_law": "Charte de la Ville de Saguenay, RLRQ c C-11.1",
+    "scraper_class": "GenericMunicipalityScraper"
+  },
+  "TRV": {
+    "name": "Ville de Trois-Rivières",
+    "mill_rate_url": "https://www.v3r.net/citoyens/taxes-et-finances/taxes-municipales",
+    "keyword": "résidentiel",
+    "is_pdf": false,
+    "fallback_mill_rate": "10.1300",
+    "source_law": "Charte de la Ville de Trois-Rivières, RLRQ c C-11.1",
+    "scraper_class": "GenericMunicipalityScraper"
+  },
+  "TRB": {
+    "name": "Ville de Terrebonne",
+    "mill_rate_url": "https://www.ville.terrebonne.qc.ca/fr/services-citoyens/taxes",
+    "keyword": "résidentiel",
+    "is_pdf": false,
+    "fallback_mill_rate": "8.1700",
+    "source_law": "Loi sur les cités et villes, RLRQ c C-19",
+    "scraper_class": "GenericMunicipalityScraper"
+  },
+  "RPT": {
+    "name": "Ville de Repentigny",
+    "mill_rate_url": "https://www.repentigny.ca/services/taxes-et-finances/taxes-municipales",
+    "keyword": "résidentiel",
+    "is_pdf": false,
+    "fallback_mill_rate": "8.3500",
+    "source_law": "Loi sur les cités et villes, RLRQ c C-19",
+    "scraper_class": "GenericMunicipalityScraper"
+  },
+  "SJM": {
+    "name": "Ville de Saint-Jérôme",
+    "mill_rate_url": "https://www.vsj.ca/fr/services-citoyens/taxes",
+    "keyword": "résidentiel",
+    "is_pdf": false,
+    "fallback_mill_rate": "9.6800",
+    "source_law": "Loi sur les cités et villes, RLRQ c C-19",
+    "scraper_class": "GenericMunicipalityScraper"
+  },
+  "VDR": {
+    "name": "Ville de Vaudreuil-Dorion",
+    "mill_rate_url": "https://www.ville.vaudreuil-dorion.qc.ca/fr/services-citoyens/taxes",
+    "keyword": "résidentiel",
+    "is_pdf": false,
+    "fallback_mill_rate": "7.4200",
+    "source_law": "Loi sur les cités et villes, RLRQ c C-19",
+    "scraper_class": "GenericMunicipalityScraper"
+  },
+  "SJSR": {
+    "name": "Ville de Saint-Jean-sur-Richelieu",
+    "mill_rate_url": "https://www.sjsr.ca/services-citoyens/taxes",
+    "keyword": "résidentiel",
+    "is_pdf": false,
+    "fallback_mill_rate": "9.2400",
+    "source_law": "Loi sur les cités et villes, RLRQ c C-19",
+    "scraper_class": "GenericMunicipalityScraper"
+  },
+  "GRB": {
+    "name": "Ville de Granby",
+    "mill_rate_url": "https://ville.granby.qc.ca/fr/services-citoyens/taxes-et-finances",
+    "keyword": "résidentiel",
+    "is_pdf": false,
+    "fallback_mill_rate": "9.5100",
+    "source_law": "Loi sur les cités et villes, RLRQ c C-19",
+    "scraper_class": "GenericMunicipalityScraper"
+  },
+  "DDO": {
+    "name": "Ville de Dollard-des-Ormeaux",
+    "mill_rate_url": "https://www.ddo.qc.ca/residents/property-taxes",
+    "keyword": "residential",
+    "is_pdf": false,
+    "fallback_mill_rate": "6.8900",
+    "source_law": "Loi sur les cités et villes, RLRQ c C-19",
+    "scraper_class": "GenericMunicipalityScraper"
+  },
+  "PTCL": {
+    "name": "Ville de Pointe-Claire",
+    "mill_rate_url": "https://www.pointe-claire.ca/en/residents/property-taxes",
+    "keyword": "residential",
+    "is_pdf": false,
+    "fallback_mill_rate": "7.1200",
+    "source_law": "Loi sur les cités et villes, RLRQ c C-19",
+    "scraper_class": "GenericMunicipalityScraper"
+  },
+  "DVL": {
+    "name": "Ville de Dorval",
+    "mill_rate_url": "https://dorval.ca/en/residents/property-taxes",
+    "keyword": "residential",
+    "is_pdf": false,
+    "fallback_mill_rate": "6.9500",
+    "source_law": "Loi sur les cités et villes, RLRQ c C-19",
+    "scraper_class": "GenericMunicipalityScraper"
+  },
+  "BLV": {
+    "name": "Ville de Blainville",
+    "mill_rate_url": "https://www.ville.blainville.qc.ca/services/taxes-et-finances/",
+    "keyword": "résidentiel",
+    "is_pdf": false,
+    "fallback_mill_rate": "7.9800",
+    "source_law": "Loi sur les cités et villes, RLRQ c C-19",
+    "scraper_class": "GenericMunicipalityScraper"
+  },
+  "MRB": {
+    "name": "Ville de Mirabel",
+    "mill_rate_url": "https://www.mirabel.ca/fr/citoyens/taxes",
+    "keyword": "résidentiel",
+    "is_pdf": false,
+    "fallback_mill_rate": "5.8600",
+    "source_law": "Loi sur les cités et villes, RLRQ c C-19",
+    "scraper_class": "GenericMunicipalityScraper"
+  },
+
+  "school_boards": {
+    "CSDM": {
+      "name": "Commission scolaire de Montréal",
+      "school_tax_url": "https://csdm.ca/a-propos/budget-et-documents-financiers/",
+      "fallback_rate_per_100": "0.1065",
+      "scraper_class": "CSDMScraper"
+    },
+    "EMSB": {
+      "name": "English Montreal School Board",
+      "school_tax_url": "https://www.emsb.qc.ca/emsb/aboutus/finance",
+      "fallback_rate_per_100": "0.1065",
+      "scraper_class": "EMSBScraper"
+    },
+    "CSLAVAL": {
+      "name": "Centre de services scolaire de Laval",
+      "school_tax_url": "https://www.cslaval.qc.ca/",
+      "fallback_rate_per_100": "0.0982",
+      "scraper_class": "GenericBoardScraper"
+    },
+    "CSSDM": {
+      "name": "Centre de services scolaire des Grandes-Seigneuries",
+      "school_tax_url": "https://www.cssdgs.qc.ca/",
+      "fallback_rate_per_100": "0.1045",
+      "scraper_class": "GenericBoardScraper"
+    },
+    "CSCS": {
+      "name": "Centre de services scolaire des Chênes",
+      "school_tax_url": "https://www.cssdesjardins.qc.ca/",
+      "fallback_rate_per_100": "0.0940",
+      "scraper_class": "GenericBoardScraper"
+    },
+    "CSRS": {
+      "name": "Centre de services scolaire de la Région-de-Sherbrooke",
+      "school_tax_url": "https://www.csrs.qc.ca/",
+      "fallback_rate_per_100": "0.1120",
+      "scraper_class": "GenericBoardScraper"
+    },
+    "CSPO": {
+      "name": "Centre de services scolaire des Portages-de-l'Outaouais",
+      "school_tax_url": "https://cspo.qc.ca/",
+      "fallback_rate_per_100": "0.1015",
+      "scraper_class": "GenericBoardScraper"
+    },
+    "CSSRS": {
+      "name": "Centre de services scolaire des Rives-du-Saguenay",
+      "school_tax_url": "https://www.cssrs.qc.ca/",
+      "fallback_rate_per_100": "0.1230",
+      "scraper_class": "GenericBoardScraper"
+    },
+    "CSSCRB": {
+      "name": "Centre de services scolaire du Chemin-du-Roy",
+      "school_tax_url": "https://www.csduroy.qc.ca/",
+      "fallback_rate_per_100": "0.1185",
+      "scraper_class": "GenericBoardScraper"
+    },
+    "CSSSL": {
+      "name": "Centre de services scolaire des Samares",
+      "school_tax_url": "https://www.cssamares.qc.ca/",
+      "fallback_rate_per_100": "0.1090",
+      "scraper_class": "GenericBoardScraper"
+    },
+    "CSSL": {
+      "name": "Centre de services scolaire des Laurentides",
+      "school_tax_url": "https://www.csslaurentides.qc.ca/",
+      "fallback_rate_per_100": "0.1060",
+      "scraper_class": "GenericBoardScraper"
+    },
+    "CSSLL": {
+      "name": "Centre de services scolaire de la Rivière-du-Nord",
+      "school_tax_url": "https://www.csdln.qc.ca/",
+      "fallback_rate_per_100": "0.1075",
+      "scraper_class": "GenericBoardScraper"
+    },
+    "LBPSB": {
+      "name": "Lester B. Pearson School Board",
+      "school_tax_url": "https://www.lbpsb.qc.ca/",
+      "fallback_rate_per_100": "0.1065",
+      "scraper_class": "GenericBoardScraper"
+    },
+    "CSSHRC": {
+      "name": "Centre de services scolaire des Hautes-Rivières",
+      "school_tax_url": "https://www.cshautesr.qc.ca/",
+      "fallback_rate_per_100": "0.1055",
+      "scraper_class": "GenericBoardScraper"
+    },
+    "CSSHC": {
+      "name": "Centre de services scolaire de la Haute-Yamaska",
+      "school_tax_url": "https://www.cshy.qc.ca/",
+      "fallback_rate_per_100": "0.1040",
+      "scraper_class": "GenericBoardScraper"
+    }
+  }
+}
