@@ -141,7 +141,7 @@ export default function PropertyPage() {
   const pricePerSqft = derivedPricePerSqft(prop)
 
   return (
-    <div className="max-w-5xl mx-auto p-6 space-y-5 animate-slide-up">
+    <div className="p-6 space-y-5 max-w-[1400px] animate-slide-up">
 
       {/* Back */}
       <Link
@@ -223,6 +223,37 @@ export default function PropertyPage() {
             }
           />
         </div>
+
+        {/* Cross-site price comparison */}
+        {prop.cross_site_prices && prop.cross_site_prices.length > 1 && (
+          <div className="pt-1 border-t border-surface-border">
+            <p className="text-xs text-muted font-medium mb-2">Same property listed on multiple sites</p>
+            <div className="flex flex-wrap gap-2">
+              {prop.cross_site_prices.map(s => (
+                <a
+                  key={s.source}
+                  href={s.source_url ?? undefined}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={clsx(
+                    'inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-medium transition-colors',
+                    s.is_lowest
+                      ? 'bg-score-strong/10 border-score-strong/30 text-score-strong hover:bg-score-strong/20'
+                      : 'bg-surface border-surface-border text-ink hover:border-accent/40',
+                  )}
+                >
+                  <span className="capitalize">{s.source}</span>
+                  <span className="font-mono">{fmtCAD(s.price)}</span>
+                  {s.is_lowest && (
+                    <span className="px-1.5 py-0.5 rounded-full bg-score-strong text-white text-[10px] font-bold">
+                      LOWEST
+                    </span>
+                  )}
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Spec chips */}
         <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm text-muted pt-1 border-t border-surface-border">
