@@ -41,6 +41,7 @@ frontend/coverage/
 *.db
 *.sql.bak
 pg_data/
+database/dump.sql
 
 # ── Logs ─────────────────────────────────────────────────────────────────────
 *.log
