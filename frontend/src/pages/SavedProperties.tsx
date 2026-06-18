@@ -150,7 +150,7 @@ export default function SavedProperties() {
                 </div>
 
                 {/* Price */}
-                <p className="text-xl font-bold text-ink">{fmtCAD(p.asking_price)}</p>
+                <p className="text-xl font-mono text-ink">{fmtCAD(p.asking_price)}</p>
 
                 {/* Metrics row */}
                 <div className="grid grid-cols-3 gap-2">

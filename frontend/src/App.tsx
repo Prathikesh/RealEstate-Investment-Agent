@@ -8,7 +8,7 @@ import PropertyPage from './pages/PropertyPage'
 import AnalysisPage from './pages/AnalysisPage'
 import Settings from './pages/Settings'
 import SavedProperties from './pages/SavedProperties'
-import WatchingPlaceholder from './pages/WatchingPlaceholder'
+import SavedSearches from './pages/SavedSearches'
 import MarketAlerts from './pages/MarketAlerts'
 import Reports from './pages/Reports'
 import Compare from './pages/Compare'
@@ -29,7 +29,7 @@ export default function App() {
             <Route path="alerts"            element={<MarketAlerts />} />
             <Route path="reports"           element={<Reports />} />
             <Route path="compare"           element={<Compare />} />
-            <Route path="searches"          element={<WatchingPlaceholder />} />
+            <Route path="searches"          element={<SavedSearches />} />
             <Route path="settings"          element={<Settings />} />
           </Route>
         </Routes>

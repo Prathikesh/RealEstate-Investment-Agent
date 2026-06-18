@@ -253,7 +253,7 @@ export default function Dashboard() {
                   </div>
                 </div>
                 <div className="text-right shrink-0 ml-4">
-                  <p className="text-sm font-mono font-bold text-ink tabular-nums">
+                  <p className="text-sm font-mono text-ink tabular-nums">
                     {fmtCAD(p.asking_price)}
                   </p>
                   <p className="text-[10px] text-muted flex items-center gap-0.5 justify-end mt-0.5">

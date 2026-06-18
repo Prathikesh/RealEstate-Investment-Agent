@@ -136,10 +136,16 @@ export default function PropertyCardGrid({ property: p, className }: Props) {
     >
       {/* ── Photo ────────────────────────────────────────────────────────── */}
       <div className="relative aspect-video bg-surface overflow-hidden">
-        <PropertyPhoto photos={p.photos ?? []} address={p.full_address} />
-        <div className="hidden flex w-full h-full flex-col items-center justify-center gap-2">
+        {(p.photos ?? []).length === 0 ? (
           <PhotoPlaceholder type={p.property_type} />
-        </div>
+        ) : (
+          <>
+            <PropertyPhoto photos={p.photos ?? []} address={p.full_address} />
+            <div className="hidden flex w-full h-full flex-col items-center justify-center gap-2">
+              <PhotoPlaceholder type={p.property_type} />
+            </div>
+          </>
+        )}
 
         {/* Gradient overlay */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent pointer-events-none" />

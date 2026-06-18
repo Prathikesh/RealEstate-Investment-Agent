@@ -119,7 +119,7 @@ export default function Reports() {
                     <p className="text-xs text-muted flex items-center gap-1 mt-0.5"><MapPin size={10} />{p.city}</p>
                   </div>
                   <div className="flex items-center justify-between">
-                    <p className="text-lg font-bold text-ink">{fmtCAD(p.asking_price)}</p>
+                    <p className="text-lg font-mono text-ink">{fmtCAD(p.asking_price)}</p>
                     <div className="text-right">
                       {p.cap_rate != null && <p className="text-xs text-score-strong font-semibold">{p.cap_rate.toFixed(1)}% cap</p>}
                       {p.monthly_cash_flow != null && <p className="text-xs text-muted">{fmtCAD(p.monthly_cash_flow)}/mo</p>}
@@ -168,7 +168,7 @@ export default function Reports() {
                   <p className="text-xs text-muted">{p.city}</p>
                 </div>
                 <div className="text-right shrink-0">
-                  <p className="text-sm font-bold text-ink">{fmtCAD(p.asking_price)}</p>
+                  <p className="text-sm font-mono text-ink">{fmtCAD(p.asking_price)}</p>
                   {p.is_new && <span className="text-[10px] font-bold text-accent">NEW</span>}
                 </div>
               </Link>
@@ -207,7 +207,7 @@ export default function Reports() {
                   <p className="text-xs text-muted">{p.city}</p>
                 </div>
                 <div className="text-right shrink-0">
-                  <p className="text-sm font-bold text-ink">{fmtCAD(p.asking_price)}</p>
+                  <p className="text-sm font-mono text-ink">{fmtCAD(p.asking_price)}</p>
                   {p.discount_pct != null && p.discount_pct > 0 && (
                     <p className="text-[10px] font-semibold text-score-strong">-{p.discount_pct.toFixed(1)}% below</p>
                   )}
