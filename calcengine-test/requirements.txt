@@ -1,0 +1,4 @@
+scrapfly-sdk
+python-dotenv
+parsel
+psycopg2-binary
