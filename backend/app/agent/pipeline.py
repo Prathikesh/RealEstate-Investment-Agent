@@ -1,17 +1,15 @@
 """
 AI Investment Pipeline — orchestrates all 4 stages for one property.
 
-Stage 1: ComparableFinder       → ComparableSet
-Stage 2: CalcEngine + Financial → FinancialProfile (live Quebec taxes)
-Stage 3: Risk + Neighbourhood   → feeds into scorer as modifiers
-Stage 4: OpportunityScorer      → ScoreResult (uses all signals)
-Stage 5: BriefGenerator         → str (Claude API, includes description + price history)
+Stage 1: ComparableFinder  → ComparableSet
+Stage 2: FinancialCalculator → FinancialProfile
+Stage 3: OpportunityScorer  → ScoreResult
+Stage 4: BriefGenerator     → str (Claude API)
 
 Then writes all results back to the Property record.
 """
 import logging
 from datetime import datetime, timezone
-from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,8 +17,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agent.brief import BriefGenerator
 from app.agent.calculator import FinancialCalculator
 from app.agent.comparables import ComparableFinder
-from app.agent.neighbourhood import NeighbourhoodAnalyzer, NeighbourhoodContext
-from app.agent.risk import RiskAssessment, RiskAssessor
 from app.agent.scorer import OpportunityScorer
 from app.models.property import AnalysisConfidence, Property, ScoreCategory
 from app.services.calc_client import analyze as calc_engine_analyze
@@ -87,52 +83,19 @@ class InvestmentPipeline:
 
         logger.info(
             f"  Financials: cap={fp.cap_rate}% | "
-            f"cf={fp.monthly_cash_flow}/mo | discount={fp.discount_pct}% | "
-            f"taxes_live={not fp.taxes_are_estimated}"
+            f"cf={fp.monthly_cash_flow}/mo | discount={fp.discount_pct}%"
         )
 
-        # Stage 3a — Risk Assessment (feeds into scorer)
-        risk: Optional[RiskAssessment] = None
-        try:
-            risk = RiskAssessor().assess(prop, fp)
-            logger.debug(f"  Risk: {risk.overall_risk.value} ({len(risk.items)} items)")
-        except Exception as exc:
-            logger.warning(f"  Risk assessment failed: {exc}")
+        # Stage 3
+        score = self.scorer.score(fp, strategy=strategy, days_on_market=prop.days_on_market)
+        logger.info(f"  Score: {score.total}/100 — {score.category.value}")
 
-        # Stage 3b — Neighbourhood Context (feeds into scorer)
-        neighbourhood: Optional[NeighbourhoodContext] = None
-        try:
-            neighbourhood = await NeighbourhoodAnalyzer(self.session).analyze(prop)
-            logger.debug(f"  Neighbourhood: {neighbourhood.sample_size} peers")
-        except Exception as exc:
-            logger.warning(f"  Neighbourhood analysis failed: {exc}")
-
-        # Stage 4 — Scorer (now uses calc-engine data + risk + neighbourhood + price history)
-        score = self.scorer.score(
-            fp,
-            strategy=strategy,
-            days_on_market=prop.days_on_market,
-            risk=risk,
-            neighbourhood=neighbourhood,
-            price_history=prop.price_history,
-        )
-        logger.info(
-            f"  Score: {score.total}/100 — {score.category.value} | "
-            f"risk_mod={score.components.get('risk_modifier', 0):+.0f} | "
-            f"nbhd_mod={score.components.get('neighbourhood_modifier', 0):+.0f}"
-        )
-
-        # Stage 5 — AI Brief (includes description, price history, risk/neighbourhood context)
+        # Stage 4 (optional)
         brief_en = brief_fr = None
-        extra_context = self._build_brief_context(risk, neighbourhood)
         if self.brief_generator and (force_brief or score.total >= 40):
-            brief_en = await self.brief_generator.generate(
-                prop, fp, score, language="en", extra_context=extra_context, force=force_brief
-            )
+            brief_en = await self.brief_generator.generate(prop, fp, score, language="en", force=force_brief)
             if force_brief or score.total >= 60:
-                brief_fr = await self.brief_generator.generate(
-                    prop, fp, score, language="fr", extra_context=extra_context, force=force_brief
-                )
+                brief_fr = await self.brief_generator.generate(prop, fp, score, language="fr", force=force_brief)
 
         # Write results back to property (calc_fields written directly to model)
         self._update_property(prop, comp_set, fp, score, brief_en, brief_fr, calc_fields)
@@ -173,27 +136,6 @@ class InvestmentPipeline:
                 # Savepoint was auto-rolled back; session is still usable.
 
         return stats
-
-    @staticmethod
-    def _build_brief_context(
-        risk: Optional[RiskAssessment],
-        neighbourhood: Optional[NeighbourhoodContext],
-    ) -> str:
-        lines: list[str] = []
-        if risk and risk.items:
-            lines.append(f"RISK PROFILE: {risk.overall_risk.value.upper()}")
-            for item in risk.items[:3]:
-                lines.append(f"  • [{item.severity.value.upper()}] {item.label}: {item.description}")
-        if neighbourhood and neighbourhood.sample_size > 0:
-            lines.append(
-                f"NEIGHBOURHOOD ({neighbourhood.sample_size} peers): "
-                f"price vs avg {neighbourhood.price_vs_avg_pct:+.1f}%, "
-                f"cap rate percentile {neighbourhood.cap_rate_percentile:.0f}th, "
-                f"score percentile {neighbourhood.score_percentile:.0f}th"
-                if neighbourhood.cap_rate_percentile is not None and neighbourhood.score_percentile is not None
-                else f"NEIGHBOURHOOD ({neighbourhood.sample_size} peers found)"
-            )
-        return "\n".join(lines)
 
     @staticmethod
     def _update_property(prop, comp_set, fp, score, brief_en, brief_fr, calc_fields: dict | None = None) -> None:

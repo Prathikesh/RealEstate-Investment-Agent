@@ -99,7 +99,7 @@ class BriefGenerator:
             client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
             message = await client.messages.create(
                 model="claude-haiku-4-5-20251001",
-                max_tokens=420,
+                max_tokens=700,
                 system=system,
                 messages=[{"role": "user", "content": user}],
             )
@@ -119,17 +119,22 @@ class BriefGenerator:
     def _system_prompt(self, language: str) -> str:
         if language == "fr":
             return (
-                "Tu es un assistant immobilier qui aide des investisseurs ordinaires — pas des experts — "
-                "à comprendre si une propriété vaut la peine d'être achetée. "
-                "Écris en français simple et clair. Phrases courtes. Zéro jargon financier. "
-                "Zéro tableau markdown. Utilise seulement ## pour les titres de section et - pour les listes. "
-                "N'importe qui doit pouvoir lire et comprendre en moins d'une minute."
+                "Vous êtes un analyste immobilier senior spécialisé dans le marché locatif québécois. "
+                "Votre rôle est d'aider les courtiers immobiliers à évaluer si une propriété vaut la "
+                "peine d'être présentée à des investisseurs. Soyez direct, factuel et précis sur les "
+                "chiffres. Mentionnez toujours le taux de capitalisation par rapport aux normes du "
+                "marché québécois (4,5–7%). Identifiez le profil d'investisseur cible. Ne dites jamais "
+                "explicitement 'achetez' ou 'n'achetez pas' — utilisez des formulations comme "
+                "'mérite l'attention', 'à évaluer soigneusement' ou 'présente des risques notables'."
             )
         return (
-            "You are a real estate assistant helping everyday investors — not experts — understand "
-            "if a property is a good buy. Write in plain, simple English. Short sentences. "
-            "No financial jargon. No markdown tables. Use only ## for section headings and - for bullet points. "
-            "Anyone should be able to read and understand in under one minute."
+            "You are a senior real estate investment analyst specializing in Quebec's income property "
+            "market. Your audience is real estate brokers who need to decide whether to pitch a "
+            "property to their investor clients. Be direct, data-driven, and precise. Always benchmark "
+            "cap rate against Quebec norms (4.5–7%). Identify the target investor profile. Never "
+            "explicitly say 'buy' or 'don't buy' — use phrases like 'merits serious consideration', "
+            "'warrants careful due diligence', or 'presents notable challenges'. Brokers need concrete "
+            "talking points and honest risk disclosures."
         )
 
     def _build_prompt(
@@ -140,70 +145,148 @@ class BriefGenerator:
         language: str,
         extra_context: str = "",
     ) -> str:
+        # Comparable context
+        comp_desc = (
+            f"{fp.comparable_count} comparables within {fp.search_radius_km:.0f} km"
+            if fp.search_radius_km
+            else f"{fp.comparable_count} comparables in {prop.city}"
+        )
         discount_line = (
             f"{fp.discount_pct:+.1f}% {'below' if fp.discount_pct > 0 else 'above'} "
             f"comparable median ({_fmt(fp.comparable_median_price)})"
             if fp.discount_pct is not None
-            else "no comparable data"
+            else "no comparable data — price validation not possible"
         )
-        rent_note  = "estimated" if fp.rent_is_estimated else "from listing"
+        rent_note = (
+            "estimated from unit count / market rents — not disclosed in listing"
+            if fp.rent_is_estimated
+            else "from listing"
+        )
+        tax_note = (
+            f"estimated using {prop.city} city rate (2025-2026) — verify actual tax bill"
+            if fp.taxes_are_estimated
+            else "from listing"
+        )
+
+        # Investor profile hint based on score and metrics
+        profile = self._investor_profile(fp, score)
+
+        # Quebec benchmark signals
         cap_signal = _cap_rate_signal(fp.cap_rate)
-        extra      = f"\n\nADDITIONAL CONTEXT:\n{extra_context}" if extra_context else ""
-        price_hist = self._format_price_history(prop.price_history)
+        grm_signal = _grm_signal(fp.grm)
+        coc_signal = _coc_signal(fp.cash_on_cash_return)
+
+        extra = f"\n\nADDITIONAL CONTEXT:\n{extra_context}" if extra_context else ""
 
         prop_label = prop.property_type.value.replace("_", " ").title()
         score_label = score.category.value.replace("_", " ").title()
 
         if language == "fr":
-            return f"""Écris une analyse courte (maximum 160 mots) pour un investisseur ordinaire.
-Utilise un langage simple. Aucun tableau. Pas de jargon.
+            return f"""Rédigez une analyse d'investissement de 400-450 mots destinée à un courtier immobilier québécois.
+L'objectif est de déterminer si cette propriété mérite d'être présentée à des investisseurs.
 
-DONNÉES:
-- Adresse: {prop.full_address} ({prop_label})
-- Prix demandé: {_fmt(fp.asking_price)}
-- Score d'opportunité: {score.total}/100 ({score_label})
-- Loyer mensuel: {_fmt(fp.gross_rent_monthly)} ({rent_note})
-- Flux de trésorerie: {_fmt(fp.monthly_cash_flow)}/mois
-- Taux de capitalisation: {cap_signal}
-- Prix vs marché: {discount_line}
-- Mise de fonds requise: {_fmt(fp.down_payment)} + taxes {_fmt(fp.welcome_tax)}
-{extra}{price_hist}
+═══════════════════════════════════════════════════════
+FICHE PROPRIÉTÉ
+═══════════════════════════════════════════════════════
+Type:              {prop_label}
+Adresse:           {prop.full_address}
+Prix demandé:      {_fmt(fp.asking_price)}
+Score opportunité: {score.total}/100 — {score_label}
+Stratégie:         {score.strategy}
 
-Écris exactement 3 sections courtes:
+═══════════════════════════════════════════════════════
+POSITIONNEMENT MARCHÉ ({fp.analysis_confidence.upper()} confidence)
+═══════════════════════════════════════════════════════
+Comparables:       {comp_desc}
+Médiane comparable:{_fmt(fp.comparable_median_price)}
+Écart de valeur:   {_fmt(fp.value_gap)} ({discount_line})
 
-## VERDICT
-Une seule phrase claire: est-ce un bon investissement? Pourquoi?
+═══════════════════════════════════════════════════════
+MÉTRIQUES FINANCIÈRES (référence marché QC)
+═══════════════════════════════════════════════════════
+Taux de cap:           {cap_signal}
+Multiplicateur (GRM):  {grm_signal}
+Rendement CoC:         {coc_signal}
+Revenu locatif/mois:   {_fmt(fp.gross_rent_monthly)} ({rent_note})
+Revenu brut annuel:    {_fmt(fp.gross_rent_annual)}
+Charges annuelles:     {_fmt(fp.total_expenses_annual)}
+  • Taxes municipales: {_fmt(fp.municipal_taxes_annual)} ({tax_note})
+  • Taxes scolaires:   {_fmt(fp.school_taxes_annual)} ({tax_note})
+  • Assurances:        {_fmt(fp.insurance_annual)}
+  • Entretien (1%):    {_fmt(fp.maintenance_annual)}
+  • Vacance (5%):      {_fmt(fp.vacancy_loss_annual)}
+RNE annuel:            {_fmt(fp.noi_annual)}
+Flux trésorerie/mois:  {_fmt(fp.monthly_cash_flow)} (financement 80%, 4,5%, 25 ans)
 
-## CE QUI EST BIEN
-- 2 ou 3 points positifs concrets (chiffres à l'appui)
+═══════════════════════════════════════════════════════
+COÛTS D'ACQUISITION TOTAUX
+═══════════════════════════════════════════════════════
+Mise de fonds (20%):       {_fmt(fp.down_payment)}
+Hypothèque mensuelle:      {_fmt(fp.monthly_mortgage)}
+Droits de mutation (QC):   {_fmt(fp.welcome_tax)}
+Liquidités totales req.:   {_fmt(fp.total_cash_needed)}
 
-## À SURVEILLER
-- 2 risques réels que l'acheteur doit connaître"""
+PROFIL D'INVESTISSEUR CIBLE: {profile}
+{extra}
 
-        return f"""Write a SHORT analysis (max 160 words) for an everyday investor.
-Plain English. No tables. No jargon. Real numbers only.
+Structure requise (4 sections):
+1. VERDICT COURTIER (2-3 phrases): Est-ce que cette propriété mérite une présentation à des clients investisseurs? Soyez direct.
+2. POINTS DE VENTE CLÉS (liste à puces): 3-4 arguments que le courtier peut utiliser pour présenter cette propriété.
+3. ANALYSE FINANCIÈRE: Performance par rapport aux normes québécoises. Commentez le taux de cap, le GRM et le flux de trésorerie.
+4. RISQUES ET MISE EN GARDE: 2-3 risques réels à divulguer honnêtement aux acheteurs potentiels."""
 
-DATA:
-- Address: {prop.full_address} ({prop_label})
-- Asking price: {_fmt(fp.asking_price)}
-- Opportunity score: {score.total}/100 ({score_label})
-- Monthly rent: {_fmt(fp.gross_rent_monthly)} ({rent_note})
-- Monthly cash flow: {_fmt(fp.monthly_cash_flow)}/mo after all costs
-- Cap rate: {cap_signal}
-- Price vs market: {discount_line}
-- Cash needed to buy: {_fmt(fp.down_payment)} down + {_fmt(fp.welcome_tax)} welcome tax
-{extra}{price_hist}
+        return f"""Write a 400-450 word investment brief for a Quebec real estate broker.
+The goal: determine whether this property deserves a pitch to investor clients.
 
-Write exactly 3 short sections:
+═══════════════════════════════════════════════════════
+PROPERTY SNAPSHOT
+═══════════════════════════════════════════════════════
+Type:              {prop_label}
+Address:           {prop.full_address}
+Asking Price:      {_fmt(fp.asking_price)}
+Opportunity Score: {score.total}/100 — {score_label}
+Strategy:          {score.strategy}
 
-## VERDICT
-One clear sentence: is this a good investment? Why?
+═══════════════════════════════════════════════════════
+MARKET POSITIONING ({fp.analysis_confidence.upper()} confidence)
+═══════════════════════════════════════════════════════
+Comparables:       {comp_desc}
+Comparable Median: {_fmt(fp.comparable_median_price)}
+Value Gap:         {_fmt(fp.value_gap)} ({discount_line})
 
-## WHAT'S WORKING
-- 2 or 3 positives with real numbers
+═══════════════════════════════════════════════════════
+FINANCIAL METRICS vs. QUEBEC MARKET BENCHMARKS
+═══════════════════════════════════════════════════════
+Cap Rate:              {cap_signal}
+Gross Rent Multiplier: {grm_signal}
+Cash-on-Cash Return:   {coc_signal}
+Monthly Rental Income: {_fmt(fp.gross_rent_monthly)} ({rent_note})
+Annual Gross Income:   {_fmt(fp.gross_rent_annual)}
+Annual Expenses:       {_fmt(fp.total_expenses_annual)}
+  • Municipal taxes:   {_fmt(fp.municipal_taxes_annual)} ({tax_note})
+  • School taxes:      {_fmt(fp.school_taxes_annual)} ({tax_note})
+  • Insurance:         {_fmt(fp.insurance_annual)}
+  • Maintenance (1%):  {_fmt(fp.maintenance_annual)}
+  • Vacancy (5%):      {_fmt(fp.vacancy_loss_annual)}
+Net Operating Income:  {_fmt(fp.noi_annual)}
+Monthly Cash Flow:     {_fmt(fp.monthly_cash_flow)} (80% LTV, 4.5% rate, 25yr amort.)
 
-## WATCH OUT FOR
-- 2 risks the buyer needs to know"""
+═══════════════════════════════════════════════════════
+TOTAL ACQUISITION COSTS
+═══════════════════════════════════════════════════════
+Down Payment (20%):         {_fmt(fp.down_payment)}
+Monthly Mortgage:           {_fmt(fp.monthly_mortgage)}
+Welcome Tax (droits QC):    {_fmt(fp.welcome_tax)}
+Total Cash Required:        {_fmt(fp.total_cash_needed)}
+
+TARGET INVESTOR PROFILE: {profile}
+{extra}
+
+Required structure (4 sections):
+1. BROKER VERDICT (2-3 sentences): Does this property deserve a pitch to investor clients? Be direct.
+2. KEY SELLING POINTS (bullet list): 3-4 concrete talking points the broker can use when presenting.
+3. FINANCIAL ANALYSIS: How do the metrics stack up against Quebec norms? Comment on cap rate, GRM, and cash flow specifically.
+4. RISKS & DISCLOSURES: 2-3 real risks to honestly disclose to prospective buyers."""
 
     def _investor_profile(self, fp: FinancialProfile, score: ScoreResult) -> str:
         """Suggest the right buyer profile based on the financials."""
@@ -220,36 +303,3 @@ One clear sentence: is this a good investment? Why?
         if cap < QC_CAP_RATE_GOOD and coc < 3.0:
             return "Long-term appreciation play — limited cash flow, suited for low-leverage or all-cash buyer"
         return "General income property investor — verify rent upside before committing"
-
-    @staticmethod
-    def _format_description(description: Optional[str]) -> str:
-        if not description or not description.strip():
-            return ""
-        snippet = description.strip()[:450]
-        if len(description.strip()) > 450:
-            snippet += "…"
-        return f"\n\nLISTING DESCRIPTION (from original listing):\n{snippet}"
-
-    @staticmethod
-    def _format_price_history(price_history: Optional[list]) -> str:
-        if not price_history or len(price_history) < 2:
-            return ""
-        try:
-            entries = sorted(
-                [e for e in price_history if isinstance(e, dict) and e.get("price") and e.get("date")],
-                key=lambda x: x["date"],
-            )
-            if len(entries) < 2:
-                return ""
-            lines = [f"\n\nPRICE HISTORY ({len(entries)} entries):"]
-            for e in entries:
-                event = e.get("event", "update")
-                lines.append(f"  {e['date']}: ${float(e['price']):,.0f} ({event})")
-            original = float(entries[0]["price"])
-            current  = float(entries[-1]["price"])
-            if original > 0:
-                change = ((current - original) / original) * 100
-                lines.append(f"  Net change from original listing: {change:+.1f}%")
-            return "\n".join(lines)
-        except Exception:
-            return ""
