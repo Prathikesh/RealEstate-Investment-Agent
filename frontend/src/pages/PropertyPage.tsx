@@ -394,17 +394,17 @@ export default function PropertyPage() {
       )}
 
       {/* ── Tabs ─────────────────────────────────────────────────────────── */}
-      <div className="bg-surface-card border border-surface-border rounded-2xl overflow-hidden shadow-card">
-        <nav className="flex overflow-x-auto border-b border-surface-border">
+      <div className="bg-white border border-surface-border rounded-2xl overflow-hidden shadow-card">
+        <nav className="flex overflow-x-auto bg-surface/50 p-1.5 gap-1">
           {TAB_KEYS.map(key => (
             <button
               key={key}
               onClick={() => setActiveTab(key)}
               className={clsx(
-                'px-5 py-3.5 text-sm font-semibold border-b-2 whitespace-nowrap transition-all duration-150',
+                'flex-1 px-4 py-2.5 text-sm font-semibold rounded-xl whitespace-nowrap transition-all duration-200',
                 activeTab === key
-                  ? 'border-accent text-accent'
-                  : 'border-transparent text-muted hover:text-ink hover:border-surface-border',
+                  ? 'bg-white text-accent shadow-sm border border-surface-border'
+                  : 'text-muted hover:text-ink hover:bg-white/60',
               )}
             >
               {TAB_LABELS[key]}
@@ -414,7 +414,7 @@ export default function PropertyPage() {
       </div>
 
       {/* ── Tab content ──────────────────────────────────────────────────── */}
-      <div className="animate-fade-in">
+      <div key={activeTab} className="tab-enter">
         {activeTab === 'aiBrief'      && <BriefTab      prop={prop} />}
         {activeTab === 'financials'   && <FinancialsTab prop={prop} t={t} pricePerSqft={pricePerSqft} />}
         {activeTab === 'comparables'  && <ComparablesTab prop={prop} t={t} />}
@@ -461,32 +461,6 @@ function ConfidencePill({ confidence, t }: { confidence: string; t: (k: string) 
   )
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="card">
-      <h3 className="text-xs font-bold text-muted uppercase tracking-widest mb-4 pb-3 border-b border-surface-border">{title}</h3>
-      {children}
-    </div>
-  )
-}
-
-function FinCard({ label, value, valueClass, note, prominent }: {
-  label: string; value: string; valueClass?: string; note?: string; prominent?: boolean
-}) {
-  return (
-    <div className="bg-surface border border-surface-border rounded-xl px-3 py-3">
-      <p className="text-xs text-muted mb-1">{label}</p>
-      <p className={clsx(
-        'font-mono tabular-nums',
-        prominent ? 'text-lg text-ink' : 'text-sm',
-        valueClass ?? 'text-ink',
-      )}>
-        {value}
-      </p>
-      {note && <p className="text-[10px] text-muted/70 mt-0.5">{note}</p>}
-    </div>
-  )
-}
 
 // ── Verdict Banner ────────────────────────────────────────────────────────────
 
@@ -1385,106 +1359,198 @@ function BriefTab({ prop }: { prop: PropertyDetail }) {
 // ── Financials tab ────────────────────────────────────────────────────────────
 
 function FinancialsTab({ prop, t, pricePerSqft }: { prop: PropertyDetail; t: (k: string) => string; pricePerSqft: number | null }) {
+  const capGood  = prop.cap_rate != null && prop.cap_rate >= 5
+  const cfGood   = prop.monthly_cash_flow != null && prop.monthly_cash_flow >= 0
+  const discGood = prop.discount_pct != null && prop.discount_pct > 5
+
   return (
-    <div className="space-y-4 animate-slide-up">
-      <Section title="Property value vs market">
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-          <FinCard label={t('askingPrice')}   value={fmtCAD(prop.asking_price)} prominent />
-          <FinCard label={t('marketValue')}   value={fmtCAD(prop.comparable_median_price)}
-            note="from comparable sales"
-          />
-          <FinCard label={t('valueGap')}
-            value={fmtCAD(prop.value_gap)}
-            valueClass={prop.value_gap != null && prop.value_gap > 0 ? 'text-score-strong' :
-                        prop.value_gap != null && prop.value_gap < 0 ? 'text-score-notrecommended' : undefined}
-          />
-          <FinCard label={t('discount')}
-            value={prop.discount_pct != null
+    <div className="space-y-5">
+
+      {/* ── Hero metrics ── */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {/* Cap Rate */}
+        <div className={clsx(
+          'rounded-2xl p-5 border space-y-1',
+          capGood ? 'bg-gradient-to-br from-emerald-50 to-emerald-100/50 border-emerald-200' :
+                    'bg-gradient-to-br from-slate-50 to-slate-100/50 border-slate-200',
+        )}>
+          <p className="text-xs font-bold text-muted uppercase tracking-widest">Cap Rate</p>
+          <p className={clsx('text-4xl font-black font-mono leading-none', capGood ? 'text-emerald-700' : 'text-ink')}>
+            {fmtPct(prop.cap_rate)}
+          </p>
+          <p className={clsx('text-xs font-semibold', capGood ? 'text-emerald-600' : 'text-muted')}>
+            {prop.cap_rate == null ? 'No data' : prop.cap_rate >= 6 ? '↑ Above benchmark (6%)' : prop.cap_rate >= 4.5 ? '→ Acceptable range' : '↓ Below floor (4.5%)'}
+          </p>
+        </div>
+
+        {/* Monthly Cash Flow */}
+        <div className={clsx(
+          'rounded-2xl p-5 border space-y-1',
+          cfGood ? 'bg-gradient-to-br from-blue-50 to-blue-100/50 border-blue-200' :
+                   'bg-gradient-to-br from-red-50 to-red-100/50 border-red-200',
+        )}>
+          <p className="text-xs font-bold text-muted uppercase tracking-widest">Monthly Cash Flow</p>
+          <p className={clsx('text-4xl font-black font-mono leading-none', cfGood ? 'text-blue-700' : 'text-red-600')}>
+            {prop.monthly_cash_flow != null ? fmtCAD(prop.monthly_cash_flow) : '—'}
+          </p>
+          <p className={clsx('text-xs font-semibold', cfGood ? 'text-blue-600' : 'text-red-500')}>
+            {prop.monthly_cash_flow == null ? 'No data' : prop.monthly_cash_flow > 500 ? '↑ Strong surplus' : prop.monthly_cash_flow > 0 ? '→ Break-even' : '↓ Top-up required'}
+          </p>
+        </div>
+
+        {/* Below Market */}
+        <div className={clsx(
+          'rounded-2xl p-5 border space-y-1',
+          discGood ? 'bg-gradient-to-br from-violet-50 to-violet-100/50 border-violet-200' :
+                     'bg-gradient-to-br from-amber-50 to-amber-100/50 border-amber-200',
+        )}>
+          <p className="text-xs font-bold text-muted uppercase tracking-widest">vs Market</p>
+          <p className={clsx('text-4xl font-black font-mono leading-none', discGood ? 'text-violet-700' : 'text-amber-700')}>
+            {prop.discount_pct != null
               ? `${prop.discount_pct > 0 ? '-' : '+'}${Math.abs(prop.discount_pct).toFixed(1)}%`
               : '—'}
-            valueClass={prop.discount_pct != null && prop.discount_pct > 5 ? 'text-score-strong' :
-                        prop.discount_pct != null && prop.discount_pct < 0 ? 'text-score-notrecommended' : undefined}
-          />
-          <FinCard label={t('pricePerSqft')}  value={pricePerSqft != null ? fmtCAD(pricePerSqft) : '—'} note="per sqft" />
-          <FinCard label={t('compsFound')}     value={prop.comparable_count != null ? `${prop.comparable_count}` : '—'} />
+          </p>
+          <p className={clsx('text-xs font-semibold', discGood ? 'text-violet-600' : 'text-amber-600')}>
+            {prop.discount_pct == null ? 'No comps yet' :
+             prop.discount_pct >= 10   ? '↑ Big discount — strong buy' :
+             prop.discount_pct >= 3    ? '→ Modest discount' :
+             prop.discount_pct >= -2   ? '→ Market price' :
+                                         '↓ Above market value'}
+          </p>
         </div>
-      </Section>
+      </div>
 
-      <Section title="Investment returns (what you earn)">
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-          <FinCard label={t('capRate')}
-            value={fmtPct(prop.cap_rate)}
-            valueClass={prop.cap_rate != null && prop.cap_rate >= 5 ? 'text-score-strong' : undefined}
-          />
-          <FinCard label={t('cashFlow')}
-            value={prop.monthly_cash_flow != null ? `${fmtCAD(prop.monthly_cash_flow)}/mo` : '—'}
-            note="at 20% down"
-            valueClass={prop.monthly_cash_flow != null && prop.monthly_cash_flow >= 0 ? 'text-score-strong' : 'text-score-notrecommended'}
-            prominent
-          />
-          <FinCard label={t('cashOnCash')} value={fmtPct(prop.cash_on_cash_return)} />
-          <FinCard label={t('noi')}         value={fmtCAD(prop.noi_annual)} note="annual" />
-          <FinCard label={t('grm')}         value={prop.grm != null ? `${prop.grm.toFixed(1)}x` : '—'} />
-          <FinCard label={t('rentalIncome')} value={fmtCAD(prop.rental_income_monthly)} note="/month" />
+      {/* ── Market comparison bar ── */}
+      {prop.asking_price != null && prop.comparable_median_price != null && (
+        <div className="card space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-bold text-ink">Price vs Comparable Market</h3>
+            {prop.analysis_confidence && <ConfidencePill confidence={prop.analysis_confidence} t={t} />}
+          </div>
+          <div className="space-y-3">
+            <div>
+              <div className="flex justify-between text-xs text-muted mb-1.5">
+                <span>This property</span>
+                <span className="font-mono font-bold text-ink">{fmtCAD(prop.asking_price)}</span>
+              </div>
+              <div className="h-3 bg-surface-border rounded-full overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-accent transition-all duration-700"
+                  style={{ width: `${Math.min(100, (prop.asking_price / (prop.comparable_median_price * 1.3)) * 100)}%` }}
+                />
+              </div>
+            </div>
+            <div>
+              <div className="flex justify-between text-xs text-muted mb-1.5">
+                <span>Comparable median ({prop.comparable_count ?? 0} properties)</span>
+                <span className="font-mono font-bold text-muted">{fmtCAD(prop.comparable_median_price)}</span>
+              </div>
+              <div className="h-3 bg-surface-border rounded-full overflow-hidden">
+                <div className="h-full rounded-full bg-surface-border/80" style={{ width: '100%' }} />
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 text-sm pt-1 border-t border-surface-border">
+            <span className={clsx(
+              'font-bold',
+              prop.value_gap != null && prop.value_gap > 0 ? 'text-emerald-600' : 'text-red-500',
+            )}>
+              {prop.value_gap != null ? (prop.value_gap > 0 ? `You save ${fmtCAD(prop.value_gap)}` : `You pay ${fmtCAD(Math.abs(prop.value_gap))} extra`) : '—'}
+            </span>
+            <span className="text-muted text-xs">vs comparable median</span>
+          </div>
         </div>
-      </Section>
+      )}
 
-      <Section title="What it costs to buy">
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-          <FinCard label={t('downPayment')}      value={fmtCAD(prop.down_payment_20pct)} />
-          <FinCard label={t('welcomeTax')}        value={fmtCAD(prop.welcome_tax)} note="droits de mutation" />
-          <FinCard label={t('monthlyMortgage')}   value={fmtCAD(prop.monthly_mortgage)} note="4.5%, 25yr amort." />
-          <FinCard label={t('municipalTax')}      value={fmtCAD(prop.municipal_taxes_annual)} note="annual" />
-          <FinCard label={t('schoolTax')}         value={fmtCAD(prop.school_taxes_annual)} note="annual" />
-          {prop.condo_fees_monthly != null && (
-            <FinCard label={t('condoFees')} value={`${fmtCAD(prop.condo_fees_monthly)}/mo`} />
-          )}
+      {/* ── Returns grid ── */}
+      <div className="card space-y-4">
+        <h3 className="text-sm font-bold text-ink border-b border-surface-border pb-3">Investment Returns</h3>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          {[
+            { label: 'Annual NOI',     value: fmtCAD(prop.noi_annual),          note: 'net operating income',  good: prop.noi_annual != null && prop.noi_annual > 0 },
+            { label: 'Cap Rate',       value: fmtPct(prop.cap_rate),            note: '≥6% = strong buy',     good: capGood },
+            { label: 'Cash-on-Cash',   value: fmtPct(prop.cash_on_cash_return), note: 'return on down payment', good: prop.cash_on_cash_return != null && prop.cash_on_cash_return > 0 },
+            { label: 'Monthly CF',     value: prop.monthly_cash_flow != null ? `${fmtCAD(prop.monthly_cash_flow)}/mo` : '—', note: 'at 20% down', good: cfGood },
+            { label: 'Rental Income',  value: fmtCAD(prop.rental_income_monthly), note: '/month gross',        good: null },
+            { label: 'GRM',            value: prop.grm != null ? `${prop.grm.toFixed(1)}×` : '—', note: '≤12 excellent · ≤15 OK', good: prop.grm != null && prop.grm <= 15 },
+          ].map(m => (
+            <div key={m.label} className={clsx(
+              'rounded-xl border p-3.5 space-y-1 transition-all duration-200 hover:shadow-sm hover:-translate-y-0.5',
+              m.good === true  ? 'border-emerald-200 bg-emerald-50/50' :
+              m.good === false ? 'border-red-200 bg-red-50/50' :
+                                 'border-surface-border bg-surface',
+            )}>
+              <p className="text-[10px] font-bold text-muted uppercase tracking-widest">{m.label}</p>
+              <p className={clsx(
+                'text-lg font-black font-mono leading-none',
+                m.good === true ? 'text-emerald-700' : m.good === false ? 'text-red-600' : 'text-ink',
+              )}>{m.value}</p>
+              <p className="text-[10px] text-muted">{m.note}</p>
+            </div>
+          ))}
         </div>
-      </Section>
+      </div>
+
+      {/* ── Acquisition costs ── */}
+      <div className="card space-y-4">
+        <h3 className="text-sm font-bold text-ink border-b border-surface-border pb-3">Acquisition Costs</h3>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          {[
+            { label: 'Down Payment (20%)', value: fmtCAD(prop.down_payment_20pct),   note: 'cash required' },
+            { label: 'Monthly Mortgage',   value: fmtCAD(prop.monthly_mortgage),      note: '5.5%, 25yr amort.' },
+            { label: 'Welcome Tax',        value: fmtCAD(prop.welcome_tax ?? (prop.asking_price ? calcWelcomeTax(prop.asking_price) : null)), note: 'droits de mutation · one-time' },
+            { label: 'Municipal Tax',      value: prop.municipal_taxes_annual != null ? `${fmtCAD(prop.municipal_taxes_annual)}/yr` : '—', note: 'annual' },
+            { label: 'School Tax',         value: prop.school_taxes_annual != null ? `${fmtCAD(prop.school_taxes_annual)}/yr` : '—', note: 'annual' },
+            ...(prop.condo_fees_monthly != null ? [{ label: 'Condo Fees', value: `${fmtCAD(prop.condo_fees_monthly)}/mo`, note: 'monthly' }] : []),
+            ...(pricePerSqft != null ? [{ label: 'Price / Sqft', value: fmtCAD(pricePerSqft), note: 'asking price ÷ area' }] : []),
+          ].map(m => (
+            <div key={m.label} className="rounded-xl border border-surface-border bg-surface p-3.5 space-y-1 hover:shadow-sm hover:-translate-y-0.5 transition-all duration-200">
+              <p className="text-[10px] font-bold text-muted uppercase tracking-widest">{m.label}</p>
+              <p className="text-lg font-black font-mono text-ink leading-none">{m.value}</p>
+              <p className="text-[10px] text-muted">{m.note}</p>
+            </div>
+          ))}
+        </div>
+      </div>
 
       <IncomeExpenseAnalysis prop={prop} />
 
-      {/* Tax Summary */}
-      <div className="rounded-xl border border-surface-border bg-surface-card overflow-hidden">
-        <div className="px-5 py-3.5 border-b border-surface-border bg-surface">
-          <h3 className="text-sm font-semibold text-ink">Tax Summary</h3>
+      {/* ── Tax Summary ── */}
+      <div className="card overflow-hidden p-0">
+        <div className="px-5 py-4 border-b border-surface-border flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-bold text-ink">Tax Summary</h3>
+            <p className="text-xs text-muted mt-0.5">Scraped from Centris — actual values</p>
+          </div>
+          <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700 border border-emerald-200">Live Data</span>
         </div>
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-surface-border bg-surface">
-              <th className="px-5 py-2 text-left text-xs text-muted font-medium">Tax</th>
-              <th className="px-5 py-2 text-right text-xs text-muted font-medium">Amount</th>
-              <th className="px-5 py-2 text-right text-xs text-muted font-medium">Frequency</th>
+            <tr className="border-b border-surface-border bg-surface/60">
+              <th className="px-5 py-3 text-left text-xs text-muted font-semibold uppercase tracking-wider">Tax Type</th>
+              <th className="px-5 py-3 text-right text-xs text-muted font-semibold uppercase tracking-wider">Amount</th>
+              <th className="px-5 py-3 text-right text-xs text-muted font-semibold uppercase tracking-wider">Frequency</th>
             </tr>
           </thead>
-          <tbody>
-            <tr className="border-b border-surface-border">
-              <td className="px-5 py-2.5 text-ink">Municipal Tax</td>
-              <td className="px-5 py-2.5 text-right font-mono text-ink">{prop.municipal_taxes_annual != null ? fmtCAD(prop.municipal_taxes_annual) : '—'}</td>
-              <td className="px-5 py-2.5 text-right text-xs text-muted">annual</td>
-            </tr>
-            <tr className="border-b border-surface-border">
-              <td className="px-5 py-2.5 text-ink">School Tax</td>
-              <td className="px-5 py-2.5 text-right font-mono text-ink">{prop.school_taxes_annual != null ? fmtCAD(prop.school_taxes_annual) : '—'}</td>
-              <td className="px-5 py-2.5 text-right text-xs text-muted">annual</td>
-            </tr>
-            <tr>
-              <td className="px-5 py-2.5 text-ink">
-                Land Transfer Tax
-                <span className="ml-1.5 text-xs text-muted">(droits de mutation)</span>
-              </td>
-              <td className="px-5 py-2.5 text-right font-mono text-ink">
-                {fmtCAD(prop.welcome_tax ?? (prop.asking_price != null ? calcWelcomeTax(prop.asking_price, prop.city) : null))}
-              </td>
-              <td className="px-5 py-2.5 text-right text-xs text-muted">one-time</td>
-            </tr>
+          <tbody className="divide-y divide-surface-border">
+            {[
+              { name: 'Municipal Tax', value: prop.municipal_taxes_annual != null ? fmtCAD(prop.municipal_taxes_annual) : '—', freq: 'Annual' },
+              { name: 'School Tax',    value: prop.school_taxes_annual != null ? fmtCAD(prop.school_taxes_annual) : '—',    freq: 'Annual' },
+              { name: 'Land Transfer Tax (droits de mutation)', value: fmtCAD(prop.welcome_tax ?? (prop.asking_price != null ? calcWelcomeTax(prop.asking_price, prop.city) : null)), freq: 'One-time' },
+            ].map(row => (
+              <tr key={row.name} className="hover:bg-surface/40 transition-colors">
+                <td className="px-5 py-3.5 text-ink font-medium">{row.name}</td>
+                <td className="px-5 py-3.5 text-right font-mono font-bold text-ink">{row.value}</td>
+                <td className="px-5 py-3.5 text-right">
+                  <span className={clsx(
+                    'px-2 py-0.5 rounded-full text-[10px] font-bold',
+                    row.freq === 'One-time' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700',
+                  )}>{row.freq}</span>
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
-        <div className="px-5 py-2.5 bg-surface border-t border-surface-border">
-          <p className="text-xs text-muted">
-            Municipal &amp; school taxes scraped from Centris — actual values. Land transfer tax per Quebec RLRQ c. D-15.1.
-          </p>
-        </div>
       </div>
 
       <DesjardinsCalculator askingPrice={prop.asking_price} />
@@ -1600,143 +1666,142 @@ function ComparablesTab({ prop, t }: { prop: PropertyDetail; t: (k: string) => s
 
   if (!prop.comparable_count) {
     return (
-      <div className="card py-10 text-center space-y-2 animate-slide-up">
-        <AlertCircle className="mx-auto text-muted" size={28} />
-        <p className="text-muted text-sm">{t('noComparables')}</p>
-        <p className="text-xs text-muted">Run Reanalyze to find comparable properties in the database.</p>
+      <div className="card py-16 text-center space-y-3">
+        <div className="w-16 h-16 rounded-2xl bg-surface-border/50 flex items-center justify-center mx-auto">
+          <AlertCircle size={28} className="text-muted" />
+        </div>
+        <p className="text-ink font-semibold">{t('noComparables')}</p>
+        <p className="text-xs text-muted max-w-xs mx-auto">Run Reanalyze to find comparable properties in the database.</p>
       </div>
     )
   }
 
   return (
-    <div className="space-y-4 animate-slide-up">
+    <div className="space-y-5">
 
-      {/* Aggregate stats */}
-      <div className="card space-y-4">
-        <div className="flex items-center gap-3 flex-wrap">
-          <TrendingUp size={16} className="text-muted" />
-          <h3 className="font-bold text-ink">Comparable Properties Analysis</h3>
-          {prop.analysis_confidence && (
-            <ConfidencePill confidence={prop.analysis_confidence} t={t} />
-          )}
-        </div>
-
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <div>
-            <p className="text-xs text-muted mb-0.5">Comparable properties</p>
-            <p className="text-2xl font-bold text-ink font-mono">{prop.comparable_count}</p>
+      {/* ── Summary stats ── */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { label: 'Comparable Sales',  value: String(prop.comparable_count ?? 0),  sub: 'matched in area',    accent: 'text-accent' },
+          { label: 'Median Price',      value: fmtCAD(prop.comparable_median_price), sub: 'market benchmark',   accent: 'text-ink' },
+          { label: 'Average Price',     value: fmtCAD(prop.comparable_mean_price),   sub: 'mean of comps',      accent: 'text-ink' },
+          {
+            label: 'You Save',
+            value: prop.value_gap != null ? `${prop.value_gap > 0 ? '-' : '+'}${fmtCAD(Math.abs(prop.value_gap))}` : '—',
+            sub: `vs median (${Math.abs(prop.discount_pct ?? 0).toFixed(1)}%)`,
+            accent: prop.value_gap != null && prop.value_gap > 0 ? 'text-emerald-600' : 'text-red-500',
+          },
+        ].map(s => (
+          <div key={s.label} className="card p-4 space-y-1 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200">
+            <p className="text-[10px] font-bold text-muted uppercase tracking-widest">{s.label}</p>
+            <p className={clsx('text-xl font-black font-mono leading-tight', s.accent)}>{s.value}</p>
+            <p className="text-[10px] text-muted">{s.sub}</p>
           </div>
-          <div>
-            <p className="text-xs text-muted mb-0.5">Median price</p>
-            <p className="text-xl font-bold text-ink font-mono">{fmtCAD(prop.comparable_median_price)}</p>
-          </div>
-          <div>
-            <p className="text-xs text-muted mb-0.5">Average price</p>
-            <p className="text-base font-semibold text-ink font-mono">{fmtCAD(prop.comparable_mean_price)}</p>
-          </div>
-          <div>
-            <p className="text-xs text-muted mb-0.5">You save vs median</p>
-            <p className={clsx(
-              'text-base font-semibold font-mono',
-              prop.value_gap != null && prop.value_gap > 0 ? 'text-score-strong' : 'text-score-notrecommended',
-            )}>
-              {prop.value_gap != null
-                ? `${prop.value_gap > 0 ? '-' : '+'}${fmtCAD(Math.abs(prop.value_gap))} (${Math.abs(prop.discount_pct ?? 0).toFixed(1)}%)`
-                : '—'}
-            </p>
-          </div>
-        </div>
-
-        <p className="text-xs text-muted border-t border-surface-border pt-3">
-          Matched within 2–25 km radius — same property type, price ±40%, scored by sqft, year built, and unit count similarity.
-        </p>
+        ))}
       </div>
 
-      {/* Individual comparable property cards */}
-      <div className="space-y-2">
-        <h3 className="text-xs font-bold text-muted uppercase tracking-widest px-1">
-          {isLoading ? 'Loading properties…' : `${comps?.length ?? 0} Matched Properties`}
+      {prop.analysis_confidence && (
+        <div className="flex items-center gap-2 text-xs text-muted px-1">
+          <TrendingUp size={13} />
+          <span>Matched within 2–25 km — same type, price ±40%, scored by sqft/year/units</span>
+          <ConfidencePill confidence={prop.analysis_confidence} t={t} />
+        </div>
+      )}
+
+      {/* ── Property cards grid ── */}
+      <div>
+        <h3 className="text-xs font-bold text-muted uppercase tracking-widest mb-3">
+          {isLoading ? 'Loading…' : `${comps?.length ?? 0} Matched Properties`}
         </h3>
 
         {isLoading ? (
-          <div className="space-y-2">
-            {[0,1,2].map(i => (
-              <div key={i} className="card h-20 animate-pulse bg-surface-border" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {[0,1,2,3].map(i => (
+              <div key={i} className="shimmer rounded-2xl h-40" />
             ))}
           </div>
         ) : !comps || comps.length === 0 ? (
-          <div className="card py-8 text-center">
+          <div className="card py-10 text-center space-y-2">
             <p className="text-sm text-muted">No comparable property details yet.</p>
-            <p className="text-xs text-muted mt-1">Click Reanalyze to populate the comparable list.</p>
+            <p className="text-xs text-muted">Click Reanalyze to populate the list.</p>
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {comps.map((c, idx) => {
               const priceDiff = prop.asking_price != null && c.asking_price != null
                 ? prop.asking_price - c.asking_price : null
+              const cheaper = priceDiff != null && priceDiff > 0
               return (
                 <div
                   key={c.id}
-                  className="card flex items-center gap-4 p-4 hover:border-accent/30 transition-colors"
+                  className="group bg-white border border-surface-border rounded-2xl overflow-hidden hover:shadow-lg hover:-translate-y-1 hover:border-accent/30 transition-all duration-250"
                 >
-                  {/* Rank */}
-                  <div className="shrink-0 w-7 h-7 rounded-full bg-surface flex items-center justify-center text-xs font-bold text-muted border border-surface-border">
-                    {idx + 1}
-                  </div>
-
-                  {/* Thumbnail */}
-                  {c.photos && c.photos[0] ? (
-                    <img
-                      src={c.photos[0]}
-                      alt={c.full_address}
-                      className="shrink-0 w-14 h-14 rounded-xl object-cover border border-surface-border"
-                      referrerPolicy="no-referrer"
-                      onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
-                    />
-                  ) : (
-                    <div className="shrink-0 w-14 h-14 rounded-xl bg-surface border border-surface-border flex items-center justify-center">
-                      <Building2 size={18} className="text-muted" />
+                  {/* Photo */}
+                  <div className="relative overflow-hidden bg-surface" style={{ aspectRatio: '16/7' }}>
+                    {c.photos && c.photos[0] ? (
+                      <img
+                        src={c.photos[0]}
+                        alt={c.full_address}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        referrerPolicy="no-referrer"
+                        onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200">
+                        <Building2 size={24} className="text-slate-400" />
+                      </div>
+                    )}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent pointer-events-none" />
+                    {/* Rank badge */}
+                    <div className="absolute top-3 left-3 w-7 h-7 rounded-full bg-white/90 backdrop-blur-sm flex items-center justify-center text-xs font-black text-ink shadow">
+                      {idx + 1}
                     </div>
-                  )}
-
-                  {/* Main info */}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-ink truncate">{c.full_address}</p>
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5 text-xs text-muted">
-                      {c.unit_count && <span>{c.unit_count} units</span>}
-                      {c.sqft_total && <span>{c.sqft_total.toLocaleString()} sqft</span>}
-                      {c.year_built && <span>Built {c.year_built}</span>}
-                      {c.mls_number && <span className="font-mono">MLS# {c.mls_number}</span>}
-                    </div>
-                  </div>
-
-                  {/* Price block */}
-                  <div className="shrink-0 text-right">
-                    <p className="text-base font-bold font-mono text-ink">{fmtCAD(c.asking_price)}</p>
+                    {/* Price diff badge */}
                     {priceDiff != null && (
-                      <p className={clsx(
-                        'text-xs font-semibold mt-0.5',
-                        priceDiff > 0 ? 'text-score-strong' : 'text-score-notrecommended',
+                      <div className={clsx(
+                        'absolute top-3 right-3 px-2 py-1 rounded-lg text-[10px] font-black shadow backdrop-blur-sm',
+                        cheaper ? 'bg-emerald-500 text-white' : 'bg-red-500 text-white',
                       )}>
-                        {priceDiff > 0 ? `−${fmtCAD(priceDiff)}` : `+${fmtCAD(Math.abs(priceDiff))}`} vs subject
-                      </p>
-                    )}
-                    {c.cap_rate != null && (
-                      <p className="text-xs text-muted mt-0.5">{c.cap_rate.toFixed(2)}% cap</p>
+                        {cheaper ? `−${fmtCAD(priceDiff)}` : `+${fmtCAD(Math.abs(priceDiff))}`}
+                      </div>
                     )}
                   </div>
 
-                  {/* View link */}
-                  {c.listing_url && (
-                    <a
-                      href={c.listing_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="shrink-0 p-2 text-muted hover:text-accent transition-colors"
-                    >
-                      <ExternalLink size={14} />
-                    </a>
-                  )}
+                  {/* Info */}
+                  <div className="p-4 space-y-2">
+                    <p className="text-sm font-bold text-ink leading-snug line-clamp-2 group-hover:text-accent transition-colors">
+                      {c.full_address}
+                    </p>
+                    <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted">
+                      {c.unit_count  && <span>{c.unit_count} units</span>}
+                      {c.sqft_total  && <span>{c.sqft_total.toLocaleString()} sqft</span>}
+                      {c.year_built  && <span>Built {c.year_built}</span>}
+                      {c.mls_number  && <span className="font-mono">MLS# {c.mls_number}</span>}
+                    </div>
+                    <div className="flex items-center justify-between pt-1 border-t border-surface-border">
+                      <p className="text-base font-black font-mono text-ink">{fmtCAD(c.asking_price)}</p>
+                      <div className="flex items-center gap-2">
+                        {c.cap_rate != null && (
+                          <span className={clsx(
+                            'text-xs font-bold px-2 py-0.5 rounded-full',
+                            c.cap_rate >= 5 ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-muted',
+                          )}>
+                            {c.cap_rate.toFixed(2)}% cap
+                          </span>
+                        )}
+                        {c.listing_url && (
+                          <a
+                            href={c.listing_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-1.5 rounded-lg text-muted hover:text-accent hover:bg-surface transition-colors"
+                          >
+                            <ExternalLink size={13} />
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )
             })}
@@ -1752,7 +1817,6 @@ function ComparablesTab({ prop, t }: { prop: PropertyDetail; t: (k: string) => s
 function PriceHistoryTab({ prop, t }: { prop: PropertyDetail; t: (k: string) => string }) {
   const rawHistory = prop.price_history ?? []
 
-  // Inject listing event if not already in history
   const history = (() => {
     const events = [...rawHistory]
     const hasListedEvent = events.some(e => e.event === 'listed')
@@ -1764,98 +1828,148 @@ function PriceHistoryTab({ prop, t }: { prop: PropertyDetail; t: (k: string) => 
 
   const showChart = history.length >= 2
 
+  const eventMeta: Record<string, { label: string; dot: string; badge: string }> = {
+    listed:   { label: 'Listed',        dot: 'bg-blue-500',    badge: 'bg-blue-100 text-blue-700 border-blue-200' },
+    reduced:  { label: 'Price Reduced', dot: 'bg-emerald-500', badge: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
+    relisted: { label: 'Relisted',      dot: 'bg-violet-500',  badge: 'bg-violet-100 text-violet-700 border-violet-200' },
+  }
+
+  const totalDrop = history.length >= 2
+    ? history[0].price - history[history.length - 1].price
+    : null
+
   return (
-    <div className="space-y-4 animate-slide-up">
-      <div className="card">
-        <h3 className="text-xs font-bold text-muted uppercase tracking-widest mb-4">
-          {t('priceHistory')}
-        </h3>
+    <div className="space-y-5">
+
+      {/* Summary cards */}
+      {history.length > 0 && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[
+            { label: 'Current Price',   value: fmtCAD(prop.asking_price),                       sub: 'asking price' },
+            { label: 'Initial Price',   value: fmtCAD(history[0]?.price),                        sub: 'first listed' },
+            { label: 'Price Changes',   value: String(history.filter(e => e.event === 'reduced').length), sub: 'reductions' },
+            { label: 'Total Drop',      value: totalDrop != null && totalDrop > 0 ? `-${fmtCAD(totalDrop)}` : '—', sub: 'from listing price' },
+          ].map(s => (
+            <div key={s.label} className="card p-4 space-y-1 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200">
+              <p className="text-[10px] font-bold text-muted uppercase tracking-widest">{s.label}</p>
+              <p className="text-lg font-black font-mono text-ink leading-tight">{s.value}</p>
+              <p className="text-[10px] text-muted">{s.sub}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="card space-y-6">
 
         {history.length === 0 ? (
-          <p className="text-muted text-sm py-6 text-center">{t('noPriceHistory')}</p>
+          <div className="py-16 text-center space-y-3">
+            <div className="w-14 h-14 rounded-2xl bg-surface-border/50 flex items-center justify-center mx-auto">
+              <BarChart2 size={24} className="text-muted" />
+            </div>
+            <p className="text-ink font-semibold">{t('noPriceHistory')}</p>
+            <p className="text-xs text-muted">Price changes will appear here as the listing is updated.</p>
+          </div>
         ) : (
           <>
-            {showChart && <div className="h-56 mb-5">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={history} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
-                  <defs>
-                    <linearGradient id="priceGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%"  stopColor="#2563EB" stopOpacity={0.15} />
-                      <stop offset="95%" stopColor="#2563EB" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#D8E0EC" />
-                  <XAxis
-                    dataKey="date"
-                    stroke="#9CA3AF"
-                    tick={{ fontSize: 11, fill: '#6B7280' }}
-                    tickFormatter={d => new Date(d).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })}
-                  />
-                  <YAxis
-                    stroke="#9CA3AF"
-                    tick={{ fontSize: 11, fill: '#6B7280' }}
-                    tickFormatter={v => `$${(v / 1000).toFixed(0)}K`}
-                    width={60}
-                  />
-                  <Tooltip
-                    contentStyle={{ background: '#FFFFFF', border: '1px solid #D8E0EC', borderRadius: 12, boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}
-                    labelStyle={{ color: '#6B7280', fontSize: 11 }}
-                    formatter={(v) => [
-                      typeof v === 'number'
-                        ? new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD', maximumFractionDigits: 0 }).format(v)
-                        : String(v),
-                      'Price',
-                    ]}
-                    labelFormatter={d => new Date(d).toLocaleDateString('en-CA', { year: 'numeric', month: 'long', day: 'numeric' })}
-                  />
-                  <Area
-                    type="stepAfter"
-                    dataKey="price"
-                    stroke="#2563EB"
-                    strokeWidth={2}
-                    fill="url(#priceGrad)"
-                    dot={{ fill: '#2563EB', strokeWidth: 0, r: 4 }}
-                    activeDot={{ fill: '#2563EB', r: 5, strokeWidth: 2, stroke: '#FFFFFF' }}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>}
-
-            <div className="relative pl-5 space-y-4">
-              <div className="absolute left-0 top-2 bottom-2 w-px bg-surface-border" />
-              {history.map((ev, i) => (
-                <div key={i} className="relative">
-                  <div className="absolute -left-5 top-1.5 w-2 h-2 rounded-full border-2 border-accent bg-white" />
-                  <div className="flex items-center gap-3 flex-wrap">
-                    <span className="font-mono font-bold text-ink tabular-nums text-sm">
-                      {fmtCAD(ev.price)}
-                    </span>
-                    <span className={clsx(
-                      'text-xs px-1.5 py-0.5 rounded-lg font-medium',
-                      ev.event === 'reduced'  ? 'bg-emerald-100 text-emerald-700' :
-                      ev.event === 'listed'   ? 'bg-blue-100 text-blue-700' :
-                      ev.event === 'relisted' ? 'bg-purple-100 text-purple-700' :
-                                                'bg-surface-hover text-muted',
-                    )}>
-                      {ev.event === 'listed'   ? 'Listed' :
-                       ev.event === 'reduced'  ? 'Price Reduced' :
-                       ev.event === 'relisted' ? 'Relisted' :
-                       ev.event.replace(/_/g, ' ')}
-                    </span>
-                  </div>
-                  <p className="text-xs text-muted/70 mt-0.5">
-                    {new Date(ev.date).toLocaleDateString('en-CA', { year: 'numeric', month: 'long', day: 'numeric' })}
-                  </p>
+            {/* Chart */}
+            {showChart && (
+              <div>
+                <h3 className="text-sm font-bold text-ink mb-4">Price Over Time</h3>
+                <div className="h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={history} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
+                      <defs>
+                        <linearGradient id="priceGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%"  stopColor="#2563EB" stopOpacity={0.2} />
+                          <stop offset="95%" stopColor="#2563EB" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#EEF2F7" vertical={false} />
+                      <XAxis
+                        dataKey="date"
+                        tick={{ fontSize: 11, fill: '#94a3b8' }}
+                        axisLine={false} tickLine={false}
+                        tickFormatter={d => new Date(d).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })}
+                      />
+                      <YAxis
+                        tick={{ fontSize: 11, fill: '#94a3b8' }}
+                        axisLine={false} tickLine={false}
+                        tickFormatter={v => `$${(v / 1000).toFixed(0)}K`}
+                        width={58}
+                      />
+                      <Tooltip
+                        contentStyle={{ background: '#FFFFFF', border: '1px solid #e2e8f0', borderRadius: 14, boxShadow: '0 8px 24px rgba(0,0,0,0.10)', fontSize: 13 }}
+                        labelStyle={{ color: '#64748b', fontSize: 11 }}
+                        formatter={(v) => [
+                          typeof v === 'number'
+                            ? new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD', maximumFractionDigits: 0 }).format(v)
+                            : String(v),
+                          'Price',
+                        ]}
+                        labelFormatter={d => new Date(d).toLocaleDateString('en-CA', { year: 'numeric', month: 'long', day: 'numeric' })}
+                      />
+                      <Area
+                        type="stepAfter"
+                        dataKey="price"
+                        stroke="#2563EB"
+                        strokeWidth={2.5}
+                        fill="url(#priceGrad)"
+                        dot={{ fill: '#2563EB', strokeWidth: 0, r: 5 }}
+                        activeDot={{ fill: '#2563EB', r: 6, strokeWidth: 3, stroke: '#FFFFFF' }}
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
                 </div>
-              ))}
-            </div>
-          </>
-        )}
+              </div>
+            )}
 
-        {prop.listed_at && (
-          <p className="text-xs text-muted/60 pt-3 border-t border-surface-border mt-4">
-            {t('originalListing')}: {new Date(prop.listed_at).toLocaleDateString('en-CA', { year: 'numeric', month: 'long', day: 'numeric' })}
-          </p>
+            {/* Timeline */}
+            <div>
+              <h3 className="text-sm font-bold text-ink mb-4">Event Timeline</h3>
+              <div className="relative pl-6 space-y-5">
+                <div className="absolute left-2.5 top-2 bottom-2 w-0.5 bg-gradient-to-b from-blue-400 via-surface-border to-surface-border rounded-full" />
+                {history.map((ev, i) => {
+                  const meta = eventMeta[ev.event] ?? { label: ev.event.replace(/_/g, ' '), dot: 'bg-muted', badge: 'bg-surface text-muted border-surface-border' }
+                  const prev = history[i - 1]
+                  const delta = prev ? ev.price - prev.price : null
+                  return (
+                    <div key={i} className="relative group">
+                      <div className={clsx(
+                        'absolute -left-6 top-1 w-4 h-4 rounded-full border-2 border-white shadow-sm transition-transform duration-200 group-hover:scale-125',
+                        meta.dot,
+                      )} />
+                      <div className="bg-white border border-surface-border rounded-xl p-4 hover:shadow-md hover:border-accent/20 transition-all duration-200 space-y-2">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="space-y-1">
+                            <span className={clsx('inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold border', meta.badge)}>
+                              {meta.label}
+                            </span>
+                            <p className="text-xs text-muted">
+                              {new Date(ev.date).toLocaleDateString('en-CA', { year: 'numeric', month: 'long', day: 'numeric' })}
+                            </p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="text-lg font-black font-mono text-ink">{fmtCAD(ev.price)}</p>
+                            {delta != null && delta !== 0 && (
+                              <p className={clsx('text-xs font-bold mt-0.5', delta < 0 ? 'text-emerald-600' : 'text-red-500')}>
+                                {delta < 0 ? `↓ ${fmtCAD(Math.abs(delta))}` : `↑ ${fmtCAD(delta)}`}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            {prop.listed_at && (
+              <p className="text-xs text-muted border-t border-surface-border pt-4">
+                {t('originalListing')}: {new Date(prop.listed_at).toLocaleDateString('en-CA', { year: 'numeric', month: 'long', day: 'numeric' })}
+              </p>
+            )}
+          </>
         )}
       </div>
     </div>
@@ -1866,17 +1980,48 @@ function PriceHistoryTab({ prop, t }: { prop: PropertyDetail; t: (k: string) => 
 
 function PropertySkeleton() {
   return (
-    <div className="max-w-5xl mx-auto p-6 space-y-5 animate-pulse">
-      <div className="h-4 w-36 bg-surface-border rounded" />
-      <div className="card space-y-4">
-        <div className="h-6 w-64 bg-surface-border rounded" />
-        <div className="h-4 w-48 bg-surface-border rounded" />
-        <div className="grid grid-cols-4 gap-3">
-          {[0,1,2,3].map(i => <div key={i} className="h-12 bg-surface-border rounded" />)}
+    <div className="max-w-5xl mx-auto p-6 space-y-5">
+      {/* Progress bar */}
+      <div className="fixed top-0 left-0 right-0 z-50 h-1 bg-surface-border overflow-hidden">
+        <div className="h-full bg-accent rounded-full progress-loading" />
+      </div>
+
+      {/* Back link skeleton */}
+      <div className="shimmer h-4 w-32 rounded-lg" />
+
+      {/* Header card */}
+      <div className="card space-y-5 overflow-hidden">
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-3 flex-1">
+            <div className="shimmer h-6 w-3/4 rounded-xl" />
+            <div className="shimmer h-4 w-1/2 rounded-xl" />
+          </div>
+          <div className="shimmer w-24 h-12 rounded-2xl shrink-0" />
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[0,1,2,3].map(i => <div key={i} className="shimmer h-14 rounded-xl" />)}
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          {[0,1,2,3].map(i => <div key={i} className="shimmer h-9 w-28 rounded-xl" />)}
         </div>
       </div>
-      <div className="h-10 bg-surface-border rounded" />
-      <div className="card h-64" />
+
+      {/* Photo placeholder */}
+      <div className="shimmer rounded-2xl" style={{ aspectRatio: '16/7' }} />
+
+      {/* Tabs */}
+      <div className="card overflow-hidden">
+        <div className="flex gap-1 border-b border-surface-border p-1">
+          {[0,1,2,3].map(i => <div key={i} className="shimmer h-10 w-28 rounded-lg" />)}
+        </div>
+        <div className="p-6 space-y-4">
+          <div className="shimmer h-32 rounded-xl" />
+          <div className="grid grid-cols-3 gap-3">
+            {[0,1,2].map(i => <div key={i} className="shimmer h-20 rounded-xl" />)}
+          </div>
+          <div className="shimmer h-48 rounded-xl" />
+        </div>
+      </div>
     </div>
   )
 }

@@ -1,116 +1,192 @@
-import { Outlet, NavLink } from 'react-router-dom'
+import { NavLink, Outlet, Link } from 'react-router-dom'
 import {
   LayoutDashboard, Building2, Bookmark, Settings,
-  Bell, Search, FileBarChart2, TrendingUp,
+  Bell, Search, FileBarChart2, Menu, X,
 } from 'lucide-react'
 import clsx from 'clsx'
+import { useState } from 'react'
 import { useLang } from '../context/LanguageContext'
 import ScrapeProgressBar from './ScrapeProgressBar'
 import CompareBar from './CompareBar'
+import { QuartisIcon } from './QuartisLogo'
+
+const NAV = [
+  { to: '/dashboard',  Icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/properties', Icon: Building2,        label: 'Properties' },
+  { to: '/alerts',     Icon: Bell,             label: 'Market Alerts' },
+  { to: '/searches',   Icon: Search,           label: 'Saved Searches' },
+  { to: '/reports',    Icon: FileBarChart2,    label: 'Reports' },
+]
+
+// ── Tooltip wrapper ───────────────────────────────────────────────────────────
+
+function Tip({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="relative group/tip flex justify-center w-full">
+      {children}
+      <div className="pointer-events-none absolute left-[calc(100%+10px)] top-1/2 -translate-y-1/2 z-50
+                      opacity-0 group-hover/tip:opacity-100 translate-x-1 group-hover/tip:translate-x-0
+                      transition-all duration-150">
+        <div className="bg-ink text-white text-xs font-semibold px-2.5 py-1.5 rounded-lg whitespace-nowrap shadow-lg">
+          {label}
+          <span className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-ink" />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Layout ────────────────────────────────────────────────────────────────────
 
 export default function Layout() {
-  const { t, lang, setLang } = useLang()
+  const { lang, setLang } = useLang()
+  const [mobileOpen, setMobileOpen] = useState(false)
 
   return (
     <div className="flex h-screen overflow-hidden bg-surface">
 
-      {/* ── Sidebar (dark, sticky) ───────────────────────────────────────── */}
-      <aside className="w-60 shrink-0 bg-sidebar flex flex-col shadow-sidebar overflow-y-auto z-20">
+      {/* ── Icon sidebar (desktop) ─────────────────────────────────────── */}
+      <aside className="hidden md:flex w-[64px] shrink-0 bg-white border-r border-surface-border flex-col items-center py-4 gap-1 z-30 shadow-sm">
 
-        {/* Logo */}
-        <div className="px-5 py-5 border-b border-sidebar-border">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-accent flex items-center justify-center shrink-0 shadow-lg">
-              <TrendingUp size={16} className="text-white" />
-            </div>
-            <div>
-              <span className="text-sm font-bold text-white tracking-wide">QUÉBEC RE</span>
-              <p className="text-[10px] text-sidebar-text leading-tight">Investment Intelligence</p>
-            </div>
+        {/* Quartis logo mark */}
+        <Link to="/" className="mb-5 group/logo" title="Arpent">
+          <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center shadow-md
+                          group-hover/logo:shadow-lg group-hover/logo:scale-105 transition-all duration-200">
+            <QuartisIcon size={18} className="text-white" />
           </div>
-        </div>
+        </Link>
 
-        {/* Nav */}
-        <nav className="flex-1 p-3 space-y-0.5 pt-4">
-
-          <NavSection label="Overview">
-            <NavItem to="/dashboard"  icon={<LayoutDashboard size={15} />} label={t('dashboard')} />
-            <NavItem to="/properties" icon={<Building2 size={15} />}       label={t('properties')} />
-          </NavSection>
-
-          <NavSection label="My Lists">
-            <NavItem to="/watching"  icon={<Bookmark size={15} />}     label="Saved Properties" />
-            <NavItem to="/alerts"    icon={<Bell size={15} />}         label="Market Alerts" />
-            <NavItem to="/searches"  icon={<Search size={15} />}       label="Saved Searches" />
-            <NavItem to="/reports"   icon={<FileBarChart2 size={15} />} label="Reports" />
-          </NavSection>
-
-          <NavSection label="Account">
-            <NavItem to="/settings" icon={<Settings size={15} />} label={t('settings')} />
-          </NavSection>
+        {/* Nav icons */}
+        <nav className="flex flex-col items-center gap-1 flex-1 w-full">
+          {NAV.map(({ to, Icon, label }) => (
+            <Tip key={to} label={label}>
+              <NavLink
+                to={to}
+                className={({ isActive }) =>
+                  clsx(
+                    'w-10 h-10 flex items-center justify-center rounded-xl transition-all duration-150',
+                    isActive
+                      ? 'bg-accent text-white shadow-md'
+                      : 'text-muted hover:text-ink hover:bg-surface-hover',
+                  )
+                }
+              >
+                <Icon size={18} />
+              </NavLink>
+            </Tip>
+          ))}
         </nav>
 
-        {/* Footer: language toggle */}
-        <div className="p-3 border-t border-sidebar-border">
-          <div className="flex items-center gap-1 p-0.5 bg-white/5 rounded-lg border border-white/10">
+        {/* Bottom controls */}
+        <div className="flex flex-col items-center gap-1 mt-auto w-full">
+          {/* Saved Properties */}
+          <Tip label="Saved Properties">
+            <NavLink
+              to="/watching"
+              className={({ isActive }) =>
+                clsx(
+                  'w-10 h-10 flex items-center justify-center rounded-xl transition-all duration-150',
+                  isActive ? 'bg-accent text-white shadow-md' : 'text-muted hover:text-ink hover:bg-surface-hover',
+                )
+              }
+            >
+              <Bookmark size={18} />
+            </NavLink>
+          </Tip>
+
+          {/* Settings */}
+          <Tip label="Settings">
+            <NavLink
+              to="/settings"
+              className={({ isActive }) =>
+                clsx(
+                  'w-10 h-10 flex items-center justify-center rounded-xl transition-all duration-150',
+                  isActive ? 'bg-accent text-white shadow-md' : 'text-muted hover:text-ink hover:bg-surface-hover',
+                )
+              }
+            >
+              <Settings size={18} />
+            </NavLink>
+          </Tip>
+
+          {/* Language toggle */}
+          <div className="mt-2 flex flex-col gap-0.5 items-center w-full px-3">
             {(['fr', 'en'] as const).map(l => (
               <button
                 key={l}
                 onClick={() => setLang(l)}
                 className={clsx(
-                  'flex-1 py-1.5 rounded-md text-xs font-semibold tracking-wide transition-all duration-150',
-                  lang === l
-                    ? 'bg-accent text-white shadow'
-                    : 'text-sidebar-text hover:text-white',
+                  'w-full py-1.5 rounded-lg text-[10px] font-black tracking-widest uppercase transition-all duration-150 text-center',
+                  lang === l ? 'bg-accent text-white shadow-sm' : 'text-muted hover:text-ink hover:bg-surface-hover',
                 )}
               >
-                {l.toUpperCase()}
+                {l}
               </button>
             ))}
           </div>
         </div>
       </aside>
 
-      {/* ── Main content (scrolls independently) ────────────────────────── */}
-      <main className="flex-1 overflow-y-auto min-w-0">
+      {/* ── Mobile top bar ─────────────────────────────────────────────── */}
+      <div className="md:hidden fixed top-0 left-0 right-0 z-40 h-14 bg-white border-b border-surface-border flex items-center px-4 gap-3 shadow-sm">
+        <div className="w-8 h-8 rounded-xl bg-accent flex items-center justify-center shadow-md">
+          <QuartisIcon size={14} className="text-white" />
+        </div>
+        <span className="font-black text-sm text-ink tracking-wide flex-1">Arpent</span>
+        <div className="flex items-center gap-1 p-0.5 bg-surface rounded-lg border border-surface-border">
+          {(['fr', 'en'] as const).map(l => (
+            <button key={l} onClick={() => setLang(l)}
+              className={clsx('px-2 py-1 rounded-md text-[10px] font-black uppercase transition-all', lang === l ? 'bg-accent text-white' : 'text-muted')}
+            >
+              {l}
+            </button>
+          ))}
+        </div>
+        <button onClick={() => setMobileOpen(v => !v)} className="p-2 rounded-xl text-muted hover:text-ink hover:bg-surface-hover transition-all">
+          {mobileOpen ? <X size={18} /> : <Menu size={18} />}
+        </button>
+      </div>
+
+      {/* Mobile nav drawer */}
+      {mobileOpen && (
+        <div className="md:hidden fixed inset-0 z-30 pt-14">
+          <div className="absolute inset-0 bg-black/20" onClick={() => setMobileOpen(false)} />
+          <div className="relative bg-white w-56 h-full shadow-xl p-3 space-y-0.5">
+            {NAV.map(({ to, Icon, label }) => (
+              <NavLink key={to} to={to} onClick={() => setMobileOpen(false)}
+                className={({ isActive }) =>
+                  clsx('flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all',
+                    isActive ? 'bg-accent text-white' : 'text-muted hover:text-ink hover:bg-surface-hover')
+                }
+              >
+                <Icon size={16} />{label}
+              </NavLink>
+            ))}
+            <div className="pt-3 border-t border-surface-border mt-3 space-y-0.5">
+              <NavLink to="/watching" onClick={() => setMobileOpen(false)}
+                className={({ isActive }) => clsx('flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all', isActive ? 'bg-accent text-white' : 'text-muted hover:text-ink hover:bg-surface-hover')}
+              >
+                <Bookmark size={16} /> Saved Properties
+              </NavLink>
+              <NavLink to="/settings" onClick={() => setMobileOpen(false)}
+                className={({ isActive }) => clsx('flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all', isActive ? 'bg-accent text-white' : 'text-muted hover:text-ink hover:bg-surface-hover')}
+              >
+                <Settings size={16} /> Settings
+              </NavLink>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Main content ─────────────────────────────────────────────────── */}
+      <main className="flex-1 overflow-y-auto min-w-0 md:pt-0 pt-14">
         <ScrapeProgressBar />
         <div className="animate-fade-in">
           <Outlet />
         </div>
       </main>
 
-      {/* ── Compare bar (floats above all content) ──────────────────────── */}
       <CompareBar />
     </div>
-  )
-}
-
-function NavSection({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="mb-4">
-      <p className="px-3 text-[10px] font-semibold text-sidebar-heading uppercase tracking-widest mb-1.5">
-        {label}
-      </p>
-      <div className="space-y-0.5">{children}</div>
-    </div>
-  )
-}
-
-function NavItem({ to, icon, label }: { to: string; icon: React.ReactNode; label: string }) {
-  return (
-    <NavLink
-      to={to}
-      className={({ isActive }) =>
-        clsx(
-          'flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150',
-          isActive
-            ? 'bg-accent text-white shadow-md'
-            : 'text-sidebar-text hover:text-white hover:bg-sidebar-hover',
-        )
-      }
-    >
-      {icon}
-      {label}
-    </NavLink>
   )
 }

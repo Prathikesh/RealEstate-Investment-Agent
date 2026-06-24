@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
   Search, LayoutGrid, List, Map, ChevronLeft, ChevronRight, SlidersHorizontal, Hash, X,
+  Zap, Clock, TrendingUp, ArrowDownCircle, DollarSign, Globe,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { fetchProperties, fetchStats, fetchMapProperties, type PropertyFilters } from '../api'
@@ -116,9 +117,9 @@ export default function Properties() {
   )
 
   return (
-    <div className="p-6 space-y-4 max-w-[1400px]">
+    <div className="p-6 space-y-4 max-w-[1400px] mx-auto">
 
-      {/* Header */}
+      {/* ── Page header ──────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-ink">{lang === 'fr' ? 'Propriétés' : 'Properties'}</h1>
@@ -126,163 +127,139 @@ export default function Properties() {
             {data?.total != null ? `${data.total.toLocaleString()} listings found` : 'Loading…'}
           </p>
         </div>
-
-        {/* View toggle */}
+        {/* View toggle + Filters */}
         <div className="flex items-center gap-2">
           <button
             onClick={() => setShowFilters(v => !v)}
             className={clsx(
-              'flex items-center gap-1.5 px-3 py-2 rounded-lg border text-sm font-medium transition-colors',
+              'flex items-center gap-1.5 px-3 py-2 rounded-xl border text-sm font-semibold transition-all duration-150',
               showFilters
-                ? 'border-accent/50 text-accent bg-accent/10'
+                ? 'border-accent bg-accent text-white shadow-md'
                 : 'border-surface-border text-muted bg-white hover:text-ink hover:bg-surface-hover',
             )}
           >
             <SlidersHorizontal size={13} />
-            Filters {hasActiveFilters && <span className="w-1.5 h-1.5 rounded-full bg-accent" />}
+            Filters
+            {hasActiveFilters && (
+              <span className={clsx('w-1.5 h-1.5 rounded-full', showFilters ? 'bg-white' : 'bg-accent')} />
+            )}
           </button>
-
-          <div className="flex items-center gap-0.5 p-0.5 bg-white border border-surface-border rounded-lg shadow-sm">
-            <button
-              onClick={() => setView('grid')}
-              title="Grid view"
-              className={clsx(
-                'p-1.5 rounded-md transition-colors',
-                view === 'grid' ? 'bg-accent text-white' : 'text-muted hover:text-ink',
-              )}
-            >
-              <LayoutGrid size={14} />
-            </button>
-            <button
-              onClick={() => setView('list')}
-              title="List view"
-              className={clsx(
-                'p-1.5 rounded-md transition-colors',
-                view === 'list' ? 'bg-accent text-white' : 'text-muted hover:text-ink',
-              )}
-            >
-              <List size={14} />
-            </button>
-            <button
-              onClick={() => setView('map')}
-              title="Map view"
-              className={clsx(
-                'p-1.5 rounded-md transition-colors',
-                view === 'map' ? 'bg-accent text-white' : 'text-muted hover:text-ink',
-              )}
-            >
-              <Map size={14} />
-            </button>
+          <div className="flex items-center gap-0.5 p-0.5 bg-white border border-surface-border rounded-xl shadow-sm">
+            {([
+              { key: 'grid', icon: <LayoutGrid size={14} /> },
+              { key: 'list', icon: <List size={14} /> },
+              { key: 'map',  icon: <Map size={14} /> },
+            ] as { key: ViewMode; icon: React.ReactNode }[]).map(v => (
+              <button key={v.key} onClick={() => setView(v.key)} title={`${v.key} view`}
+                className={clsx('p-2 rounded-lg transition-all duration-150', view === v.key ? 'bg-accent text-white shadow-sm' : 'text-muted hover:text-ink')}
+              >
+                {v.icon}
+              </button>
+            ))}
           </div>
         </div>
       </div>
 
-      {/* ── Quick filter chips (new listings) ────────────────────────────── */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-xs text-muted font-medium">Quick filter:</span>
-        {LISTED_WITHIN_OPTIONS.filter(o => o.value).map(opt => (
+      {/* ── Unified search + sort bar ─────────────────────────────────────── */}
+      <div className="flex gap-2 flex-wrap items-center bg-white border border-surface-border rounded-2xl px-3 py-2 shadow-sm">
+        <Search size={15} className="text-muted shrink-0" />
+        <input
+          type="text"
+          placeholder="Search city…"
+          value={filters.city ?? ''}
+          onChange={e => setFilter('city', e.target.value)}
+          className="flex-1 min-w-[140px] text-sm text-ink placeholder:text-muted bg-transparent focus:outline-none"
+        />
+        <div className="w-px h-5 bg-surface-border shrink-0" />
+        <Hash size={13} className="text-muted shrink-0" />
+        <input
+          type="text"
+          placeholder="MLS number…"
+          value={filters.mls_number ?? ''}
+          onChange={e => setFilter('mls_number', e.target.value)}
+          className="w-32 text-sm text-ink placeholder:text-muted bg-transparent focus:outline-none"
+        />
+        <div className="w-px h-5 bg-surface-border shrink-0" />
+        <select
+          value={filters.sort_by ?? 'score'}
+          onChange={e => setFilter('sort_by', e.target.value)}
+          className="text-sm text-ink bg-transparent focus:outline-none cursor-pointer font-medium pr-1"
+        >
+          {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+        {hasActiveFilters && (
+          <>
+            <div className="w-px h-5 bg-surface-border shrink-0" />
+            <button
+              onClick={() => setParams(new URLSearchParams())}
+              className="flex items-center gap-1 text-xs text-red-500 font-semibold hover:bg-red-50 px-2 py-1 rounded-lg transition-colors"
+            >
+              <X size={11} /> Clear
+            </button>
+          </>
+        )}
+      </div>
+
+      {/* ── Quick filter chips ───────────────────────────────────────────── */}
+      <div className="flex items-center gap-1.5 flex-wrap">
+        {/* Time chips */}
+        {[
+          { value: '24h',  label: 'Last 24h',   icon: <Zap size={11} /> },
+          { value: '48h',  label: 'Last 48h',   icon: <Zap size={11} /> },
+          { value: '7d',   label: 'Last 7 days', icon: <Clock size={11} /> },
+          { value: '30d',  label: 'Last 30 days', icon: <Clock size={11} /> },
+        ].map(opt => (
           <button
             key={opt.value}
             onClick={() => setFilter('listed_within', filters.listed_within === opt.value ? '' : opt.value)}
             className={clsx(
-              'px-3 py-1 rounded-full text-xs font-medium border transition-colors',
+              'flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all duration-150',
               filters.listed_within === opt.value
-                ? 'bg-accent text-white border-accent'
-                : 'bg-white text-muted border-surface-border hover:border-accent/40 hover:text-accent',
+                ? 'bg-accent text-white border-accent shadow-sm'
+                : 'bg-white text-muted border-surface-border hover:border-accent/40 hover:text-accent hover:bg-accent/5',
             )}
           >
-            {opt.label}
+            {opt.icon}{opt.label}
           </button>
         ))}
-        <div className="w-px h-4 bg-surface-border mx-1" />
-        <button
-          onClick={() => setFilter('sort_by', 'score')}
-          className={clsx(
-            'px-3 py-1 rounded-full text-xs font-medium border transition-colors',
-            (filters.sort_by === 'score' || !filters.sort_by)
-              ? 'bg-score-strong/10 text-score-strong border-score-strong/30'
-              : 'bg-white text-muted border-surface-border hover:border-score-strong/40 hover:text-score-strong',
-          )}
-        >
-          Best deals
-        </button>
-        <button
-          onClick={() => setFilter('sort_by', 'discount')}
-          className={clsx(
-            'px-3 py-1 rounded-full text-xs font-medium border transition-colors',
-            filters.sort_by === 'discount'
-              ? 'bg-score-strong/10 text-score-strong border-score-strong/30'
-              : 'bg-white text-muted border-surface-border hover:border-score-strong/40 hover:text-score-strong',
-          )}
-        >
-          Biggest discount
-        </button>
-        <button
-          onClick={() => setFilter('sort_by', 'price_asc')}
-          className={clsx(
-            'px-3 py-1 rounded-full text-xs font-medium border transition-colors',
-            filters.sort_by === 'price_asc'
-              ? 'bg-score-worth/10 text-score-worth border-score-worth/30'
-              : 'bg-white text-muted border-surface-border hover:border-score-worth/40 hover:text-score-worth',
-          )}
-        >
-          Lowest price
-        </button>
-        <button
-          onClick={() => setFilter('sort_by', 'price_desc')}
-          className={clsx(
-            'px-3 py-1 rounded-full text-xs font-medium border transition-colors',
-            filters.sort_by === 'price_desc'
-              ? 'bg-score-market/10 text-score-market border-score-market/30'
-              : 'bg-white text-muted border-surface-border hover:border-score-market/40 hover:text-score-market',
-          )}
-        >
-          Highest price
-        </button>
-      </div>
 
-      {/* ── Search + Sort bar ──────────────────────────────────────────── */}
-      <div className="flex gap-3 flex-wrap">
-        {/* City search */}
-        <div className="relative flex-1 min-w-[180px] max-w-xs">
-          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-          <input
-            type="text"
-            placeholder="Search city…"
-            value={filters.city ?? ''}
-            onChange={e => setFilter('city', e.target.value)}
-            className="input pl-9"
-          />
-        </div>
+        <div className="w-px h-4 bg-surface-border mx-0.5" />
 
-        {/* MLS number search */}
-        <div className="relative min-w-[160px]">
-          <Hash size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-          <input
-            type="text"
-            placeholder="MLS number…"
-            value={filters.mls_number ?? ''}
-            onChange={e => setFilter('mls_number', e.target.value)}
-            className="input pl-9"
-          />
-        </div>
+        {/* Sort chips */}
+        {[
+          { value: 'score',      label: 'Best deals',       icon: <TrendingUp size={11} />,    active: 'bg-score-strong/10 text-score-strong border-score-strong/30',    inactive: 'hover:text-score-strong hover:border-score-strong/30 hover:bg-score-strong/5' },
+          { value: 'discount',   label: 'Biggest discount',  icon: <ArrowDownCircle size={11} />, active: 'bg-red-50 text-red-600 border-red-200',                           inactive: 'hover:text-red-500 hover:border-red-200 hover:bg-red-50' },
+          { value: 'price_asc',  label: 'Lowest price',     icon: <DollarSign size={11} />,    active: 'bg-score-worth/10 text-score-worth border-score-worth/30',        inactive: 'hover:text-score-worth hover:border-score-worth/30 hover:bg-score-worth/5' },
+          { value: 'price_desc', label: 'Highest price',    icon: <TrendingUp size={11} />,    active: 'bg-score-market/10 text-score-market border-score-market/30',     inactive: 'hover:text-score-market hover:border-score-market/30 hover:bg-score-market/5' },
+          { value: 'multi',      label: 'Multi-site',       icon: <Globe size={11} />,         active: 'bg-blue-50 text-blue-600 border-blue-200',                        inactive: 'hover:text-blue-600 hover:border-blue-200 hover:bg-blue-50', filter: 'multi_site' },
+        ].map(opt => {
+          const isSort = opt.value !== 'multi'
+          const isActive = isSort
+            ? (filters.sort_by === opt.value || (opt.value === 'score' && !filters.sort_by))
+            : filters.multi_site === true
+          return (
+            <button
+              key={opt.value}
+              onClick={() => {
+                if (opt.value === 'multi') setFilter('multi_site', filters.multi_site ? '' : 'true')
+                else setFilter('sort_by', opt.value)
+              }}
+              className={clsx(
+                'flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all duration-150',
+                isActive ? opt.active : `bg-white text-muted border-surface-border ${opt.inactive}`,
+              )}
+            >
+              {opt.icon}{opt.label}
+            </button>
+          )
+        })}
 
-        {/* Sort */}
-        <select
-          value={filters.sort_by ?? 'score'}
-          onChange={e => setFilter('sort_by', e.target.value)}
-          className="select"
-        >
-          {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-
-        {/* Clear all */}
         {hasActiveFilters && (
           <button
             onClick={() => setParams(new URLSearchParams())}
-            className="flex items-center gap-1 px-3 py-2 text-sm text-score-notrecommended hover:bg-score-notrecommended/10 rounded-lg border border-score-notrecommended/30 transition-colors"
+            className="flex items-center gap-1 ml-1 text-xs text-red-500 font-semibold hover:bg-red-50 px-2.5 py-1.5 rounded-full border border-red-200 transition-all"
           >
-            <X size={12} /> Clear all
+            <X size={10} /> Clear all
           </button>
         )}
       </div>

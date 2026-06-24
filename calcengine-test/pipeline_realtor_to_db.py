@@ -172,7 +172,6 @@ def update_financials(conn, mls: str, fin: dict):
                 monthly_mortgage       = %s,
                 cash_on_cash_return    = %s,
                 raw_expenses           = %s::jsonb,
-                needs_reanalysis       = FALSE,
                 last_scraped_at        = NOW()
             WHERE mls_number = %s;
         """, (

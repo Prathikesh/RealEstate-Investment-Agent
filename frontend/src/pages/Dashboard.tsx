@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import {
   Home, Zap, TrendingUp, BarChart2, ArrowDownCircle, Activity, Globe,
-  Clock, ChevronRight, Sparkles,
+  Clock, ChevronRight, Sparkles, Building2,
 } from 'lucide-react'
 import { fetchStats, fetchProperties } from '../api'
 import { useLang } from '../context/LanguageContext'
@@ -98,7 +98,7 @@ export default function Dashboard() {
   })
 
   return (
-    <div className="p-6 space-y-6 max-w-[1400px] animate-slide-up">
+    <div className="p-6 space-y-6 max-w-[1400px] mx-auto animate-slide-up">
 
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -241,8 +241,15 @@ export default function Dashboard() {
               <Link
                 key={p.id}
                 to={`/properties/${p.id}`}
-                className="flex items-center justify-between px-5 py-4 hover:bg-surface-hover transition-all duration-150 group"
+                className="flex items-center gap-3 px-4 py-3 hover:bg-surface-hover transition-all duration-150 group"
               >
+                {/* Thumbnail */}
+                <div className="w-12 h-12 rounded-xl bg-surface-hover shrink-0 overflow-hidden border border-surface-border flex items-center justify-center">
+                  {p.photos.length > 0
+                    ? <img src={p.photos[0]} referrerPolicy="no-referrer" alt="" className="w-full h-full object-cover" onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />
+                    : <Building2 size={14} className="text-surface-border" />
+                  }
+                </div>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm text-ink font-semibold truncate group-hover:text-accent transition-colors">{p.full_address}</p>
                   <div className="flex items-center gap-2 mt-0.5">
@@ -252,10 +259,8 @@ export default function Dashboard() {
                     )}
                   </div>
                 </div>
-                <div className="text-right shrink-0 ml-4">
-                  <p className="text-sm font-mono text-ink tabular-nums">
-                    {fmtCAD(p.asking_price)}
-                  </p>
+                <div className="text-right shrink-0">
+                  <p className="text-sm font-mono font-bold text-ink tabular-nums">{fmtCAD(p.asking_price)}</p>
                   <p className="text-[10px] text-muted flex items-center gap-0.5 justify-end mt-0.5">
                     <Clock size={9} /> {timeAgo(p.first_seen_at)}
                   </p>
@@ -263,55 +268,67 @@ export default function Dashboard() {
               </Link>
             ))}
             {!newListings?.items.length && (
-              <div className="px-5 py-8 text-center text-muted text-sm">
-                No new listings recorded today.
-              </div>
+              <div className="px-5 py-8 text-center text-muted text-sm">No new listings recorded today.</div>
             )}
           </div>
         </div>
 
-        {/* Right sidebar: coverage + quick filters */}
+        {/* Right sidebar */}
         <div className="space-y-4">
+
           {/* Quick filters */}
-          <div>
-            <h2 className="font-bold text-ink text-base mb-3">Quick Filters</h2>
-            <div className="bg-surface-card border border-surface-border rounded-2xl p-4 shadow-card space-y-1">
+          <div className="bg-surface-card border border-surface-border rounded-2xl shadow-card overflow-hidden">
+            <div className="px-4 py-3 border-b border-surface-border">
+              <h2 className="font-bold text-ink text-sm">Quick Filters</h2>
+            </div>
+            <div className="p-2 space-y-0.5">
               {[
-                { label: 'New last 24h',       to: '/properties?listed_within=24h',               color: 'text-accent',                  bg: 'bg-accent/8' },
-                { label: 'Best deals (80+)',   to: '/properties?score_min=80&sort_by=score',       color: 'text-score-strong',            bg: 'bg-score-strong/8' },
-                { label: 'Price drops',        to: '/properties?status=price_changed',             color: 'text-red-500',                 bg: 'bg-red-50' },
-                { label: 'On multiple sites',  to: '/properties?multi_site=true',                  color: 'text-blue-600',                bg: 'bg-blue-50' },
-                { label: 'Highest yield',      to: '/properties?sort_by=score&score_min=50',       color: 'text-score-market',            bg: 'bg-score-market/8' },
+                { label: 'New last 24h',      to: '/properties?listed_within=24h',          color: 'text-accent',       bg: 'hover:bg-accent/8',       dot: 'bg-accent' },
+                { label: 'Best deals (80+)',  to: '/properties?score_min=80&sort_by=score',  color: 'text-score-strong', bg: 'hover:bg-score-strong/8', dot: 'bg-score-strong' },
+                { label: 'Price drops',       to: '/properties?sort_by=discount',            color: 'text-red-500',      bg: 'hover:bg-red-50',         dot: 'bg-red-500' },
+                { label: 'On multiple sites', to: '/properties?multi_site=true',             color: 'text-blue-600',     bg: 'hover:bg-blue-50',        dot: 'bg-blue-500' },
+                { label: 'Highest yield',     to: '/properties?sort_by=score&score_min=50',  color: 'text-score-market', bg: 'hover:bg-score-market/8', dot: 'bg-score-market' },
               ].map(link => (
                 <Link
                   key={link.to}
                   to={link.to}
-                  className={`flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-semibold ${link.color} ${link.bg} hover:opacity-80 transition-all duration-150`}
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold ${link.color} ${link.bg} transition-all duration-150 group`}
                 >
-                  {link.label}
-                  <ChevronRight size={14} />
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${link.dot}`} />
+                  <span className="flex-1">{link.label}</span>
+                  <ChevronRight size={13} className="opacity-0 group-hover:opacity-100 transition-opacity" />
                 </Link>
               ))}
             </div>
           </div>
 
-          {/* Cities coverage */}
+          {/* Top cities — compact, capped at 8 */}
           {stats?.cities && stats.cities.length > 0 && (
-            <div>
-              <h2 className="font-bold text-ink text-base mb-3">{t('coverage')}</h2>
-              <div className="bg-surface-card border border-surface-border rounded-2xl p-4 shadow-card">
-                <div className="flex flex-wrap gap-2">
-                  {stats.cities.map(city => (
-                    <Link
-                      key={city}
-                      to={`/properties?city=${encodeURIComponent(city)}`}
-                      className="px-3 py-1.5 bg-surface border border-surface-border rounded-full text-xs text-muted hover:text-accent hover:border-accent/40 hover:bg-accent/5 transition-all duration-150 font-medium"
-                    >
-                      {city}
-                    </Link>
-                  ))}
-                </div>
+            <div className="bg-surface-card border border-surface-border rounded-2xl shadow-card overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-surface-border">
+                <h2 className="font-bold text-ink text-sm">Top Cities</h2>
+                <span className="text-[10px] text-muted font-medium">{stats.cities.length} covered</span>
               </div>
+              <div className="p-2 grid grid-cols-2 gap-0.5">
+                {stats.cities.slice(0, 8).map(city => (
+                  <Link
+                    key={city}
+                    to={`/properties?city=${encodeURIComponent(city)}`}
+                    className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-xs text-muted hover:text-accent hover:bg-accent/5 transition-all duration-150 font-medium group"
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-surface-border group-hover:bg-accent transition-colors shrink-0" />
+                    <span className="truncate">{city}</span>
+                  </Link>
+                ))}
+              </div>
+              {stats.cities.length > 8 && (
+                <Link
+                  to="/properties"
+                  className="flex items-center justify-center gap-1 py-2.5 text-xs text-accent font-semibold border-t border-surface-border hover:bg-accent/5 transition-colors"
+                >
+                  +{stats.cities.length - 8} more cities <ChevronRight size={11} />
+                </Link>
+              )}
             </div>
           )}
         </div>
