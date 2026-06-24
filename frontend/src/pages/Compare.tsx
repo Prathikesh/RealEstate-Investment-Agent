@@ -19,7 +19,7 @@ function fmtPct(v: number | null | undefined, decimals = 1): string {
   if (v == null) return '—'
   return `${v.toFixed(decimals)}%`
 }
-
+// vfenvioefnveifnver
 // ── Row definitions ───────────────────────────────────────────────────────────
 
 interface Row {
