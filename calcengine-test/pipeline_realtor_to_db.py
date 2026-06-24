@@ -165,6 +165,7 @@ def update_financials(conn, mls: str, fin: dict):
                 municipal_taxes_annual = %s,
                 school_taxes_annual    = %s,
                 evaluation_fonciere    = %s,
+                welcome_tax            = %s,
                 cap_rate               = %s,
                 noi_annual             = %s,
                 monthly_cash_flow      = %s,
@@ -179,6 +180,7 @@ def update_financials(conn, mls: str, fin: dict):
             fin.get("municipal_taxes_annual"),
             fin.get("school_taxes_annual"),
             fin.get("evaluation_fonciere"),
+            fin.get("welcome_tax"),
             fin.get("cap_rate"),
             fin.get("noi_annual"),
             fin.get("monthly_cash_flow"),
@@ -351,10 +353,51 @@ def parse_realtor_result(r: dict) -> dict | None:
 
 # ── Centris financial enrichment ──────────────────────────────────────────────
 
+CITY_CALC_CONFIG = {
+    "montréal": "montréal",
+    "montreal": "montréal",
+    "laval":    "laval",
+    "longueuil":"longueuil",
+}
+
+def get_transfer_tax(client: ScrapflyClient, city: str, asking_price: float, assessment: float) -> float | None:
+    """Call Centris transfer tax API — returns total transfer tax or None on failure."""
+    if not asking_price:
+        return None
+    city_key    = city.lower().strip()
+    calc_config = CITY_CALC_CONFIG.get(city_key, "default")
+    tax_base    = max(asking_price, assessment or 0)
+    try:
+        payload = json.dumps({
+            "calcConfigId": calc_config,
+            "input": {
+                "priceOfProperty":        int(asking_price),
+                "municipalAssessmentTotal": int(assessment or 0),
+            }
+        })
+        r = client.scrape(ScrapeConfig(
+            url="https://www.centris.ca/api/calculator/CalcTransfersImmovableDutiesForQc",
+            method="POST",
+            body=payload,
+            headers={
+                "Content-Type":     "application/json; charset=utf-8",
+                "Referer":          "https://www.centris.ca/fr/outils/calculatrice",
+                "X-Requested-With": "XMLHttpRequest",
+            },
+            asp=True, render_js=False, country="CA",
+        ))
+        if r.upstream_status_code == 200:
+            brackets = json.loads(r.content)
+            return round(sum(brackets), 2)
+    except Exception as e:
+        print(f"    [WARN] Transfer tax API failed: {e}")
+    return None
+
+
 def enrich_with_centris(client: ScrapflyClient, prop: dict) -> dict:
     """
     Find property on Centris by MLS, scrape financial data,
-    run NOI/Cap Rate/ROI calculations.
+    run NOI/Cap Rate/ROI calculations, and fetch transfer tax.
     Returns dict of financial fields ready to write to DB.
     """
     mls           = prop["mls_number"]
@@ -379,12 +422,12 @@ def enrich_with_centris(client: ScrapflyClient, prop: dict) -> dict:
     sel   = result.selector
     carac = build_carac_dict(sel)
 
-    # Assessment
+    # Assessment (lot + building from Centris listing)
     terrain  = lookup_money(carac, "terrain")
     batiment = lookup_money(carac, "bâtiment", "batiment")
     assessment = ((terrain or 0) + (batiment or 0)) or None
 
-    # Taxes
+    # Taxes (from Centris listing)
     municipal_tax = lookup_money(carac, "municipales", "municipal")
     school_tax    = lookup_money(carac, "scolaires", "school")
 
@@ -394,7 +437,14 @@ def enrich_with_centris(client: ScrapflyClient, prop: dict) -> dict:
     # Income
     gross_revenue = lookup_money(carac, "revenus bruts potentiels", "revenus bruts", "revenus locatifs")
 
-    # Full calculations
+    # Transfer tax from Centris calculator API
+    transfer_tax = get_transfer_tax(client, city, asking_price, assessment)
+    if transfer_tax:
+        print(f"    Transfer Tax: ${transfer_tax:,.2f} (Centris API)")
+    else:
+        print(f"    Transfer Tax: not available")
+
+    # NOI / Cap Rate calculations
     calc = calculate_noi_caprate(
         gross_revenue    = gross_revenue,
         municipal_tax    = municipal_tax,
@@ -405,10 +455,11 @@ def enrich_with_centris(client: ScrapflyClient, prop: dict) -> dict:
     )
 
     return {
-        "rental_income_monthly": round(gross_revenue / 12, 2) if gross_revenue else None,
+        "rental_income_monthly":  round(gross_revenue / 12, 2) if gross_revenue else None,
         "municipal_taxes_annual": municipal_tax,
         "school_taxes_annual":    school_tax,
         "evaluation_fonciere":    assessment,
+        "welcome_tax":            transfer_tax,
         "cap_rate":               calc.get("cap_rate"),
         "noi_annual":             calc.get("noi"),
         "monthly_cash_flow":      round(calc["annual_cash_flow"] / 12, 2) if calc.get("annual_cash_flow") else None,
@@ -423,6 +474,8 @@ def enrich_with_centris(client: ScrapflyClient, prop: dict) -> dict:
             "assessment_lot":      terrain,
             "assessment_building": batiment,
             "assessment_total":    assessment,
+            "transfer_tax":        transfer_tax,
+            "transfer_tax_source": "centris.ca/api/calculator/CalcTransfersImmovableDutiesForQc",
             "noi":                 calc.get("noi"),
             "cap_rate":            calc.get("cap_rate"),
             "roi":                 calc.get("roi"),

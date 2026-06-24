@@ -979,8 +979,7 @@ function FinancialsTab({ prop, t }: { prop: PropertyDetail; t: (k: string) => st
 
 // ── Income & Expense Analysis ─────────────────────────────────────────────────
 // Uses only real scraped values from Centris — no estimates.
-// Vacancy: 5% CMHC standard (industry-wide, not an estimate)
-// NOI    : Effective Income − actual taxes
+// NOI    : Gross Revenue − actual taxes (no vacancy deduction)
 // Cap Rate: NOI / Asking Price × 100
 
 function IncomeExpenseAnalysis({ prop }: { prop: PropertyDetail }) {
@@ -988,21 +987,17 @@ function IncomeExpenseAnalysis({ prop }: { prop: PropertyDetail }) {
   const rentMonthly = prop.rental_income_monthly
   if (!price || !rentMonthly) return null
 
-  const grossAnnual     = rentMonthly * 12
-  const vacancy         = grossAnnual * 0.05
-  const effectiveIncome = grossAnnual - vacancy
+  const grossAnnual  = rentMonthly * 12
 
   const municipalTax  = prop.municipal_taxes_annual ?? 0
   const schoolTax     = prop.school_taxes_annual    ?? 0
   const totalExpenses = municipalTax + schoolTax
 
-  const noi     = effectiveIncome - totalExpenses
+  const noi     = grossAnnual - totalExpenses
   const capRate = (noi / price) * 100
 
   const rows: { label: string; value: number; note?: string; bold?: boolean; indent?: boolean; negative?: boolean }[] = [
     { label: 'Gross Rental Income (annual)', value: grossAnnual },
-    { label: 'Vacancy (5%)',                 value: vacancy,         negative: true, indent: true, note: 'CMHC standard' },
-    { label: 'Effective Gross Income',       value: effectiveIncome, bold: true },
     { label: 'Municipal Taxes',              value: municipalTax,    negative: true, indent: true, note: 'actual' },
     { label: 'School Tax',                   value: schoolTax,       negative: true, indent: true, note: 'actual' },
     { label: 'Total Expenses',               value: totalExpenses,   bold: true, negative: true },
@@ -1016,7 +1011,7 @@ function IncomeExpenseAnalysis({ prop }: { prop: PropertyDetail }) {
     <div className="rounded-xl border border-surface-border bg-surface-card overflow-hidden">
       <div className="px-5 py-3.5 border-b border-surface-border bg-surface">
         <h3 className="text-sm font-semibold text-ink">Income &amp; Expense Analysis</h3>
-        <p className="text-xs text-muted mt-0.5">Standard Quebec rates — CMHC / industry benchmarks</p>
+        <p className="text-xs text-muted mt-0.5">Scraped from Centris — actual listed values</p>
       </div>
 
       <table className="w-full text-sm">

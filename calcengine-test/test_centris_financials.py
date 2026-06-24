@@ -300,7 +300,6 @@ def divider():
 
 # ── NOI & Cap Rate calculator ─────────────────────────────────────────────────
 
-VACANCY_RATE      = 0.05   # 5%  industry standard Quebec
 INSURANCE_RATE    = 0.002  # 0.2% of assessment total
 MAINTENANCE_RATE  = 0.005  # 0.5% of assessment total
 
@@ -324,10 +323,6 @@ def calculate_noi_caprate(
         results["error"] = "Cannot calculate — Gross Revenue not listed on Centris."
         return results
 
-    # ── Income ────────────────────────────────────────────────────────────────
-    vacancy       = round(gross_revenue * VACANCY_RATE, 2)
-    effective_income = round(gross_revenue - vacancy, 2)
-
     # ── Expenses ──────────────────────────────────────────────────────────────
     muni_tax   = municipal_tax or 0
     school_tax = school_tax    or 0
@@ -347,10 +342,10 @@ def calculate_noi_caprate(
         maintenance_est = 0
 
     total_expenses = round(
-        vacancy + muni_tax + school_tax + elec + insurance_est + maintenance_est, 2
+        muni_tax + school_tax + elec + insurance_est + maintenance_est, 2
     )
 
-    noi = round(effective_income - (muni_tax + school_tax + elec + insurance_est + maintenance_est), 2)
+    noi = round(gross_revenue - total_expenses, 2)
 
     # ── Cap Rate ──────────────────────────────────────────────────────────────
     cap_rate = None
@@ -387,8 +382,6 @@ def calculate_noi_caprate(
 
     results = {
         "gross_revenue":       gross_revenue,
-        "vacancy":             vacancy,
-        "effective_income":    effective_income,
         "municipal_tax":       muni_tax,
         "school_tax":          school_tax,
         "electricity":         elec,
@@ -564,9 +557,6 @@ def main():
         print(f"    {calc['error']}")
     else:
         print(f"    Gross Revenue (annual)   : {fmt(calc['gross_revenue'])}")
-        print(f"    Vacancy (5%)             : -{fmt(calc['vacancy'])}")
-        divider()
-        print(f"    Effective Income         : {fmt(calc['effective_income'])}")
         print()
         print(f"    Municipal Tax            : -{fmt(calc['municipal_tax'])}")
         print(f"    School Tax               : -{fmt(calc['school_tax'])}")
