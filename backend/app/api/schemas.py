@@ -9,6 +9,22 @@ from typing import Any, Optional
 from pydantic import BaseModel, ConfigDict, field_validator
 
 
+class ComparablePropertySchema(BaseModel):
+    """One comparable property row shown in the Comparables tab."""
+    id:             str
+    mls_number:     Optional[str]
+    full_address:   str
+    city:           str
+    asking_price:   Optional[float]
+    sqft_total:     Optional[int]
+    unit_count:     Optional[int]
+    year_built:     Optional[int]
+    property_type:  str
+    cap_rate:       Optional[float]
+    listing_url:    Optional[str]
+    photos:         Optional[list[str]]
+
+
 class CrossSitePrice(BaseModel):
     """Per-source price row for cross-site comparison."""
     model_config = ConfigDict(from_attributes=True)

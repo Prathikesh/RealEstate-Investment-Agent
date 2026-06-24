@@ -1572,55 +1572,177 @@ function IncomeExpenseAnalysis({ prop }: { prop: PropertyDetail }) {
 
 // ── Comparables tab ───────────────────────────────────────────────────────────
 
+type ComparableProp = {
+  id: string
+  mls_number: string | null
+  full_address: string
+  city: string
+  asking_price: number | null
+  sqft_total: number | null
+  unit_count: number | null
+  year_built: number | null
+  property_type: string
+  cap_rate: number | null
+  listing_url: string | null
+  photos: string[] | null
+}
+
 function ComparablesTab({ prop, t }: { prop: PropertyDetail; t: (k: string) => string }) {
+  const { data: comps, isLoading } = useQuery<ComparableProp[]>({
+    queryKey: ['comparables', prop.id],
+    queryFn: async () => {
+      const res = await fetch(`/api/properties/${prop.id}/comparables`)
+      if (!res.ok) return []
+      return res.json()
+    },
+    enabled: !!prop.comparable_count && prop.comparable_count > 0,
+  })
+
   if (!prop.comparable_count) {
     return (
       <div className="card py-10 text-center space-y-2 animate-slide-up">
         <AlertCircle className="mx-auto text-muted" size={28} />
         <p className="text-muted text-sm">{t('noComparables')}</p>
+        <p className="text-xs text-muted">Run Reanalyze to find comparable properties in the database.</p>
       </div>
     )
   }
 
   return (
-    <div className="card space-y-5 animate-slide-up">
-      <div className="flex items-center gap-3 flex-wrap">
-        <TrendingUp size={16} className="text-muted" />
-        <h3 className="font-bold text-ink">Comparable Sales Analysis</h3>
-        {prop.analysis_confidence && (
-          <ConfidencePill confidence={prop.analysis_confidence} t={t} />
+    <div className="space-y-4 animate-slide-up">
+
+      {/* Aggregate stats */}
+      <div className="card space-y-4">
+        <div className="flex items-center gap-3 flex-wrap">
+          <TrendingUp size={16} className="text-muted" />
+          <h3 className="font-bold text-ink">Comparable Properties Analysis</h3>
+          {prop.analysis_confidence && (
+            <ConfidencePill confidence={prop.analysis_confidence} t={t} />
+          )}
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div>
+            <p className="text-xs text-muted mb-0.5">Comparable properties</p>
+            <p className="text-2xl font-bold text-ink font-mono">{prop.comparable_count}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted mb-0.5">Median price</p>
+            <p className="text-xl font-bold text-ink font-mono">{fmtCAD(prop.comparable_median_price)}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted mb-0.5">Average price</p>
+            <p className="text-base font-semibold text-ink font-mono">{fmtCAD(prop.comparable_mean_price)}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted mb-0.5">You save vs median</p>
+            <p className={clsx(
+              'text-base font-semibold font-mono',
+              prop.value_gap != null && prop.value_gap > 0 ? 'text-score-strong' : 'text-score-notrecommended',
+            )}>
+              {prop.value_gap != null
+                ? `${prop.value_gap > 0 ? '-' : '+'}${fmtCAD(Math.abs(prop.value_gap))} (${Math.abs(prop.discount_pct ?? 0).toFixed(1)}%)`
+                : '—'}
+            </p>
+          </div>
+        </div>
+
+        <p className="text-xs text-muted border-t border-surface-border pt-3">
+          Matched within 2–25 km radius — same property type, price ±40%, scored by sqft, year built, and unit count similarity.
+        </p>
+      </div>
+
+      {/* Individual comparable property cards */}
+      <div className="space-y-2">
+        <h3 className="text-xs font-bold text-muted uppercase tracking-widest px-1">
+          {isLoading ? 'Loading properties…' : `${comps?.length ?? 0} Matched Properties`}
+        </h3>
+
+        {isLoading ? (
+          <div className="space-y-2">
+            {[0,1,2].map(i => (
+              <div key={i} className="card h-20 animate-pulse bg-surface-border" />
+            ))}
+          </div>
+        ) : !comps || comps.length === 0 ? (
+          <div className="card py-8 text-center">
+            <p className="text-sm text-muted">No comparable property details yet.</p>
+            <p className="text-xs text-muted mt-1">Click Reanalyze to populate the comparable list.</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {comps.map((c, idx) => {
+              const priceDiff = prop.asking_price != null && c.asking_price != null
+                ? prop.asking_price - c.asking_price : null
+              return (
+                <div
+                  key={c.id}
+                  className="card flex items-center gap-4 p-4 hover:border-accent/30 transition-colors"
+                >
+                  {/* Rank */}
+                  <div className="shrink-0 w-7 h-7 rounded-full bg-surface flex items-center justify-center text-xs font-bold text-muted border border-surface-border">
+                    {idx + 1}
+                  </div>
+
+                  {/* Thumbnail */}
+                  {c.photos && c.photos[0] ? (
+                    <img
+                      src={c.photos[0]}
+                      alt={c.full_address}
+                      className="shrink-0 w-14 h-14 rounded-xl object-cover border border-surface-border"
+                      referrerPolicy="no-referrer"
+                      onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
+                    />
+                  ) : (
+                    <div className="shrink-0 w-14 h-14 rounded-xl bg-surface border border-surface-border flex items-center justify-center">
+                      <Building2 size={18} className="text-muted" />
+                    </div>
+                  )}
+
+                  {/* Main info */}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-ink truncate">{c.full_address}</p>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5 text-xs text-muted">
+                      {c.unit_count && <span>{c.unit_count} units</span>}
+                      {c.sqft_total && <span>{c.sqft_total.toLocaleString()} sqft</span>}
+                      {c.year_built && <span>Built {c.year_built}</span>}
+                      {c.mls_number && <span className="font-mono">MLS# {c.mls_number}</span>}
+                    </div>
+                  </div>
+
+                  {/* Price block */}
+                  <div className="shrink-0 text-right">
+                    <p className="text-base font-bold font-mono text-ink">{fmtCAD(c.asking_price)}</p>
+                    {priceDiff != null && (
+                      <p className={clsx(
+                        'text-xs font-semibold mt-0.5',
+                        priceDiff > 0 ? 'text-score-strong' : 'text-score-notrecommended',
+                      )}>
+                        {priceDiff > 0 ? `−${fmtCAD(priceDiff)}` : `+${fmtCAD(Math.abs(priceDiff))}`} vs subject
+                      </p>
+                    )}
+                    {c.cap_rate != null && (
+                      <p className="text-xs text-muted mt-0.5">{c.cap_rate.toFixed(2)}% cap</p>
+                    )}
+                  </div>
+
+                  {/* View link */}
+                  {c.listing_url && (
+                    <a
+                      href={c.listing_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="shrink-0 p-2 text-muted hover:text-accent transition-colors"
+                    >
+                      <ExternalLink size={14} />
+                    </a>
+                  )}
+                </div>
+              )
+            })}
+          </div>
         )}
       </div>
-
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div>
-          <p className="text-xs text-muted mb-0.5">Comparable sales found</p>
-          <p className="text-2xl font-bold text-ink font-mono">{prop.comparable_count}</p>
-        </div>
-        <div>
-          <p className="text-xs text-muted mb-0.5">Median sale price</p>
-          <p className="text-xl font-bold text-ink font-mono">{fmtCAD(prop.comparable_median_price)}</p>
-        </div>
-        <div>
-          <p className="text-xs text-muted mb-0.5">Average sale price</p>
-          <p className="text-base font-semibold text-ink font-mono">{fmtCAD(prop.comparable_mean_price)}</p>
-        </div>
-        <div>
-          <p className="text-xs text-muted mb-0.5">You save vs market</p>
-          <p className={clsx(
-            'text-base font-semibold font-mono',
-            prop.value_gap != null && prop.value_gap > 0 ? 'text-score-strong' : 'text-score-notrecommended',
-          )}>
-            {prop.value_gap != null
-              ? `${prop.value_gap > 0 ? '-' : '+'}${fmtCAD(Math.abs(prop.value_gap))} (${Math.abs(prop.discount_pct ?? 0).toFixed(1)}%)`
-              : '—'}
-          </p>
-        </div>
-      </div>
-
-      <p className="text-xs text-muted border-t border-surface-border pt-3">
-        Comparable search finds nearby similar properties within 2–25km radius, matched by size, year built, number of units, and price range.
-      </p>
     </div>
   )
 }

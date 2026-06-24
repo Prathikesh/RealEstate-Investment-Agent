@@ -22,6 +22,7 @@ from app.agent.full_analysis import run_full_analysis
 from app.agent.pipeline import InvestmentPipeline
 from app.api.deps import get_db
 from app.api.schemas import (
+    ComparablePropertySchema,
     CrossSitePrice, DataSourceSchema, FinancialProfileSchema, FullAnalysisResponse,
     NeighbourhoodContextSchema, PropertyCard, PropertyDetail, PropertyListResponse,
     RenovationROISchema, RenovationScenarioSchema, RiskAssessmentSchema, RiskItemSchema,
@@ -327,6 +328,59 @@ async def get_property(
     detail.lowest_price_source  = src_name
     detail.lowest_price         = src_price
     return detail
+
+
+# ── Comparable properties list ────────────────────────────────────────────────
+
+@router.get("/{property_id}/comparables", response_model=list[ComparablePropertySchema])
+async def get_comparables(
+    property_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+) -> list[ComparablePropertySchema]:
+    """Return the individual comparable properties stored during the last analysis."""
+    prop = await db.scalar(
+        select(Property).where(Property.id == property_id)
+    )
+    if not prop:
+        raise HTTPException(status_code=404, detail="Property not found")
+
+    ids = prop.comparable_ids or []
+    if not ids:
+        return []
+
+    try:
+        comp_uuids = [uuid.UUID(i) for i in ids]
+    except (ValueError, AttributeError):
+        return []
+
+    comps = list((await db.scalars(
+        select(Property)
+        .where(Property.id.in_(comp_uuids))
+        .options(selectinload(Property.sources))
+    )).all())
+
+    result = []
+    for c in comps:
+        listing_url = next(
+            (s.source_url for s in (c.sources or []) if s.is_active and s.source_url),
+            None,
+        )
+        result.append(ComparablePropertySchema(
+            id=str(c.id),
+            mls_number=c.mls_number,
+            full_address=c.full_address,
+            city=c.city,
+            asking_price=c.asking_price,
+            sqft_total=c.sqft_total,
+            unit_count=c.unit_count,
+            year_built=c.year_built,
+            property_type=c.property_type.value if hasattr(c.property_type, 'value') else str(c.property_type),
+            cap_rate=c.cap_rate,
+            listing_url=listing_url,
+            photos=(c.photos or [])[:1],
+        ))
+
+    return result
 
 
 # ── Trigger re-analysis ───────────────────────────────────────────────────────

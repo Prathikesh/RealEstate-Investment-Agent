@@ -170,6 +170,7 @@ class Property(Base):
     comparable_count: Mapped[Optional[int]] = mapped_column(Integer)
     comparable_median_price: Mapped[Optional[float]] = mapped_column(Float)
     comparable_mean_price: Mapped[Optional[float]] = mapped_column(Float)
+    comparable_ids: Mapped[Optional[list]] = mapped_column(JSONB)
     # Positive = below market (a discount); negative = above market (overpriced)
     value_gap: Mapped[Optional[float]] = mapped_column(Float)
     discount_pct: Mapped[Optional[float]] = mapped_column(Float)
