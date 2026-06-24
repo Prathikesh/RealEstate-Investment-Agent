@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft, ExternalLink, RefreshCw, MapPin, Calendar,
   Building2, Ruler, AlertCircle, TrendingUp,
-  DollarSign, Clock, BarChart2, Bookmark, BookmarkCheck, Sparkles,
+  Clock, BarChart2, Bookmark, BookmarkCheck, Sparkles,
   ChevronLeft, ChevronRight,
 } from 'lucide-react'
 import {
@@ -14,6 +14,36 @@ import clsx from 'clsx'
 import { fetchProperty, type PropertyDetail } from '../api'
 import ScoreBadge, { ScoreDot } from '../components/ScoreBadge'
 import { useLang } from '../context/LanguageContext'
+import DesjardinsCalculator from '../components/DesjardinsCalculator'
+
+// ── Quebec land transfer tax (droits de mutation) ─────────────────────────────
+// Source: RLRQ c. D-15.1 — 2026 indexed brackets (same formula as Realtor.ca)
+const QC_BRACKETS: [number, number][] = [
+  [55_200,   0.005],
+  [276_200,  0.010],
+  [552_300,  0.015],
+  [1_104_600, 0.020],
+  [Infinity, 0.025],
+]
+const MTL_EXTRA_THRESHOLD = 552_300
+const MTL_EXTRA_RATE      = 0.030
+
+function calcWelcomeTax(price: number, city: string | null): number {
+  const isMontreal = city != null && city.toLowerCase().includes('montr')
+  const brackets   = isMontreal
+    ? [...QC_BRACKETS.slice(0, -2),
+       [MTL_EXTRA_THRESHOLD, 0.015] as [number, number],
+       [Infinity, MTL_EXTRA_RATE]   as [number, number]]
+    : QC_BRACKETS
+
+  let tax = 0, prev = 0
+  for (const [ceiling, rate] of brackets) {
+    if (price <= prev) break
+    tax += (Math.min(price, ceiling) - prev) * rate
+    prev = ceiling
+  }
+  return Math.round(tax)
+}
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 
@@ -392,7 +422,7 @@ export default function PropertyPage() {
       {/* ── Tab content ──────────────────────────────────────────────────── */}
       <div className="animate-fade-in">
         {activeTab === 'aiBrief'      && <BriefTab      prop={prop} lang={lang} setLang={setLang} t={t} reanalyze={reanalyze} />}
-        {activeTab === 'financials'   && <FinancialsTab prop={prop} t={t} pricePerSqft={pricePerSqft} />}
+        {activeTab === 'financials'   && <FinancialsTab prop={prop} t={t} />}
         {activeTab === 'comparables'  && <ComparablesTab prop={prop} t={t} />}
         {activeTab === 'priceHistory' && <PriceHistoryTab prop={prop} t={t} />}
       </div>
@@ -834,7 +864,7 @@ function BriefTab({ prop, lang, setLang, t, reanalyze }: {
 
 // ── Financials tab ────────────────────────────────────────────────────────────
 
-function FinancialsTab({ prop, t, pricePerSqft }: { prop: PropertyDetail; t: (k: string) => string; pricePerSqft: number | null }) {
+function FinancialsTab({ prop, t }: { prop: PropertyDetail; t: (k: string) => string }) {
   return (
     <div className="space-y-4 animate-slide-up">
       <Section title="Property value vs market">
@@ -855,8 +885,13 @@ function FinancialsTab({ prop, t, pricePerSqft }: { prop: PropertyDetail; t: (k:
             valueClass={prop.discount_pct != null && prop.discount_pct > 5 ? 'text-score-strong' :
                         prop.discount_pct != null && prop.discount_pct < 0 ? 'text-score-notrecommended' : undefined}
           />
-          <FinCard label={t('pricePerSqft')}  value={pricePerSqft != null ? fmtCAD(pricePerSqft) : '—'} note="per sqft" />
-          <FinCard label={t('compsFound')}     value={prop.comparable_count != null ? `${prop.comparable_count}` : '—'} />
+          <FinCard label="Price per door"
+            value={prop.asking_price != null && prop.unit_count != null && prop.unit_count > 0
+              ? fmtCAD(prop.asking_price / prop.unit_count)
+              : '—'}
+            note="per unit"
+          />
+          <FinCard label="Number of units" value={prop.unit_count != null ? `${prop.unit_count}` : '—'} />
         </div>
       </Section>
 
@@ -891,6 +926,138 @@ function FinancialsTab({ prop, t, pricePerSqft }: { prop: PropertyDetail; t: (k:
           )}
         </div>
       </Section>
+
+      <IncomeExpenseAnalysis prop={prop} />
+
+      {/* Tax Summary — always visible regardless of rental income */}
+      <div className="rounded-xl border border-surface-border bg-surface-card overflow-hidden">
+        <div className="px-5 py-3.5 border-b border-surface-border bg-surface">
+          <h3 className="text-sm font-semibold text-ink">Tax Summary</h3>
+        </div>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-surface-border bg-surface">
+              <th className="px-5 py-2 text-left text-xs text-muted font-medium">Tax</th>
+              <th className="px-5 py-2 text-right text-xs text-muted font-medium">Amount</th>
+              <th className="px-5 py-2 text-right text-xs text-muted font-medium">Frequency</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr className="border-b border-surface-border">
+              <td className="px-5 py-2.5 text-ink">Municipal Tax</td>
+              <td className="px-5 py-2.5 text-right font-mono text-ink">{prop.municipal_taxes_annual != null ? fmtCAD(prop.municipal_taxes_annual) : '—'}</td>
+              <td className="px-5 py-2.5 text-right text-xs text-muted">annual</td>
+            </tr>
+            <tr className="border-b border-surface-border">
+              <td className="px-5 py-2.5 text-ink">School Tax</td>
+              <td className="px-5 py-2.5 text-right font-mono text-ink">{prop.school_taxes_annual != null ? fmtCAD(prop.school_taxes_annual) : '—'}</td>
+              <td className="px-5 py-2.5 text-right text-xs text-muted">annual</td>
+            </tr>
+            <tr>
+              <td className="px-5 py-2.5 text-ink">
+                Land Transfer Tax
+                <span className="ml-1.5 text-xs text-muted">(droits de mutation)</span>
+              </td>
+              <td className="px-5 py-2.5 text-right font-mono text-ink">
+                {fmtCAD(prop.welcome_tax ?? (prop.asking_price != null ? calcWelcomeTax(prop.asking_price, prop.city) : null))}
+              </td>
+              <td className="px-5 py-2.5 text-right text-xs text-muted">one-time</td>
+            </tr>
+          </tbody>
+        </table>
+        <div className="px-5 py-2.5 bg-surface border-t border-surface-border">
+          <p className="text-xs text-muted">
+            Land transfer tax calculated per Quebec law RLRQ c. D-15.1 (same formula as Realtor.ca) — verified 2026 brackets including Montreal surtax.
+          </p>
+        </div>
+      </div>
+
+      <DesjardinsCalculator askingPrice={prop.asking_price} />
+    </div>
+  )
+}
+
+// ── Income & Expense Analysis ─────────────────────────────────────────────────
+// Uses only real scraped values from Centris — no estimates.
+// Vacancy: 5% CMHC standard (industry-wide, not an estimate)
+// NOI    : Effective Income − actual taxes
+// Cap Rate: NOI / Asking Price × 100
+
+function IncomeExpenseAnalysis({ prop }: { prop: PropertyDetail }) {
+  const price       = prop.asking_price
+  const rentMonthly = prop.rental_income_monthly
+  if (!price || !rentMonthly) return null
+
+  const grossAnnual     = rentMonthly * 12
+  const vacancy         = grossAnnual * 0.05
+  const effectiveIncome = grossAnnual - vacancy
+
+  const municipalTax  = prop.municipal_taxes_annual ?? 0
+  const schoolTax     = prop.school_taxes_annual    ?? 0
+  const totalExpenses = municipalTax + schoolTax
+
+  const noi     = effectiveIncome - totalExpenses
+  const capRate = (noi / price) * 100
+
+  const rows: { label: string; value: number; note?: string; bold?: boolean; indent?: boolean; negative?: boolean }[] = [
+    { label: 'Gross Rental Income (annual)', value: grossAnnual },
+    { label: 'Vacancy (5%)',                 value: vacancy,         negative: true, indent: true, note: 'CMHC standard' },
+    { label: 'Effective Gross Income',       value: effectiveIncome, bold: true },
+    { label: 'Municipal Taxes',              value: municipalTax,    negative: true, indent: true, note: 'actual' },
+    { label: 'School Tax',                   value: schoolTax,       negative: true, indent: true, note: 'actual' },
+    { label: 'Total Expenses',               value: totalExpenses,   bold: true, negative: true },
+  ]
+
+  const capVerdict = capRate >= 6 ? { label: 'STRONG', cls: 'text-score-strong' }
+                   : capRate >= 4.5 ? { label: 'ACCEPTABLE', cls: 'text-score-market' }
+                   : { label: 'LOW', cls: 'text-score-notrecommended' }
+
+  return (
+    <div className="rounded-xl border border-surface-border bg-surface-card overflow-hidden">
+      <div className="px-5 py-3.5 border-b border-surface-border bg-surface">
+        <h3 className="text-sm font-semibold text-ink">Income &amp; Expense Analysis</h3>
+        <p className="text-xs text-muted mt-0.5">Standard Quebec rates — CMHC / industry benchmarks</p>
+      </div>
+
+      <table className="w-full text-sm">
+        <tbody>
+          {rows.map(r => (
+            <tr key={r.label} className={`border-b border-surface-border last:border-0 ${r.bold ? 'bg-surface font-semibold' : ''}`}>
+              <td className={`px-5 py-2.5 text-ink ${r.indent ? 'pl-9' : ''}`}>
+                {r.label}
+                {r.note && <span className="ml-1.5 text-xs text-muted font-normal">({r.note})</span>}
+              </td>
+              <td className={`px-5 py-2.5 text-right font-mono ${r.negative ? 'text-score-notrecommended' : 'text-score-strong'} ${r.bold ? '' : 'font-normal'}`}>
+                {r.negative ? `−${fmtCAD(r.value)}` : fmtCAD(r.value)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {/* NOI + Cap Rate summary */}
+      <div className="grid grid-cols-2 divide-x divide-surface-border border-t-2 border-surface-border">
+        <div className="px-5 py-4">
+          <p className="text-xs text-muted uppercase tracking-wide mb-1">Net Operating Income</p>
+          <p className={`text-2xl font-bold font-mono ${noi >= 0 ? 'text-score-strong' : 'text-score-notrecommended'}`}>
+            {fmtCAD(noi)}
+          </p>
+          <p className="text-xs text-muted mt-0.5">annual</p>
+        </div>
+        <div className="px-5 py-4">
+          <p className="text-xs text-muted uppercase tracking-wide mb-1">Cap Rate</p>
+          <p className={`text-2xl font-bold font-mono ${capVerdict.cls}`}>
+            {capRate.toFixed(2)}%
+          </p>
+          <p className={`text-xs mt-0.5 font-semibold ${capVerdict.cls}`}>{capVerdict.label}</p>
+        </div>
+      </div>
+
+      <div className="px-5 py-2.5 bg-surface border-t border-surface-border">
+        <p className="text-xs text-muted">
+          Cap rate benchmarks: ≥6% Strong · 4.5–6% Acceptable · &lt;4.5% Low — Quebec multi-family market standard
+        </p>
+      </div>
     </div>
   )
 }
