@@ -367,8 +367,8 @@ async def get_full_analysis(
     """
     Run a comprehensive investment analysis on-demand.
     Includes risk assessment, 5-year projection, renovation ROI,
-    neighbourhood context, and an AI brief (requires local Ollama).
-    Results are NOT cached — every call recomputes fresh.
+    neighbourhood context, and an AI brief via Claude (requires ANTHROPIC_API_KEY).
+    Results are NOT cached — every call recomputes fresh with live calc-engine tax data.
     """
     try:
         result = await run_full_analysis(property_id, db)
