@@ -337,14 +337,36 @@ async def get_comparables(
     property_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
 ) -> list[ComparablePropertySchema]:
-    """Return the individual comparable properties stored during the last analysis."""
+    """Return the individual comparable properties for a property.
+
+    If comparable_ids was already stored (populated during analysis), use those.
+    Otherwise fall back to running ComparableFinder live so the tab works for
+    properties that were analyzed before this column was added.
+    """
+    from app.agent.comparables import ComparableFinder
+
     prop = await db.scalar(
         select(Property).where(Property.id == property_id)
     )
     if not prop:
         raise HTTPException(status_code=404, detail="Property not found")
 
+    # ── Resolve comparable property IDs ──────────────────────────────────────
     ids = prop.comparable_ids or []
+
+    if not ids:
+        # Fallback: run the finder live for properties not yet re-analyzed
+        try:
+            finder = ComparableFinder(db)
+            comp_set = await finder.find(prop)
+            ids = [str(c.property_id) for c in comp_set.comparables]
+            # Persist so next call is instant
+            prop.comparable_ids = ids
+            await db.commit()
+        except Exception as exc:
+            logger.warning(f"Live comparable search failed for {property_id}: {exc}")
+            return []
+
     if not ids:
         return []
 
@@ -353,6 +375,7 @@ async def get_comparables(
     except (ValueError, AttributeError):
         return []
 
+    # ── Fetch matched properties ──────────────────────────────────────────────
     comps = list((await db.scalars(
         select(Property)
         .where(Property.id.in_(comp_uuids))
