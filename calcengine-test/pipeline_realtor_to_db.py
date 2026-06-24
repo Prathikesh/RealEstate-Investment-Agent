@@ -1,20 +1,3 @@
-"""
-Realtor.ca → Centris Financial Enrichment → PostgreSQL Pipeline
-================================================================
-1. Scrapes up to TARGET_COUNT new properties from Realtor.ca Montreal
-   that are NOT already in the database.
-2. Inserts basic property data to the `properties` table.
-3. For each new property, searches Centris for the matching listing,
-   scrapes tax values + income + expenses, and calculates NOI, Cap Rate, ROI.
-4. Updates the DB row with the full financial profile.
-
-After running, open the dashboard — all financial fields will be populated.
-
-Usage:
-    cd calcengine-test
-    python pipeline_realtor_to_db.py
-"""
-
 import json
 import os
 import re

@@ -6,7 +6,9 @@ import {
   Brain, ChevronDown, ChevronUp, ExternalLink,
 } from 'lucide-react'
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
+  ComposedChart, Area, BarChart, Bar, Line,
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
+  ReferenceLine, Cell,
 } from 'recharts'
 import clsx from 'clsx'
 import { fetchFullAnalysis, type FullAnalysisResponse, type RiskItem } from '../api'
@@ -226,6 +228,14 @@ function RiskCard({ item }: { item: RiskItem }) {
 
 // ── 5-Year Projection ─────────────────────────────────────────────────────────
 
+const TOOLTIP_STYLE = {
+  background: '#FFFFFF',
+  border: '1px solid #E2E8F0',
+  borderRadius: 8,
+  boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)',
+  fontSize: 11,
+}
+
 function ProjectionSection({
   projection,
   financial,
@@ -233,80 +243,170 @@ function ProjectionSection({
   projection: FullAnalysisResponse['projection']
   financial: FullAnalysisResponse['financial']
 }) {
-  const chartData = projection.snapshots.map(s => ({
-    year: `Yr ${s.year}`,
-    'Property Value': s.property_value,
-    'Equity':         s.equity,
-    'Cumulative CF':  s.cumulative_cash_flow,
-  }))
+  const yr5 = projection.snapshots[4] ?? null
+  const yr5CumulativeCF = yr5?.cumulative_cash_flow ?? null
+
+  // Build wealth chart data: Year 0 (today) + Years 1-5
+  const wealthData = [
+    {
+      year: 'Now',
+      'Property Value': financial.asking_price ?? 0,
+      'Equity': financial.down_payment ?? 0,
+    },
+    ...projection.snapshots.map(s => ({
+      year: `Yr ${s.year}`,
+      'Property Value': s.property_value,
+      'Equity': s.equity,
+    })),
+  ]
+
+  // Build cash flow bar chart data
+  const cfData = [
+    {
+      year: 'Now',
+      'Monthly CF': financial.monthly_cash_flow ?? 0,
+    },
+    ...projection.snapshots.map(s => ({
+      year: `Yr ${s.year}`,
+      'Monthly CF': s.monthly_cash_flow,
+    })),
+  ]
+
+  const hasCFData = cfData.some(d => d['Monthly CF'] !== 0)
 
   return (
     <Section title="5-Year Projection" icon={<TrendingUp size={14} />}>
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
         <KeyMetric
-          label="Total Return"
+          label="5yr Total Return"
           value={fmtPct(projection.total_return_pct, 1)}
           valueClass={projection.total_return_pct != null && projection.total_return_pct > 0 ? 'text-score-strong' : 'text-score-notrecommended'}
+          note="on invested cash"
         />
         <KeyMetric
-          label="Annualized Return"
+          label="Annualized CAGR"
           value={fmtPct(projection.annualized_return, 2)}
           valueClass={projection.annualized_return != null && projection.annualized_return > 0 ? 'text-score-strong' : 'text-score-notrecommended'}
+          note="equivalent annual return"
         />
         <KeyMetric
-          label="Total Cash Needed"
-          value={fmtCAD(financial.total_cash_needed)}
-          note="down + welcome tax + closing"
+          label="Equity at Year 5"
+          value={fmtCAD(yr5?.equity)}
+          valueClass="text-blue-500"
+          note="appreciation + mortgage paydown"
+        />
+        <KeyMetric
+          label="5yr Cumulative CF"
+          value={yr5CumulativeCF != null ? fmtCAD(yr5CumulativeCF) : '—'}
+          valueClass={yr5CumulativeCF != null && yr5CumulativeCF >= 0 ? 'text-score-strong' : 'text-score-notrecommended'}
+          note="total net rental income"
         />
       </div>
 
-      {chartData.length > 0 && (
-        <div className="h-64">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
-              <XAxis dataKey="year" stroke="#94A3B8" tick={{ fontSize: 11, fill: '#64748B' }} />
-              <YAxis
-                stroke="#94A3B8"
-                tick={{ fontSize: 11, fill: '#64748B' }}
-                tickFormatter={v => fmtK(v as number)}
-                width={70}
-              />
-              <Tooltip
-                contentStyle={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 8, boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}
-                labelStyle={{ color: '#64748B', fontSize: 11 }}
-                formatter={(v: unknown) => [fmtCAD(v as number), '']}
-              />
-              <Legend wrapperStyle={{ fontSize: 11, color: '#64748B' }} />
-              <Line
-                type="monotone"
-                dataKey="Property Value"
-                stroke="#2563EB"
-                strokeWidth={2}
-                dot={{ r: 3, fill: '#2563EB' }}
-              />
-              <Line
-                type="monotone"
-                dataKey="Equity"
-                stroke="#059669"
-                strokeWidth={2}
-                dot={{ r: 3, fill: '#059669' }}
-              />
-              <Line
-                type="monotone"
-                dataKey="Cumulative CF"
-                stroke="#D97706"
-                strokeWidth={2}
-                dot={{ r: 3, fill: '#D97706' }}
-                strokeDasharray="4 2"
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
+      {/* Wealth building chart: Property Value + Equity */}
+      {wealthData.length > 1 && (
+        <>
+          <p className="text-[10px] font-bold text-muted uppercase tracking-widest mb-2">
+            Wealth Building — Property Value &amp; Equity
+          </p>
+          <div className="h-52 mb-5">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={wealthData} margin={{ top: 5, right: 16, left: 0, bottom: 5 }}>
+                <defs>
+                  <linearGradient id="equityGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%"  stopColor="#059669" stopOpacity={0.18} />
+                    <stop offset="95%" stopColor="#059669" stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
+                <XAxis
+                  dataKey="year"
+                  stroke="#94A3B8"
+                  tick={{ fontSize: 11, fill: '#64748B' }}
+                />
+                <YAxis
+                  stroke="#94A3B8"
+                  tick={{ fontSize: 11, fill: '#64748B' }}
+                  tickFormatter={v => fmtK(v as number)}
+                  width={68}
+                />
+                <Tooltip
+                  contentStyle={TOOLTIP_STYLE}
+                  labelStyle={{ color: '#64748B', fontWeight: 600 }}
+                  formatter={(v: unknown, name: unknown) => [fmtCAD(v as number), name as string]}
+                />
+                <Legend wrapperStyle={{ fontSize: 11, color: '#64748B' }} />
+                <Line
+                  type="monotone"
+                  dataKey="Property Value"
+                  stroke="#2563EB"
+                  strokeWidth={2.5}
+                  dot={{ r: 3, fill: '#2563EB' }}
+                  activeDot={{ r: 5 }}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="Equity"
+                  stroke="#059669"
+                  strokeWidth={2}
+                  fill="url(#equityGrad)"
+                  dot={{ r: 3, fill: '#059669' }}
+                  activeDot={{ r: 5 }}
+                />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Monthly Cash Flow bar chart */}
+          {hasCFData && (
+            <>
+              <p className="text-[10px] font-bold text-muted uppercase tracking-widest mb-2">
+                Monthly Cash Flow per Year
+              </p>
+              <div className="h-36">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={cfData} margin={{ top: 5, right: 16, left: 0, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
+                    <XAxis
+                      dataKey="year"
+                      stroke="#94A3B8"
+                      tick={{ fontSize: 11, fill: '#64748B' }}
+                    />
+                    <YAxis
+                      stroke="#94A3B8"
+                      tick={{ fontSize: 11, fill: '#64748B' }}
+                      tickFormatter={v => fmtCAD(v as number, 0)}
+                      width={68}
+                    />
+                    <Tooltip
+                      contentStyle={TOOLTIP_STYLE}
+                      labelStyle={{ color: '#64748B', fontWeight: 600 }}
+                      formatter={(v: unknown) => [`${fmtCAD(v as number)}/mo`, 'Monthly CF']}
+                    />
+                    <ReferenceLine y={0} stroke="#94A3B8" strokeWidth={1.5} />
+                    <Bar dataKey="Monthly CF" radius={[3, 3, 0, 0]} maxBarSize={40}>
+                      {cfData.map((entry, idx) => (
+                        <Cell
+                          key={idx}
+                          fill={(entry['Monthly CF'] ?? 0) >= 0 ? '#059669' : '#DC2626'}
+                          fillOpacity={0.85}
+                        />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <p className="text-[10px] text-muted/60 mt-1">
+                Green = positive cash flow · Red = negative cash flow · Assumes 2% annual appreciation, 1.5% rent growth, 3% expense inflation
+              </p>
+            </>
+          )}
+        </>
       )}
 
       {/* Year-by-year table */}
-      <div className="overflow-x-auto mt-2">
+      <div className="overflow-x-auto mt-4">
         <table className="w-full text-xs text-muted">
           <thead>
             <tr className="border-b border-surface-border text-left">
@@ -316,19 +416,23 @@ function ProjectionSection({
               <th className="pb-2 font-semibold text-muted text-right">NOI</th>
               <th className="pb-2 font-semibold text-muted text-right">CF/mo</th>
               <th className="pb-2 font-semibold text-muted text-right">Equity</th>
+              <th className="pb-2 font-semibold text-muted text-right">Cumul. CF</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-surface-border">
             {projection.snapshots.map(s => (
               <tr key={s.year}>
-                <td className="py-2">Year {s.year}</td>
+                <td className="py-2 font-medium text-ink">Year {s.year}</td>
                 <td className="py-2 text-right font-mono">{fmtK(s.property_value)}</td>
                 <td className="py-2 text-right font-mono">{fmtCAD(s.monthly_rent)}</td>
                 <td className="py-2 text-right font-mono">{fmtK(s.noi)}</td>
-                <td className={clsx('py-2 text-right font-mono', s.monthly_cash_flow >= 0 ? 'text-score-strong' : 'text-score-notrecommended')}>
+                <td className={clsx('py-2 text-right font-mono font-semibold', s.monthly_cash_flow >= 0 ? 'text-score-strong' : 'text-score-notrecommended')}>
                   {fmtCAD(s.monthly_cash_flow)}
                 </td>
-                <td className="py-2 text-right font-mono text-blue-600">{fmtK(s.equity)}</td>
+                <td className="py-2 text-right font-mono text-blue-500 font-semibold">{fmtK(s.equity)}</td>
+                <td className={clsx('py-2 text-right font-mono', s.cumulative_cash_flow >= 0 ? 'text-score-strong' : 'text-muted')}>
+                  {fmtK(s.cumulative_cash_flow)}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -520,7 +624,7 @@ function AiBriefSection({ brief, strategy }: { brief: string | null; strategy: s
         <>
           <p className="text-ink leading-relaxed text-sm whitespace-pre-line">{brief}</p>
           <p className="text-[10px] text-muted/60 pt-2 border-t border-surface-border">
-            Powered by local Ollama (llama3) · Strategy: {strategy} · Not financial advice
+            Powered by Claude Haiku (Anthropic) · Strategy: {strategy} · Not financial advice
           </p>
         </>
       ) : (
@@ -528,9 +632,8 @@ function AiBriefSection({ brief, strategy }: { brief: string | null; strategy: s
           <Brain className="mx-auto text-muted" size={28} />
           <p className="text-muted text-sm">AI brief unavailable</p>
           <p className="text-xs text-muted">
-            Ollama is not running or the model is not loaded. Start Ollama with{' '}
-            <code className="font-mono text-accent">ollama serve</code> and pull{' '}
-            <code className="font-mono text-accent">llama3</code>.
+            Brief generation requires a valid Anthropic API key (ANTHROPIC_API_KEY in backend .env).
+            Properties scoring below 40 do not receive a brief unless forced.
           </p>
         </div>
       )}

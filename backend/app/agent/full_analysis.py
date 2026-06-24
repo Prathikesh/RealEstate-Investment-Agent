@@ -2,14 +2,16 @@
 Full Analysis Orchestrator.
 
 Runs the complete investment analysis pipeline for a single property:
-  1. Comparables (existing Stage 1)
-  2. Financial Calculator (existing Stage 2)
-  3. Opportunity Scorer (existing Stage 3)
-  4. Risk Assessment (new)
-  5. 5-Year Projection (new)
-  6. Renovation ROI (new)
-  7. Neighbourhood Context (new)
-  8. AI Brief via Ollama (Stage 4, rewritten)
+  1. Fetch property
+  2. Calc-engine (live Quebec taxes from port 8001)
+  3. Comparables
+  4. Financial Calculator (merges calc-engine results)
+  5. Risk Assessment
+  6. Neighbourhood Context
+  7. Opportunity Scorer (uses risk + neighbourhood for accurate score)
+  8. 5-Year Projection
+  9. Renovation ROI
+  10. AI Brief via Claude (Anthropic)
 
 Results are returned as a FullAnalysisResult — NOT written to the database.
 This endpoint is on-demand and always computes fresh results.
@@ -32,6 +34,7 @@ from app.agent.renovation import RenovationAnalyzer, RenovationROI
 from app.agent.risk import RiskAssessment, RiskAssessor
 from app.agent.scorer import OpportunityScorer, ScoreResult
 from app.models.property import Property
+from app.services.calc_client import analyze as calc_engine_analyze
 
 logger = logging.getLogger(__name__)
 
@@ -68,37 +71,70 @@ async def run_full_analysis(
 
     logger.info(f"[full_analysis] Starting for {prop.mls_number or prop.id} — {prop.full_address}")
 
-    # ── 2. Comparables ────────────────────────────────────────────────────────
+    # ── 2. Calc-engine — live Quebec tax rates (port 8001) ─────────────────────
+    calc_fields = await calc_engine_analyze(prop)
+    if calc_fields:
+        logger.info(
+            f"[full_analysis] CalcEngine: welcome_tax={calc_fields.get('welcome_tax','—')} | "
+            f"cap={calc_fields.get('cap_rate','—')}% | noi={calc_fields.get('noi_annual','—')}"
+        )
+    else:
+        logger.debug("[full_analysis] CalcEngine unavailable — using estimated taxes")
+
+    # ── 3. Comparables ────────────────────────────────────────────────────────
     comp_set = await ComparableFinder(db).find(prop)
 
-    # ── 3. Financial Calculator ───────────────────────────────────────────────
+    # ── 4. Financial Calculator + merge live calc-engine values ───────────────
     fp = FinancialCalculator().calculate(prop, comp_set)
 
-    # ── 4. Opportunity Scorer ─────────────────────────────────────────────────
-    score = OpportunityScorer().score(fp, strategy="both", days_on_market=prop.days_on_market)
+    if calc_fields:
+        if "cap_rate"               in calc_fields: fp.cap_rate               = calc_fields["cap_rate"]
+        if "noi_annual"             in calc_fields: fp.noi_annual             = calc_fields["noi_annual"]
+        if "monthly_cash_flow"      in calc_fields: fp.monthly_cash_flow      = calc_fields["monthly_cash_flow"]
+        if "welcome_tax"            in calc_fields: fp.welcome_tax            = calc_fields["welcome_tax"]
+        if "monthly_mortgage"       in calc_fields: fp.monthly_mortgage       = calc_fields["monthly_mortgage"]
+        if "municipal_taxes_annual" in calc_fields:
+            fp.municipal_taxes_annual = calc_fields["municipal_taxes_annual"]
+            fp.taxes_are_estimated    = False
+        if "school_taxes_annual"    in calc_fields:
+            fp.school_taxes_annual    = calc_fields["school_taxes_annual"]
 
     # ── 5. Risk Assessment ────────────────────────────────────────────────────
     risk = RiskAssessor().assess(prop, fp)
+    logger.debug(f"[full_analysis] Risk: {risk.overall_risk.value} ({len(risk.items)} items)")
 
-    # ── 6. 5-Year Projection ──────────────────────────────────────────────────
+    # ── 6. Neighbourhood Context ──────────────────────────────────────────────
+    neighbourhood = await NeighbourhoodAnalyzer(db).analyze(prop)
+    logger.debug(f"[full_analysis] Neighbourhood: {neighbourhood.sample_size} peers")
+
+    # ── 7. Opportunity Scorer (uses live data + risk + neighbourhood) ──────────
+    score = OpportunityScorer().score(
+        fp,
+        strategy="both",
+        days_on_market=prop.days_on_market,
+        risk=risk,
+        neighbourhood=neighbourhood,
+        price_history=prop.price_history,
+    )
+    logger.info(f"[full_analysis] Score: {score.total}/100 — {score.category.value}")
+
+    # ── 8. 5-Year Projection ──────────────────────────────────────────────────
     projection = FiveYearProjector().project(prop, fp)
 
-    # ── 7. Renovation ROI ─────────────────────────────────────────────────────
+    # ── 9. Renovation ROI ─────────────────────────────────────────────────────
     renovation = RenovationAnalyzer().analyze(prop, fp)
 
-    # ── 8. Neighbourhood Context (async DB query) ─────────────────────────────
-    neighbourhood = await NeighbourhoodAnalyzer(db).analyze(prop)
-
-    # ── 9. Build extra context for the Ollama brief ───────────────────────────
+    # ── 10. Build context for AI brief ────────────────────────────────────────
     extra_context = _build_extra_context(risk, projection, neighbourhood)
 
-    # ── 10. AI Brief via Ollama ───────────────────────────────────────────────
+    # ── 11. AI Brief via Claude ───────────────────────────────────────────────
     ai_brief = await BriefGenerator().generate(prop, fp, score, "en", extra_context)
 
     computed_at = datetime.now(timezone.utc).isoformat()
     logger.info(
         f"[full_analysis] Complete for {prop.mls_number or prop.id} — "
-        f"score={score.total}, risk={risk.overall_risk.value}, brief={'yes' if ai_brief else 'no'}"
+        f"score={score.total}, risk={risk.overall_risk.value}, "
+        f"taxes_live={not fp.taxes_are_estimated}, brief={'yes' if ai_brief else 'no'}"
     )
 
     return FullAnalysisResult(
@@ -120,13 +156,13 @@ def _build_extra_context(
     projection: FiveYearProjection,
     neighbourhood: NeighbourhoodContext,
 ) -> str:
-    """Summarise the new analysis sections for inclusion in the Ollama brief prompt."""
+    """Summarise the analysis sections for inclusion in the Claude brief prompt."""
     lines: list[str] = []
 
     # Risk summary
     if risk.items:
         lines.append(f"RISK PROFILE: {risk.overall_risk.value.upper()}")
-        for item in risk.items[:3]:   # top 3 risks only to keep prompt manageable
+        for item in risk.items[:3]:
             lines.append(f"  • [{item.severity.value.upper()}] {item.label}: {item.description}")
 
     # 5-year projection headline
@@ -138,8 +174,10 @@ def _build_extra_context(
             f"Cumulative cash flow → ${snap5.cumulative_cash_flow:,.0f}"
         )
         if projection.total_return_pct is not None:
-            lines.append(f"  Total return: {projection.total_return_pct:.1f}% "
-                         f"(annualized: {projection.annualized_return:.2f}%)")
+            lines.append(
+                f"  Total return: {projection.total_return_pct:.1f}% "
+                f"(annualized: {projection.annualized_return:.2f}%)"
+            )
 
     # Neighbourhood position
     if neighbourhood.sample_size > 0:

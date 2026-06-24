@@ -4,15 +4,18 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft, ExternalLink, RefreshCw, MapPin, Calendar,
   Building2, Ruler, AlertCircle, TrendingUp,
-  DollarSign, Clock, BarChart2, Bookmark, BookmarkCheck, Sparkles,
+  Clock, BarChart2, Bookmark, BookmarkCheck,
   ChevronLeft, ChevronRight,
 } from 'lucide-react'
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  BarChart, Bar, AreaChart, Area,
+  PieChart, Pie, Cell,
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  Legend, LabelList,
 } from 'recharts'
 import clsx from 'clsx'
 import { fetchProperty, type PropertyDetail } from '../api'
-import ScoreBadge, { ScoreDot } from '../components/ScoreBadge'
+import ScoreBadge from '../components/ScoreBadge'
 import { useLang } from '../context/LanguageContext'
 
 // ── Formatters ────────────────────────────────────────────────────────────────
@@ -110,7 +113,6 @@ export default function PropertyPage() {
   const { id } = useParams<{ id: string }>()
   const { t } = useLang()
   const [activeTab, setActiveTab] = useState<TabKey>('aiBrief')
-  const [lang, setLang] = useState<'en' | 'fr'>('en')
   const queryClient = useQueryClient()
   const { data: prop, isLoading, error } = useQuery({
     queryKey: ['property', id],
@@ -391,7 +393,7 @@ export default function PropertyPage() {
 
       {/* ── Tab content ──────────────────────────────────────────────────── */}
       <div className="animate-fade-in">
-        {activeTab === 'aiBrief'      && <BriefTab      prop={prop} lang={lang} setLang={setLang} t={t} reanalyze={reanalyze} />}
+        {activeTab === 'aiBrief'      && <BriefTab      prop={prop} />}
         {activeTab === 'financials'   && <FinancialsTab prop={prop} t={t} pricePerSqft={pricePerSqft} />}
         {activeTab === 'comparables'  && <ComparablesTab prop={prop} t={t} />}
         {activeTab === 'priceHistory' && <PriceHistoryTab prop={prop} t={t} />}
@@ -505,79 +507,7 @@ function VerdictBanner({ prop }: { prop: PropertyDetail }) {
   const c = config[category]
   if (!c) return null
 
-  // Build reasoning bullets from actual property data
-  const bullets: { text: string; positive: boolean | null }[] = []
-
-  if (prop.cap_rate != null) {
-    if (prop.cap_rate >= 6)
-      bullets.push({ text: `Cap rate ${prop.cap_rate.toFixed(2)}% — above the 6% Quebec strong-buy benchmark`, positive: true })
-    else if (prop.cap_rate >= 4.5)
-      bullets.push({ text: `Cap rate ${prop.cap_rate.toFixed(2)}% — within the acceptable 4.5–6% Quebec range`, positive: null })
-    else
-      bullets.push({ text: `Cap rate ${prop.cap_rate.toFixed(2)}% — below the 4.5% Quebec market floor`, positive: false })
-  }
-
-  if (prop.discount_pct != null) {
-    if (prop.discount_pct >= 10)
-      bullets.push({ text: `${prop.discount_pct.toFixed(1)}% below comparable median — significant value discount`, positive: true })
-    else if (prop.discount_pct >= 3)
-      bullets.push({ text: `${prop.discount_pct.toFixed(1)}% below comparable sales — modest market discount`, positive: true })
-    else if (prop.discount_pct >= -2)
-      bullets.push({ text: `Priced at market value (${Math.abs(prop.discount_pct).toFixed(1)}% vs comparables)`, positive: null })
-    else
-      bullets.push({ text: `${Math.abs(prop.discount_pct).toFixed(1)}% above comparable median — premium over market`, positive: false })
-  }
-
-  if (prop.monthly_cash_flow != null) {
-    const cf = prop.monthly_cash_flow
-    if (cf > 500)
-      bullets.push({ text: `Strong monthly cash flow: ${fmtCAD(cf)}/mo after mortgage at 20% down`, positive: true })
-    else if (cf > 0)
-      bullets.push({ text: `Positive cash flow: ${fmtCAD(cf)}/mo — marginal but break-even`, positive: true })
-    else if (cf > -300)
-      bullets.push({ text: `Slightly negative cash flow: ${fmtCAD(cf)}/mo — manageable with reserves`, positive: null })
-    else
-      bullets.push({ text: `Negative cash flow: ${fmtCAD(cf)}/mo — requires monthly capital injection`, positive: false })
-  }
-
-  if (prop.comparable_count != null) {
-    if (prop.comparable_count >= 7)
-      bullets.push({ text: `${prop.comparable_count} comparable sales found — high confidence valuation`, positive: true })
-    else if (prop.comparable_count >= 3)
-      bullets.push({ text: `${prop.comparable_count} comparable sales — moderate confidence`, positive: null })
-    else if (prop.comparable_count > 0)
-      bullets.push({ text: `Only ${prop.comparable_count} comparable found — limited market data`, positive: false })
-    else
-      bullets.push({ text: 'No comparable sales found — price cannot be independently verified', positive: false })
-  }
-
-  // Recommended investor next steps
-  const nextSteps: Record<string, string[]> = {
-    strong_opportunity: [
-      'Schedule a property inspection within 48 hours',
-      'Request rent rolls, leases, and expense statements from seller',
-      'Verify the municipal tax bill matches the listing data',
-      'Prepare an offer with a 72-hour financing condition',
-    ],
-    worth_investigating: [
-      'Review all listing photos and disclose condition details',
-      'Request rent rolls, leases, and 12-month expense history',
-      'Compare with 2–3 active listings in the same neighbourhood',
-      'Determine renovation potential before committing to a price',
-    ],
-    market_price: [
-      'Negotiate a 3–5% price reduction or seller concessions',
-      'Evaluate renovation potential to improve cap rate and returns',
-      'Consider the long-term appreciation outlook for this market',
-    ],
-    not_recommended: [
-      'Continue searching for better-priced alternatives in the area',
-      'Set a price drop alert — may become interesting if price falls',
-      'Calculate what asking price would make this deal viable',
-    ],
-  }
-
-  const steps = nextSteps[category] ?? []
+  const [activeMetric, setActiveMetric] = useState<string | null>(null)
 
   // SVG score ring gauge
   const radius = 32
@@ -622,212 +552,810 @@ function VerdictBanner({ prop }: { prop: PropertyDetail }) {
         </div>
       </div>
 
-      {/* Reasoning bullets */}
-      {bullets.length > 0 && (
-        <div>
-          <p className="text-[10px] font-bold text-muted uppercase tracking-widest mb-2.5">Why this score</p>
-          <div className="space-y-2">
-            {bullets.map((b, i) => (
-              <div key={i} className="flex items-start gap-2.5">
-                <span className={clsx(
-                  'mt-0.5 shrink-0 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold',
-                  b.positive === true  ? 'bg-emerald-100 text-emerald-700' :
-                  b.positive === false ? 'bg-red-100 text-red-600' :
-                                        'bg-gray-100 text-gray-500',
-                )}>
-                  {b.positive === true ? '✓' : b.positive === false ? '✗' : '~'}
-                </span>
-                <span className="text-sm text-ink leading-snug">{b.text}</span>
+      {/* Key metric cards — tap any card to see how the math works */}
+      <p className="text-xs text-muted">Tap a card to see how it's calculated</p>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        {(() => {
+          const price = prop.asking_price ?? 0
+          const compMedian = prop.comparable_median_price ?? 0
+          const rent = prop.rental_income_monthly ?? 0
+          const mortgage = prop.monthly_mortgage ?? 0
+          const muniTax = (prop.municipal_taxes_annual ?? 0) / 12
+          const schoolTax = (prop.school_taxes_annual ?? 0) / 12
+          const maint = (price * 0.01) / 12
+          const noi = prop.noi_annual ?? 0
+
+          type StatusKey = 'great' | 'ok' | 'neutral' | 'bad' | 'null'
+          const colors: Record<StatusKey, { bg: string; border: string; val: string; badge: string; ring: string }> = {
+            great:   { bg: 'bg-emerald-50', border: 'border-emerald-200', val: 'text-emerald-700', badge: 'bg-emerald-100 text-emerald-700', ring: 'ring-emerald-400' },
+            ok:      { bg: 'bg-blue-50',    border: 'border-blue-200',    val: 'text-blue-700',    badge: 'bg-blue-100 text-blue-700',    ring: 'ring-blue-400' },
+            neutral: { bg: 'bg-amber-50',   border: 'border-amber-200',   val: 'text-amber-700',   badge: 'bg-amber-100 text-amber-700',  ring: 'ring-amber-400' },
+            bad:     { bg: 'bg-red-50',     border: 'border-red-200',     val: 'text-red-700',     badge: 'bg-red-100 text-red-700',     ring: 'ring-red-400' },
+            null:    { bg: 'bg-surface',    border: 'border-surface-border', val: 'text-ink',     badge: 'bg-gray-100 text-muted',       ring: 'ring-gray-300' },
+          }
+
+          const metrics: {
+            label: string; value: string; status: StatusKey; sub: string
+            formula: string; breakdown: string; meaning: string
+          }[] = [
+            {
+              label: 'Cap Rate',
+              value: prop.cap_rate != null ? `${prop.cap_rate.toFixed(2)}%` : '—',
+              status: prop.cap_rate == null ? 'null' : prop.cap_rate >= 6 ? 'great' : prop.cap_rate >= 4.5 ? 'ok' : 'bad',
+              sub: prop.cap_rate == null ? '' : prop.cap_rate >= 6 ? 'Above benchmark' : prop.cap_rate >= 4.5 ? 'Acceptable' : 'Below floor',
+              formula: 'NOI ÷ Asking Price × 100',
+              breakdown: price > 0 && noi !== 0
+                ? `${fmtCAD(noi)} NOI ÷ ${fmtCAD(price)} = ${prop.cap_rate?.toFixed(2) ?? '—'}%`
+                : 'No data yet — run analysis first',
+              meaning: 'Target: ≥6% strong buy · ≥4.5% acceptable · <4.5% below floor',
+            },
+            {
+              label: 'Below Market',
+              value: prop.discount_pct != null ? `${prop.discount_pct > 0 ? '-' : '+'}${Math.abs(prop.discount_pct).toFixed(1)}%` : '—',
+              status: prop.discount_pct == null ? 'null' : prop.discount_pct >= 10 ? 'great' : prop.discount_pct >= 3 ? 'ok' : prop.discount_pct >= -2 ? 'neutral' : 'bad',
+              sub: prop.discount_pct == null ? '' : prop.discount_pct >= 10 ? 'Big discount' : prop.discount_pct >= 3 ? 'Modest discount' : prop.discount_pct >= -2 ? 'Market price' : 'Above market',
+              formula: '(Comp Median − Asking Price) ÷ Comp Median × 100',
+              breakdown: compMedian > 0 && price > 0
+                ? `(${fmtCAD(compMedian)} − ${fmtCAD(price)}) ÷ ${fmtCAD(compMedian)} = ${prop.discount_pct?.toFixed(1) ?? '—'}%`
+                : 'Not enough comparable sales yet',
+              meaning: '≥10% = big discount · ≥3% = modest · negative = priced above market',
+            },
+            {
+              label: 'Monthly Cash Flow',
+              value: prop.monthly_cash_flow != null ? `${fmtCAD(prop.monthly_cash_flow)}/mo` : '—',
+              status: prop.monthly_cash_flow == null ? 'null' : prop.monthly_cash_flow > 500 ? 'great' : prop.monthly_cash_flow > 0 ? 'ok' : prop.monthly_cash_flow > -300 ? 'neutral' : 'bad',
+              sub: prop.monthly_cash_flow == null ? '' : prop.monthly_cash_flow > 500 ? 'Strong surplus' : prop.monthly_cash_flow > 0 ? 'Break-even' : prop.monthly_cash_flow > -300 ? 'Manageable' : 'Top-up needed',
+              formula: 'Monthly Rent − Mortgage − Taxes − Maintenance',
+              breakdown: rent > 0
+                ? `${fmtCAD(rent)} − ${fmtCAD(mortgage)} − ${fmtCAD(muniTax + schoolTax)} − ${fmtCAD(maint)} = ${fmtCAD(prop.monthly_cash_flow ?? 0)}/mo`
+                : 'No rental income data yet',
+              meaning: 'Positive = rent pays itself. Negative = you cover the gap monthly',
+            },
+            {
+              label: 'GRM',
+              value: prop.grm != null ? `${prop.grm.toFixed(1)}x` : '—',
+              status: prop.grm == null ? 'null' : prop.grm <= 12 ? 'great' : prop.grm <= 15 ? 'ok' : 'bad',
+              sub: prop.grm == null ? '' : prop.grm <= 12 ? 'Excellent' : prop.grm <= 15 ? 'Acceptable' : 'Elevated',
+              formula: 'Asking Price ÷ Annual Gross Rent',
+              breakdown: rent > 0 && price > 0
+                ? `${fmtCAD(price)} ÷ ${fmtCAD(rent * 12)} = ${prop.grm?.toFixed(1) ?? '—'}x`
+                : 'No rental income data yet',
+              meaning: '≤12x excellent · ≤15x acceptable · >15x you overpay per rent dollar',
+            },
+            {
+              label: 'Annual NOI',
+              value: prop.noi_annual != null ? fmtCAD(prop.noi_annual) : '—',
+              status: prop.noi_annual == null ? 'null' : prop.noi_annual > 40000 ? 'great' : prop.noi_annual > 20000 ? 'ok' : prop.noi_annual > 0 ? 'neutral' : 'bad',
+              sub: prop.noi_annual == null ? '' : prop.noi_annual > 40000 ? 'Strong income' : prop.noi_annual > 20000 ? 'Moderate' : prop.noi_annual > 0 ? 'Thin margin' : 'Negative',
+              formula: 'Annual Rent − Taxes − Maintenance (before mortgage)',
+              breakdown: rent > 0
+                ? `${fmtCAD(rent * 12)} − ${fmtCAD((prop.municipal_taxes_annual ?? 0) + (prop.school_taxes_annual ?? 0))} − ${fmtCAD(price * 0.01)} = ${fmtCAD(noi)}`
+                : 'No rental income data yet',
+              meaning: 'Net operating income — what the property earns before your loan payment',
+            },
+            {
+              label: 'Comparables',
+              value: prop.comparable_count != null ? `${prop.comparable_count} sales` : '—',
+              status: prop.comparable_count == null ? 'null' : prop.comparable_count >= 7 ? 'great' : prop.comparable_count >= 3 ? 'ok' : 'bad',
+              sub: prop.comparable_count == null ? '' : prop.comparable_count >= 7 ? 'High confidence' : prop.comparable_count >= 3 ? 'Moderate' : 'Low confidence',
+              formula: 'Similar properties sold within 1.5km, past 12 months',
+              breakdown: compMedian > 0
+                ? `${prop.comparable_count ?? 0} matched → Median sale price: ${fmtCAD(compMedian)}`
+                : 'No comparable sales found in area',
+              meaning: 'More comps = more reliable market value estimate',
+            },
+          ]
+
+          return metrics.map(m => {
+            const col = colors[m.status]
+            const isActive = activeMetric === m.label
+            return (
+              <button
+                key={m.label}
+                onClick={() => setActiveMetric(isActive ? null : m.label)}
+                className={clsx(
+                  'rounded-xl border p-3.5 text-left space-y-1 transition-all duration-150 hover:shadow-sm active:scale-[0.98]',
+                  col.bg, col.border,
+                  isActive && `ring-2 ${col.ring}`,
+                )}
+              >
+                <p className="text-xs font-semibold text-muted uppercase tracking-wide">{m.label}</p>
+                <p className={clsx('text-2xl font-black font-mono leading-none', col.val)}>{m.value}</p>
+                {m.sub && (
+                  <span className={clsx('inline-block text-[10px] font-bold px-1.5 py-0.5 rounded-full', col.badge)}>
+                    {m.sub}
+                  </span>
+                )}
+              </button>
+            )
+          })
+        })()}
+      </div>
+
+      {/* Math explanation panel — shown when a card is tapped */}
+      {activeMetric && (() => {
+        const price = prop.asking_price ?? 0
+        const compMedian = prop.comparable_median_price ?? 0
+        const rent = prop.rental_income_monthly ?? 0
+        const mortgage = prop.monthly_mortgage ?? 0
+        const muniTax = (prop.municipal_taxes_annual ?? 0) / 12
+        const schoolTax = (prop.school_taxes_annual ?? 0) / 12
+        const maint = (price * 0.01) / 12
+        const noi = prop.noi_annual ?? 0
+        const explanations: Record<string, { formula: string; breakdown: string; meaning: string }> = {
+          'Cap Rate':          { formula: 'NOI ÷ Asking Price × 100', breakdown: price > 0 && noi !== 0 ? `${fmtCAD(noi)} NOI ÷ ${fmtCAD(price)} = ${prop.cap_rate?.toFixed(2) ?? '—'}%` : 'No data yet', meaning: 'Target: ≥6% strong buy · ≥4.5% acceptable · <4.5% below floor' },
+          'Below Market':      { formula: '(Comp Median − Asking Price) ÷ Comp Median × 100', breakdown: compMedian > 0 ? `(${fmtCAD(compMedian)} − ${fmtCAD(price)}) ÷ ${fmtCAD(compMedian)} = ${prop.discount_pct?.toFixed(1) ?? '—'}%` : 'Not enough comparable sales', meaning: '≥10% = big discount · ≥3% = modest · negative = above market' },
+          'Monthly Cash Flow': { formula: 'Monthly Rent − Mortgage − Taxes − Maintenance', breakdown: rent > 0 ? `${fmtCAD(rent)} − ${fmtCAD(mortgage)} − ${fmtCAD(muniTax + schoolTax)} − ${fmtCAD(maint)} = ${fmtCAD(prop.monthly_cash_flow ?? 0)}/mo` : 'No rental income data', meaning: 'Positive = self-sustaining · Negative = you top up monthly' },
+          'GRM':               { formula: 'Asking Price ÷ Annual Gross Rent', breakdown: rent > 0 ? `${fmtCAD(price)} ÷ ${fmtCAD(rent * 12)} = ${prop.grm?.toFixed(1) ?? '—'}x` : 'No rental income data', meaning: '≤12x excellent · ≤15x acceptable · >15x expensive per rent dollar' },
+          'Annual NOI':        { formula: 'Annual Rent − Taxes − Maintenance (before mortgage)', breakdown: rent > 0 ? `${fmtCAD(rent * 12)} − ${fmtCAD((prop.municipal_taxes_annual ?? 0) + (prop.school_taxes_annual ?? 0))} − ${fmtCAD(price * 0.01)} = ${fmtCAD(noi)}` : 'No rental income data', meaning: 'Net operating income — what the building earns before your loan payment' },
+          'Comparables':       { formula: 'Similar properties sold within 1.5km, past 12 months', breakdown: compMedian > 0 ? `${prop.comparable_count ?? 0} matched → Median sale: ${fmtCAD(compMedian)}` : 'No comparable sales found', meaning: 'More comps = higher confidence in the market value' },
+        }
+        const ex = explanations[activeMetric]
+        if (!ex) return null
+        return (
+          <div className="rounded-xl border border-surface-border bg-white p-4 space-y-2.5 shadow-sm">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-bold text-ink">{activeMetric} — How it's calculated</p>
+              <button onClick={() => setActiveMetric(null)} className="text-muted hover:text-ink text-lg leading-none">×</button>
+            </div>
+            <div className="space-y-1.5">
+              <div className="flex items-start gap-2">
+                <span className="text-[10px] font-bold text-muted uppercase tracking-wide pt-0.5 shrink-0 w-20">Formula</span>
+                <span className="text-sm font-mono text-blue-700 font-semibold">{ex.formula}</span>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="text-[10px] font-bold text-muted uppercase tracking-wide pt-0.5 shrink-0 w-20">This property</span>
+                <span className="text-sm font-mono text-ink">{ex.breakdown}</span>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="text-[10px] font-bold text-muted uppercase tracking-wide pt-0.5 shrink-0 w-20">Benchmarks</span>
+                <span className="text-sm text-muted">{ex.meaning}</span>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+    </div>
+  )
+}
+
+// ── Investment Report helpers ─────────────────────────────────────────────────
+
+function buildProjection(prop: PropertyDetail) {
+  const price  = prop.asking_price ?? 0
+  const down   = prop.down_payment_20pct ?? price * 0.20
+  const loan   = price - down
+  const r      = 0.045 / 12
+  const terms  = 25 * 12
+  const P      = prop.monthly_mortgage ??
+    (loan * r * Math.pow(1 + r, terms)) / (Math.pow(1 + r, terms) - 1)
+  const appRate  = 0.03
+  const annualCF = (prop.monthly_cash_flow ?? 0) * 12
+
+  // raw (unrounded) balance at any year — used to compute principal paydown
+  const rawBalance = (yr: number) => {
+    const n = yr * 12
+    if (n <= 0) return loan
+    return loan * Math.pow(1 + r, n) - P * ((Math.pow(1 + r, n) - 1) / r)
+  }
+
+  return [0, 1, 2, 3, 4, 5].map(yr => {
+    const value          = Math.round(price * Math.pow(1 + appRate, yr))
+    const balance        = Math.round(rawBalance(yr))
+    const equity         = value - balance
+    const cumCF          = Math.round(annualCF * yr)
+    // Capitalization = principal repaid this year (equity built via mortgage paydown)
+    const capitalization = yr > 0 ? Math.round(rawBalance(yr - 1) - rawBalance(yr)) : 0
+    // Appreciation = property value gain this year
+    const appreciation   = yr > 0 ? value - Math.round(price * Math.pow(1 + appRate, yr - 1)) : 0
+    // Cash flow component (annual net, with 1% annual rent growth each year)
+    const cashflow       = yr > 0 ? Math.round(annualCF * Math.pow(1.01, yr - 1)) : 0
+    const returnTotal    = cashflow + capitalization + appreciation
+
+    return {
+      year: yr === 0 ? 'Now' : `Year ${yr}`,
+      value,
+      equity,
+      annualCF: Math.round(annualCF),
+      cumCF,
+      totalWealth: equity + cumCF,
+      cashflow,
+      capitalization,
+      appreciation,
+      returnTotal,
+    }
+  })
+}
+
+function buildPieData(prop: PropertyDetail) {
+  const mortgage    = Math.round((prop.monthly_mortgage ?? 0) * 12)
+  const municipal   = Math.round(prop.municipal_taxes_annual ?? 0)
+  const school      = Math.round(prop.school_taxes_annual ?? 0)
+  const maintenance = Math.round((prop.asking_price ?? 0) * 0.01)
+  const rental      = Math.round((prop.rental_income_monthly ?? 0) * 12)
+
+  const totalOut = mortgage + municipal + school + maintenance
+  const net      = rental > 0 ? rental - totalOut : null
+
+  const slices = [
+    { name: 'Mortgage',     value: mortgage,    color: '#3B82F6' },
+    { name: 'Muni. Tax',    value: municipal,   color: '#F59E0B' },
+    { name: 'School Tax',   value: school,      color: '#EF4444' },
+    { name: 'Maintenance',  value: maintenance, color: '#8B5CF6' },
+    ...(net !== null && net > 0
+      ? [{ name: 'Net Income', value: net, color: '#10B981' }]
+      : []),
+  ]
+  return slices.filter(s => s.value > 0)
+}
+
+function buildScoreFactors(prop: PropertyDetail) {
+  const norm = (val: number, bad: number, good: number) =>
+    Math.round(Math.min(100, Math.max(0, ((val - bad) / (good - bad)) * 100)))
+
+  const discount = prop.discount_pct ?? 0
+  const capRate  = prop.cap_rate ?? 0
+  const cf       = prop.monthly_cash_flow ?? 0
+  const grm      = prop.grm ?? 15
+  const comps    = prop.comparable_count ?? 0
+  const dom      = prop.days_on_market ?? 30
+  const price    = prop.asking_price ?? 1
+
+  return [
+    { label: 'Price Discount', weight: 28, score: norm(discount, 0, 20),               value: `${discount.toFixed(1)}%` },
+    { label: 'Cap Rate',       weight: 18, score: norm(capRate, 0, 8),                 value: `${capRate.toFixed(2)}%` },
+    { label: 'Cash Flow',      weight: 17, score: norm((cf / price) * 100, -0.5, 1.0), value: `${fmtCAD(cf)}/mo` },
+    { label: 'Days Listed',    weight: 13, score: norm(dom, 7, 90),                    value: `${dom}d` },
+    { label: 'Confidence',     weight: 10, score: norm(comps, 0, 10),                  value: `${comps} comps` },
+    { label: 'GRM',            weight:  7, score: norm(-(grm), -18, -10),              value: `${grm.toFixed(1)}x` },
+    { label: 'Price Trend',    weight:  7, score: 50,                                   value: '—' },
+  ]
+}
+
+// ── Investment Report (main data-driven section) ──────────────────────────────
+
+function InvestmentReport({ prop }: { prop: PropertyDetail }) {
+  const projection = buildProjection(prop)
+  const pieData    = buildPieData(prop)
+  const factors    = buildScoreFactors(prop)
+
+  const projYrs = projection.slice(1)   // Year 1–5
+  const down    = prop.down_payment_20pct ?? (prop.asking_price ?? 0) * 0.20
+
+  const totalReturn$ = projYrs.reduce((s, r) => s + r.returnTotal, 0)
+  const roi5yrPct    = down > 0 ? (totalReturn$ / down) * 100 : 0
+  const roiAvg$      = Math.round(totalReturn$ / 5)
+  const roiAvgPct    = roi5yrPct / 5
+
+  const fmtK = (v: number) =>
+    Math.abs(v) >= 1_000_000
+      ? `${v < 0 ? '-' : ''}$${(Math.abs(v) / 1_000_000).toFixed(2)}M`
+      : `${v < 0 ? '-' : ''}$${(Math.abs(v) / 1_000).toFixed(0)}K`
+
+  const GREEN = '#10B981'
+  const RED   = '#EF4444'
+
+  // Totals for pie legend percentage
+  const pieTotal = pieData.reduce((s, d) => s + d.value, 0)
+
+  // PropPulse colour palette for stacked bars
+  const CF_COLOR  = '#1E3A8A'   // dark blue  — cashflow
+  const CAP_COLOR = '#3B82F6'   // medium blue — capitalization (principal paydown)
+  const APP_COLOR = '#93C5FD'   // light blue  — appreciation
+
+  return (
+    <div className="space-y-6">
+
+      {/* ── 5-YEAR FINANCIAL PROJECTION (PropPulse style) ─────────────────── */}
+      <div className="card p-6 space-y-5">
+
+        {/* Title */}
+        <div className="border-b-2 border-amber-400 pb-3">
+          <h3 className="text-lg font-black text-ink uppercase tracking-wide text-center">5-Year Financial Projection</h3>
+          <p className="text-xs text-muted text-center mt-1">3% annual appreciation · 4.5% rate · 25-yr amortization · 1% rent growth/yr</p>
+        </div>
+
+        {/* ROI headline cards */}
+        <div className="grid grid-cols-2 gap-4">
+          <div className="rounded-xl border border-surface-border p-5 text-center space-y-1">
+            <p className="text-xs font-semibold text-muted uppercase tracking-widest">ROI Total 5 Years</p>
+            <p className="text-4xl font-black font-mono text-ink">{roi5yrPct.toFixed(2)}%</p>
+            <p className="text-sm font-semibold text-muted">{fmtCAD(totalReturn$)}</p>
+          </div>
+          <div className="rounded-xl border border-surface-border p-5 text-center space-y-1">
+            <p className="text-xs font-semibold text-muted uppercase tracking-widest">Annual Average ROI</p>
+            <p className="text-4xl font-black font-mono text-ink">{roiAvgPct.toFixed(2)}%</p>
+            <p className="text-sm font-semibold text-muted">{fmtCAD(roiAvg$)}/yr</p>
+          </div>
+        </div>
+
+        {/* Stacked bar chart — cashflow clamped ≥0 so bars never go below zero */}
+        {(() => {
+          const hasCFNeg = projYrs.some(r => r.cashflow < 0)
+          const chartData = projYrs.map(r => ({
+            ...r,
+            cashflowBar: Math.max(0, r.cashflow),
+            stackTotal:  Math.max(0, r.cashflow) + r.capitalization + r.appreciation,
+          }))
+          return (
+            <div className="space-y-2">
+              {hasCFNeg && (
+                <div className="flex items-center gap-2 px-1">
+                  <span className="w-2 h-2 rounded-full bg-red-400 shrink-0" />
+                  <p className="text-xs text-red-600 font-medium">
+                    Cash flow is negative ({fmtCAD(projYrs[0].cashflow)}/yr) — shown as $0 in the chart. Appreciation &amp; principal paydown still build wealth.
+                  </p>
+                </div>
+              )}
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={chartData} margin={{ top: 32, right: 8, left: 0, bottom: 4 }} barCategoryGap="30%">
+                  <CartesianGrid strokeDasharray="3 3" stroke="#EEF2F7" vertical={false} />
+                  <XAxis
+                    dataKey="year"
+                    tick={{ fontSize: 13, fontWeight: 700, fill: '#374151' }}
+                    axisLine={false} tickLine={false}
+                  />
+                  <YAxis
+                    tickFormatter={fmtK}
+                    tick={{ fontSize: 11, fill: '#94a3b8' }}
+                    width={54} axisLine={false} tickLine={false}
+                  />
+                  <Tooltip
+                    formatter={(v: unknown, name: unknown) => {
+                      const label = (name as string) === 'cashflowBar' ? 'Cashflow' : name as string
+                      return [fmtCAD(v as number), label]
+                    }}
+                    contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0', fontSize: 13, boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}
+                  />
+                  <Legend
+                    formatter={v => v === 'cashflowBar' ? 'Cashflow' : v as string}
+                    wrapperStyle={{ fontSize: 13, paddingTop: 10 }}
+                  />
+                  <Bar dataKey="cashflowBar"    name="cashflowBar"    fill={CF_COLOR}  stackId="s" />
+                  <Bar dataKey="capitalization" name="Capitalization" fill={CAP_COLOR} stackId="s" />
+                  <Bar dataKey="appreciation"   name="Appreciation"   fill={APP_COLOR} stackId="s" radius={[4, 4, 0, 0]}>
+                    <LabelList
+                      dataKey="stackTotal"
+                      position="top"
+                      formatter={(v: unknown) => fmtK(v as number)}
+                      style={{ fontSize: 12, fontWeight: 800, fill: '#1E293B' }}
+                    />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )
+        })()}
+
+        {/* Transposed table: metrics as rows, years as columns */}
+        <div className="overflow-x-auto rounded-xl border border-surface-border">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-surface-border" style={{ backgroundColor: '#1E3A8A' }}>
+                <th className="px-4 py-3 text-left font-bold text-white text-xs uppercase tracking-wide">Metric</th>
+                {projYrs.map(r => (
+                  <th key={r.year} className="px-4 py-3 text-right font-bold text-white text-xs">{r.year}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-surface-border">
+              {([
+                { label: 'Cashflow',       key: 'cashflow'       as const, color: CF_COLOR  },
+                { label: 'Appreciation',   key: 'appreciation'   as const, color: APP_COLOR },
+                { label: 'Capitalization', key: 'capitalization' as const, color: CAP_COLOR },
+              ] as const).map((row, i) => (
+                <tr key={row.label} className={i % 2 === 0 ? 'bg-white' : 'bg-surface/40'}>
+                  <td className="px-4 py-3 font-bold text-ink flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: row.color }} />
+                    {row.label}
+                  </td>
+                  {projYrs.map(yr => (
+                    <td key={yr.year} className="px-4 py-3 text-right font-mono tabular-nums text-ink">{fmtCAD(yr[row.key])}</td>
+                  ))}
+                </tr>
+              ))}
+              <tr className="font-bold" style={{ backgroundColor: '#F8FAFC' }}>
+                <td className="px-4 py-3 font-bold text-ink border-t-2 border-surface-border">Total</td>
+                {projYrs.map(yr => (
+                  <td key={yr.year} className="px-4 py-3 text-right font-mono tabular-nums font-bold text-ink border-t-2 border-surface-border">{fmtCAD(yr.returnTotal)}</td>
+                ))}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* ── Cost Breakdown Pie + Score Factors ───────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+        {/* Annual cost breakdown pie */}
+        <div className="card p-6 space-y-5">
+          <div>
+            <h3 className="text-base font-bold text-ink">Annual Cost Breakdown</h3>
+            <p className="text-sm text-muted mt-0.5">Where each rental dollar goes</p>
+          </div>
+          {pieData.length > 0 ? (
+            <>
+              <div className="flex items-center justify-center">
+                <ResponsiveContainer width="100%" height={220}>
+                  <PieChart>
+                    <Pie
+                      data={pieData} cx="50%" cy="50%"
+                      innerRadius={60} outerRadius={95}
+                      dataKey="value" paddingAngle={3}
+                      startAngle={90} endAngle={-270}
+                    >
+                      {pieData.map((entry, i) => (
+                        <Cell key={i} fill={entry.color} strokeWidth={0} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      formatter={(v: unknown) => [fmtCAD(v as number), '']}
+                      contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0', fontSize: 13 }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="space-y-3">
+                {pieData.map(d => {
+                  const pct = pieTotal > 0 ? Math.round((d.value / pieTotal) * 100) : 0
+                  return (
+                    <div key={d.name} className="flex items-center gap-3">
+                      <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-sm font-semibold text-ink">{d.name}</span>
+                          <span className="text-sm font-mono font-bold text-ink">{fmtCAD(d.value)}/yr</span>
+                        </div>
+                        <div className="h-2 bg-surface-border rounded-full overflow-hidden">
+                          <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: d.color }} />
+                        </div>
+                      </div>
+                      <span className="text-xs text-muted w-8 text-right shrink-0">{pct}%</span>
+                    </div>
+                  )
+                })}
+              </div>
+              <p className="text-xs text-muted border-t border-surface-border pt-3">
+                Maintenance estimated at 1% of property value annually.
+              </p>
+            </>
+          ) : (
+            <div className="py-12 text-center">
+              <p className="text-muted text-sm">Financial data not available — click Reanalyze to generate.</p>
+            </div>
+          )}
+        </div>
+
+        {/* Score factor breakdown */}
+        <div className="card p-6 space-y-5">
+          <div className="flex items-start justify-between">
+            <div>
+              <h3 className="text-base font-bold text-ink">Score Breakdown</h3>
+              <p className="text-sm text-muted mt-0.5">How each signal contributes to the score</p>
+            </div>
+            {prop.score != null && (
+              <div className="text-right">
+                <p className="text-4xl font-black font-mono text-ink leading-none">{prop.score}</p>
+                <p className="text-sm text-muted">out of 100</p>
+              </div>
+            )}
+          </div>
+          <div className="space-y-4">
+            {factors.map(f => (
+              <div key={f.label}>
+                <div className="flex items-center justify-between mb-1.5">
+                  <div>
+                    <span className="text-sm font-semibold text-ink">{f.label}</span>
+                    <span className="text-xs text-muted ml-1.5">{f.weight}% weight</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-mono text-muted">{f.value}</span>
+                    <span className={clsx(
+                      'text-sm font-black font-mono w-8 text-right',
+                      f.score >= 70 ? 'text-emerald-700' : f.score >= 40 ? 'text-amber-600' : 'text-red-600',
+                    )}>{f.score}</span>
+                  </div>
+                </div>
+                <div className="h-2.5 bg-surface-border rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all duration-700 ease-out"
+                    style={{
+                      width: `${f.score}%`,
+                      backgroundColor: f.score >= 70 ? GREEN : f.score >= 40 ? '#F59E0B' : RED,
+                    }}
+                  />
+                </div>
               </div>
             ))}
           </div>
+          {prop.analysis_confidence && (
+            <div className="pt-3 border-t border-surface-border flex items-center justify-between text-xs text-muted">
+              <span>{prop.comparable_count ?? 0} comparable sales · {prop.analysis_confidence} confidence</span>
+              {prop.last_analyzed_at && (
+                <span>{new Date(prop.last_analyzed_at).toLocaleDateString('en-CA')}</span>
+              )}
+            </div>
+          )}
         </div>
-      )}
+      </div>
+    </div>
+  )
+}
 
-      {/* Next steps */}
-      {steps.length > 0 && (
-        <div className="pt-4 border-t border-black/5">
-          <p className="text-[10px] font-bold text-muted uppercase tracking-widest mb-2.5">Recommended next steps</p>
-          <ol className="space-y-1.5">
-            {steps.map((step, i) => (
-              <li key={i} className="flex items-start gap-2.5 text-sm text-ink">
-                <span className={clsx(
-                  'shrink-0 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold mt-0.5 border',
-                  c.badgeBg, c.badgeText, c.badgeBorder,
-                )}>
-                  {i + 1}
-                </span>
-                {step}
-              </li>
-            ))}
-          </ol>
+// ── AI Brief expandable section ───────────────────────────────────────────────
+
+// ── Rule-based Investment Insights (no API required) ─────────────────────────
+
+function InvestmentInsights({ prop }: { prop: PropertyDetail }) {
+  type Insight = { text: string; good: boolean | null }
+  const insights: Insight[] = []
+
+  // Cap rate signal
+  if (prop.cap_rate != null) {
+    if (prop.cap_rate >= 6)        insights.push({ text: `Cap rate ${prop.cap_rate.toFixed(2)}% — exceeds Quebec's 6% strong-buy threshold`, good: true })
+    else if (prop.cap_rate >= 4.5) insights.push({ text: `Cap rate ${prop.cap_rate.toFixed(2)}% — within the acceptable 4.5%–6% Quebec range`, good: null })
+    else                           insights.push({ text: `Cap rate ${prop.cap_rate.toFixed(2)}% — below Quebec's 4.5% minimum floor`, good: false })
+  }
+
+  // Discount vs market
+  if (prop.discount_pct != null) {
+    if (prop.discount_pct >= 10)      insights.push({ text: `Listed ${prop.discount_pct.toFixed(1)}% below comparable sales — strong buying opportunity`, good: true })
+    else if (prop.discount_pct >= 3)  insights.push({ text: `Listed ${prop.discount_pct.toFixed(1)}% below comparable median — modest discount`, good: null })
+    else if (prop.discount_pct >= -2) insights.push({ text: `Priced at market value (${Math.abs(prop.discount_pct).toFixed(1)}% vs comparables)`, good: null })
+    else                              insights.push({ text: `Listed ${Math.abs(prop.discount_pct).toFixed(1)}% above comparable sales — paying a premium`, good: false })
+  }
+
+  // Cash flow
+  if (prop.monthly_cash_flow != null) {
+    const cf = prop.monthly_cash_flow
+    if (cf > 500)       insights.push({ text: `Cash flow ${fmtCAD(cf)}/mo — rent covers all costs with surplus`, good: true })
+    else if (cf > 0)    insights.push({ text: `Cash flow ${fmtCAD(cf)}/mo — barely break-even after all costs`, good: null })
+    else if (cf > -400) insights.push({ text: `Cash flow ${fmtCAD(cf)}/mo — you cover the shortfall monthly`, good: null })
+    else                insights.push({ text: `Cash flow ${fmtCAD(cf)}/mo — significant monthly top-up required`, good: false })
+  }
+
+  // GRM
+  if (prop.grm != null) {
+    if (prop.grm <= 12)      insights.push({ text: `GRM ${prop.grm.toFixed(1)}x — excellent value per rent dollar`, good: true })
+    else if (prop.grm <= 15) insights.push({ text: `GRM ${prop.grm.toFixed(1)}x — acceptable within Quebec's 13–15x range`, good: null })
+    else                     insights.push({ text: `GRM ${prop.grm.toFixed(1)}x — above 15x, paying premium per rent dollar`, good: false })
+  }
+
+  // Price history drops
+  const hist = prop.price_history
+  if (hist && hist.length >= 2) {
+    const sorted = [...hist].filter(h => h.price > 0).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+    const drops = sorted.slice(1).filter((h, i) => h.price < sorted[i].price).length
+    if (drops >= 2)     insights.push({ text: `${drops} price reductions on record — seller is motivated to close`, good: true })
+    else if (drops === 1) insights.push({ text: `1 price reduction on record — some negotiation room likely`, good: null })
+  }
+
+  // Comparable confidence
+  if (prop.comparable_count != null) {
+    if (prop.comparable_count >= 7)      insights.push({ text: `${prop.comparable_count} comparable sales — market value estimate is high confidence`, good: true })
+    else if (prop.comparable_count >= 3) insights.push({ text: `${prop.comparable_count} comparable sales — moderate confidence in market value`, good: null })
+    else                                 insights.push({ text: `${prop.comparable_count ?? 0} comparable sales — low confidence, limited market data`, good: false })
+  }
+
+  // Welcome tax warning
+  if (prop.welcome_tax != null && prop.welcome_tax > 0) {
+    insights.push({ text: `Quebec welcome tax ${fmtCAD(prop.welcome_tax)} due at closing — budget accordingly`, good: null })
+  }
+
+  const icon = (good: boolean | null) =>
+    good === true ? '↑' : good === false ? '↓' : '→'
+
+  return (
+    <div className="card p-5 space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-base font-bold text-ink">Investment Signals</h3>
+        {prop.last_analyzed_at && (
+          <span className="text-xs text-muted">Updated {new Date(prop.last_analyzed_at).toLocaleDateString('en-CA')}</span>
+        )}
+      </div>
+      {insights.length === 0 ? (
+        <p className="text-sm text-muted py-4 text-center">Run analysis first to see investment signals.</p>
+      ) : (
+        <div className="divide-y divide-surface-border">
+          {insights.map((ins, i) => (
+            <div key={i} className="flex items-center gap-3 py-3">
+              <span className={clsx(
+                'shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-sm font-black',
+                ins.good === true  ? 'bg-emerald-100 text-emerald-700' :
+                ins.good === false ? 'bg-red-100 text-red-600' :
+                                    'bg-gray-100 text-muted',
+              )}>{icon(ins.good)}</span>
+              <span className="text-sm text-ink leading-snug">{ins.text}</span>
+            </div>
+          ))}
         </div>
       )}
     </div>
   )
 }
 
-// ── AI Brief tab ──────────────────────────────────────────────────────────────
+// ── Stored analysis section (shows existing DB brief, zero API calls) ─────────
 
-function BriefTab({ prop, lang, setLang, t, reanalyze }: {
-  prop: PropertyDetail
-  lang: 'en' | 'fr'
-  setLang: (l: 'en' | 'fr') => void
-  t: (k: string) => string
-  reanalyze: { mutate: () => void; isPending: boolean; isSuccess: boolean; isError: boolean; error: Error | null }
-}) {
-  const brief = lang === 'fr' ? prop.ai_brief_fr : prop.ai_brief_en
+type BriefLine = { type: 'text' | 'bullet' | 'risk'; text: string; severity?: string }
+type BriefSection = { heading: string; lines: BriefLine[] }
+
+function parseBriefSections(text: string): BriefSection[] {
+  const sections: BriefSection[] = []
+  let current: BriefSection | null = null
+
+  for (const raw of text.split('\n')) {
+    const line = raw.trim()
+    if (!line || line === '---') continue
+    if (line.startsWith('|')) continue  // skip markdown tables entirely
+
+    if (line.startsWith('## ')) {
+      if (current) sections.push(current)
+      current = { heading: line.replace(/^##\s*\d*\.?\s*/, '').trim(), lines: [] }
+    } else if (line.startsWith('# ')) {
+      // skip top-level heading (just the property name)
+    } else if (current) {
+      // Strip all markdown formatting
+      const clean = line
+        .replace(/\*\*/g, '')
+        .replace(/\*/g, '')
+        .replace(/^[-•]\s*/, '')
+        .replace(/^\d+\.\s+/, '')
+        .trim()
+      if (!clean) continue
+
+      // Detect risk severity labels [HIGH], [MEDIUM], [CRITICAL], [LOW]
+      const riskMatch = clean.match(/^\[(CRITICAL|HIGH|MEDIUM|LOW)\]\s*(.+)$/)
+      if (riskMatch) {
+        current.lines.push({ type: 'risk', severity: riskMatch[1], text: riskMatch[2] })
+      } else if (line.match(/^[-•*]\s/)) {
+        current.lines.push({ type: 'bullet', text: clean })
+      } else {
+        current.lines.push({ type: 'text', text: clean })
+      }
+    }
+  }
+  if (current) sections.push(current)
+  return sections.filter(s => s.lines.length > 0)
+}
+
+function StoredAnalysisSection({ prop }: { prop: PropertyDetail }) {
+  const [open, setOpen]   = useState(false)
+  const [lang, setLang]   = useState<'en' | 'fr'>('en')
+
   const hasBrief = !!(prop.ai_brief_en || prop.ai_brief_fr)
+  const hasFr    = !!prop.ai_brief_fr
+  const brief    = lang === 'fr' ? (prop.ai_brief_fr ?? prop.ai_brief_en) : prop.ai_brief_en
+  const sections = brief ? parseBriefSections(brief) : []
 
-  const metrics = [
-    {
-      label: 'Below market',
-      pct: prop.discount_pct != null ? Math.min(100, Math.max(0, prop.discount_pct * 5)) : null,
-      value: prop.discount_pct != null
-        ? `${prop.discount_pct > 0 ? '-' : '+'}${Math.abs(prop.discount_pct).toFixed(1)}%`
-        : '—',
-      color: prop.discount_pct != null && prop.discount_pct > 5 ? '#059669' : '#64748B',
-    },
-    {
-      label: 'Yearly return',
-      pct: prop.cap_rate != null ? Math.min(100, (prop.cap_rate / 8) * 100) : null,
-      value: prop.cap_rate != null ? `${prop.cap_rate.toFixed(2)}%` : '—',
-      color: prop.cap_rate != null && prop.cap_rate >= 5 ? '#059669' :
-             prop.cap_rate != null && prop.cap_rate >= 3 ? '#D97706' : '#DC2626',
-    },
-    {
-      label: 'Monthly profit',
-      pct: prop.monthly_cash_flow != null
-        ? Math.min(100, Math.max(0, ((prop.monthly_cash_flow + 3000) / 5000) * 100))
-        : null,
-      value: prop.monthly_cash_flow != null
-        ? new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD', maximumFractionDigits: 0 }).format(prop.monthly_cash_flow) + '/mo'
-        : '—',
-      color: prop.monthly_cash_flow != null && prop.monthly_cash_flow >= 0 ? '#059669' : '#DC2626',
-    },
-    {
-      label: 'Comparable sales',
-      pct: prop.comparable_count != null ? Math.min(100, (prop.comparable_count / 10) * 100) : null,
-      value: prop.comparable_count != null ? `${prop.comparable_count} found` : '—',
-      color: prop.comparable_count != null && prop.comparable_count >= 7 ? '#059669' : '#D97706',
-    },
-  ]
+  const riskColors: Record<string, string> = {
+    CRITICAL: 'bg-red-100 text-red-800 border-red-200',
+    HIGH:     'bg-orange-100 text-orange-700 border-orange-200',
+    MEDIUM:   'bg-amber-100 text-amber-700 border-amber-200',
+    LOW:      'bg-blue-100 text-blue-700 border-blue-200',
+  }
 
   return (
-    <div className="space-y-4 animate-slide-up">
-      <VerdictBanner prop={prop} />
+    <div className="card overflow-hidden">
 
-      {!hasBrief ? (
-        <div className="card py-10 text-center space-y-4">
-          {reanalyze.isPending ? (
-            <>
-              <div className="w-10 h-10 rounded-full border-2 border-accent border-t-transparent animate-spin mx-auto" />
-              <p className="text-ink text-sm font-semibold">Generating AI analysis…</p>
-              <p className="text-xs text-muted">This takes about 10–30 seconds</p>
-            </>
-          ) : (
-            <>
-              <Sparkles className="mx-auto text-accent" size={32} />
-              <div>
-                <p className="text-ink text-sm font-semibold">AI analysis not yet generated</p>
-                <p className="text-xs text-muted mt-1">Get a plain-English investment brief for this property</p>
-              </div>
-              {reanalyze.isError && (
-                <p className="text-xs text-score-notrecommended bg-red-50 border border-red-200 rounded-xl px-3 py-2 max-w-xs mx-auto">
-                  {reanalyze.error?.message ?? 'Analysis failed. Please try again.'}
-                </p>
-              )}
-              <button
-                onClick={() => reanalyze.mutate()}
-                className="btn-primary mx-auto"
-              >
-                <Sparkles size={13} />
-                Generate AI Analysis
-              </button>
-            </>
-          )}
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-          {/* Brief text */}
-          <div className="lg:col-span-2 card space-y-4">
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <div className="flex items-center gap-2 text-sm text-muted">
-                <TrendingUp size={14} />
-                <span>AI Analysis</span>
-                {prop.analysis_confidence && (
-                  <ConfidencePill confidence={prop.analysis_confidence} t={t} />
-                )}
-              </div>
-              <div className="flex items-center gap-0.5 p-0.5 bg-surface rounded-xl border border-surface-border">
-                {(['en', 'fr'] as const).map(l => (
-                  <button
-                    key={l}
-                    onClick={() => setLang(l)}
-                    className={clsx(
-                      'px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150',
-                      lang === l ? 'bg-white text-ink shadow' : 'text-muted hover:text-ink',
-                    )}
-                  >
-                    {l.toUpperCase()}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {brief ? (
-              <p className="text-ink leading-relaxed text-sm whitespace-pre-line">{brief}</p>
-            ) : (
-              <p className="text-muted text-sm italic">
-                {lang === 'fr' ? 'Analyse française non disponible.' : 'English analysis not available.'}
-              </p>
-            )}
-
-            {prop.last_analyzed_at && (
-              <p className="text-xs text-muted pt-2 border-t border-surface-border">
-                Last analyzed: {new Date(prop.last_analyzed_at).toLocaleString('en-CA')}
-              </p>
-            )}
+      {/* Clickable header — always visible */}
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-surface/60 transition-colors"
+      >
+        <div className="flex items-center gap-3">
+          <div className={clsx(
+            'w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-colors',
+            hasBrief ? 'bg-accent/10 text-accent' : 'bg-surface-border text-muted',
+          )}>
+            {hasBrief ? '✦' : '+'}
           </div>
-
-          {/* Deal scorecard */}
-          <div className="card space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xs font-bold text-muted uppercase tracking-widest">Deal scorecard</h3>
-              <div className="flex items-center gap-1.5">
-                <ScoreDot category={prop.score_category} />
-                <span className="text-sm font-bold text-ink font-mono">{prop.score ?? '—'}</span>
-              </div>
+          <div className="text-left">
+            <p className="text-sm font-bold text-ink">
+              {hasBrief ? 'View Property Analysis' : 'Generate Property Analysis'}
+            </p>
+            <p className="text-xs text-muted">
+              {hasBrief
+                ? `AI-written summary${prop.last_analyzed_at ? ' · ' + new Date(prop.last_analyzed_at).toLocaleDateString('en-CA') : ''}`
+                : 'Click Reanalyze at the top to generate'}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {hasFr && open && (
+            <div className="flex gap-1" onClick={e => e.stopPropagation()}>
+              {(['en', 'fr'] as const).map(l => (
+                <button
+                  key={l}
+                  onClick={() => setLang(l)}
+                  className={clsx(
+                    'px-2 py-0.5 rounded text-xs font-bold border transition-all',
+                    lang === l ? 'bg-accent text-white border-accent' : 'text-muted border-surface-border',
+                  )}
+                >{l.toUpperCase()}</button>
+              ))}
             </div>
+          )}
+          <span className={clsx(
+            'text-muted text-xl leading-none transition-transform duration-200',
+            open && 'rotate-180',
+          )}>⌄</span>
+        </div>
+      </button>
 
-            <div className="space-y-3">
-              {metrics.map(m => (
-                <div key={m.label}>
-                  <div className="flex items-center justify-between text-xs mb-1">
-                    <span className="text-muted">{m.label}</span>
-                    <span className="font-mono font-semibold text-ink tabular-nums">{m.value}</span>
-                  </div>
-                  <div className="h-1.5 bg-surface-border rounded-full overflow-hidden">
-                    {m.pct != null && (
-                      <div
-                        className="h-full rounded-full transition-all duration-500"
-                        style={{ width: `${m.pct}%`, backgroundColor: m.color }}
-                      />
-                    )}
+      {/* Expandable content */}
+      {open && (
+        <div className="border-t border-surface-border">
+          {!hasBrief ? (
+            <div className="px-5 py-8 text-center space-y-2">
+              <p className="text-sm text-muted">No analysis generated yet.</p>
+              <p className="text-xs text-muted">Click the <span className="font-semibold text-ink">Reanalyze</span> button at the top of the page to generate one.</p>
+            </div>
+          ) : sections.length === 0 ? (
+            <div className="px-5 py-4">
+              <p className="text-sm text-ink leading-relaxed whitespace-pre-line">{brief}</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-surface-border">
+              {sections.map((sec, i) => (
+                <div key={i} className="px-5 py-4 space-y-3">
+                  {sec.heading && (
+                    <p className="text-xs font-black text-muted uppercase tracking-widest">{sec.heading}</p>
+                  )}
+                  <div className="space-y-2">
+                    {sec.lines.map((ln, j) => {
+                      if (ln.type === 'risk') {
+                        const col = riskColors[ln.severity ?? 'LOW'] ?? riskColors.LOW
+                        return (
+                          <div key={j} className="flex items-start gap-2.5">
+                            <span className={clsx('shrink-0 mt-0.5 px-1.5 py-0.5 rounded border text-[10px] font-black uppercase', col)}>
+                              {ln.severity}
+                            </span>
+                            <span className="text-sm text-ink leading-snug">{ln.text}</span>
+                          </div>
+                        )
+                      }
+                      if (ln.type === 'bullet') {
+                        return (
+                          <div key={j} className="flex items-start gap-2">
+                            <span className="shrink-0 mt-2 w-1.5 h-1.5 rounded-full bg-accent/60" />
+                            <span className="text-sm text-ink leading-relaxed">{ln.text}</span>
+                          </div>
+                        )
+                      }
+                      return <p key={j} className="text-sm text-ink leading-relaxed">{ln.text}</p>
+                    })}
                   </div>
                 </div>
               ))}
             </div>
-
-            {prop.comparable_count != null && (
-              <p className="text-[10px] text-muted pt-1 border-t border-surface-border">
-                Based on {prop.comparable_count} comparable sales
-                {prop.analysis_confidence && ` · ${prop.analysis_confidence} confidence`}
-              </p>
-            )}
-          </div>
+          )}
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Investment Verdict tab ────────────────────────────────────────────────────
+
+function BriefTab({ prop }: { prop: PropertyDetail }) {
+  const hasFinancials = prop.asking_price != null
+
+  return (
+    <div className="space-y-5 animate-slide-up">
+      <VerdictBanner prop={prop} />
+      <InvestmentInsights prop={prop} />
+
+      {hasFinancials ? (
+        <InvestmentReport prop={prop} />
+      ) : (
+        <div className="card py-10 text-center space-y-3">
+          <BarChart2 className="mx-auto text-muted" size={28} />
+          <p className="text-sm text-muted">Financial data not available for this property.</p>
+        </div>
+      )}
+
+      <StoredAnalysisSection prop={prop} />
     </div>
   )
 }
