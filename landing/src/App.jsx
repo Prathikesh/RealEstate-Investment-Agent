@@ -1,30 +1,28 @@
 import { useState, useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
-import './LandingPage.css'
 
 // ─── ICONS ────────────────────────────────────────────────────────────────────
-const TrendingUp  = (p: any) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
-const Zap         = (p: any) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-const Globe       = (p: any) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-const Brain       = (p: any) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4"/></svg>
-const BarChart    = (p: any) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>
-const Bell        = (p: any) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-const DollarSign  = (p: any) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-const Search      = (p: any) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-const CheckCircle = (p: any) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-const XCircle     = (p: any) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
-const ArrowRight  = (p: any) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-const MapPin      = (p: any) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-const Star        = (p: any) => <svg {...p} viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-const Menu        = (p: any) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-const Close       = (p: any) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-const ChevDown    = (p: any) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-const Quote       = (p: any) => <svg {...p} viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V20c0 1 0 1 1 1z"/><path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3c0 1 0 1 1 1z"/></svg>
-const Shield      = (p: any) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+const TrendingUp  = (p) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+const Zap         = (p) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+const Globe       = (p) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+const Brain       = (p) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4"/></svg>
+const BarChart    = (p) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>
+const Bell        = (p) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+const DollarSign  = (p) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+const Search      = (p) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+const CheckCircle = (p) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+const XCircle     = (p) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+const ArrowRight  = (p) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+const MapPin      = (p) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+const Star        = (p) => <svg {...p} viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+const Menu        = (p) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+const Close       = (p) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+const ChevDown    = (p) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+const Quote       = (p) => <svg {...p} viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V20c0 1 0 1 1 1z"/><path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3c0 1 0 1 1 1z"/></svg>
+const Shield      = (p) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
 
 // ─── HOOKS ────────────────────────────────────────────────────────────────────
 function useInView(threshold = 0.12) {
-  const ref = useRef<HTMLElement>(null)
+  const ref = useRef(null)
   const [seen, setSeen] = useState(false)
   useEffect(() => {
     const obs = new IntersectionObserver(
@@ -34,17 +32,17 @@ function useInView(threshold = 0.12) {
     if (ref.current) obs.observe(ref.current)
     return () => obs.disconnect()
   }, [threshold])
-  return [ref, seen] as const
+  return [ref, seen]
 }
 
-function useCountUp(end: number, duration = 2000, started = false) {
+function useCountUp(end, duration = 2000, started = false) {
   const [val, setVal] = useState(0)
   useEffect(() => {
     if (!started || end === 0) return
     const t0 = performance.now()
-    const step = (now: number) => {
+    const step = (now) => {
       const p = Math.min((now - t0) / duration, 1)
-      const eased = 1 - Math.pow(2, -10 * p)
+      const eased = 1 - Math.pow(2, -10 * p) // easeOutExpo — natural deceleration
       setVal(Math.round(eased * end))
       if (p < 1) requestAnimationFrame(step)
     }
@@ -53,7 +51,7 @@ function useCountUp(end: number, duration = 2000, started = false) {
   return val
 }
 
-function useTyping(text: string, speed = 18, started = false) {
+function useTyping(text, speed = 18, started = false) {
   const [idx, setIdx] = useState(0)
   useEffect(() => {
     if (!started) return
@@ -65,14 +63,13 @@ function useTyping(text: string, speed = 18, started = false) {
   return text.slice(0, idx)
 }
 
-function hexToRgb(hex: string) {
+function hexToRgb(hex) {
   const r = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
   return r ? `${parseInt(r[1],16)},${parseInt(r[2],16)},${parseInt(r[3],16)}` : '0,0,0'
 }
 
 // ─── NAVBAR ───────────────────────────────────────────────────────────────────
 function Navbar() {
-  const navigate = useNavigate()
   const [scrolled, setScrolled] = useState(false)
   const [open, setOpen] = useState(false)
   useEffect(() => {
@@ -103,8 +100,8 @@ function Navbar() {
         </div>
 
         <div className="nav__actions">
-          <button className="btn-ghost-sm" onClick={() => navigate('/dashboard')}>Sign In</button>
-          <button className="btn-accent" onClick={() => navigate('/dashboard')}>Start Free Trial</button>
+          <button className="btn-ghost-sm">Sign In</button>
+          <button className="btn-accent">Start Free Trial</button>
         </div>
 
         <button className="nav__burger" onClick={() => setOpen(x => !x)}>
@@ -116,8 +113,8 @@ function Navbar() {
 }
 
 // ─── MINI PROPERTY CARD (HERO DASHBOARD) ─────────────────────────────────────
-function PropCard({ price, addr, score, label, cap, cf, img, delay }: any) {
-  const C: any = {
+function PropCard({ price, addr, score, label, cap, cf, img, delay }) {
+  const C = {
     'Strong Opportunity':  { bg:'rgba(5,150,105,.14)',  br:'rgba(5,150,105,.4)',  tx:'#34D399', sc:'#059669' },
     'Worth Investigating': { bg:'rgba(37,99,235,.14)',  br:'rgba(37,99,235,.4)',  tx:'#60A5FA', sc:'#2563EB' },
     'Market Price':        { bg:'rgba(217,119,6,.14)',  br:'rgba(217,119,6,.4)',  tx:'#FBBF24', sc:'#D97706' },
@@ -144,7 +141,6 @@ function PropCard({ price, addr, score, label, cap, cf, img, delay }: any) {
 
 // ─── HERO ─────────────────────────────────────────────────────────────────────
 function Hero() {
-  const navigate = useNavigate()
   return (
     <section className="hero" id="hero">
       <div className="hero__glow hero__glow--1" />
@@ -152,6 +148,7 @@ function Hero() {
       <div className="hero__grid" />
 
       <div className="hero__inner">
+        {/* Copy */}
         <div className="hero__copy">
           <div className="chip chip--glow">
             <Zap width="12" height="12" />
@@ -171,7 +168,7 @@ function Hero() {
           </p>
 
           <div className="hero__ctas">
-            <button className="btn-accent btn-accent--lg btn-glow" onClick={() => navigate('/dashboard')}>
+            <button className="btn-accent btn-accent--lg btn-glow">
               Analyze Properties Free
               <ArrowRight width="17" height="17" />
             </button>
@@ -181,7 +178,7 @@ function Hero() {
           <div className="hero__proof">
             <div className="avatars">
               {[['JL','#2563EB'],['MR','#059669'],['AP','#7C3AED'],['SC','#D97706'],['NK','#EC4899']].map(([i,bg],k) => (
-                <span key={k} className="av" style={{ background: bg, marginLeft: k ? '-9px' : 0 }}>{i}</span>
+                <span key={k} className="av" style={{ background: bg, marginLeft: k?'-9px':0 }}>{i}</span>
               ))}
             </div>
             <div>
@@ -191,23 +188,27 @@ function Hero() {
           </div>
         </div>
 
+        {/* Dashboard visual */}
         <div className="hero__visual">
           <div className="dash">
+            {/* Chrome bar */}
             <div className="dash__chrome">
               <span className="dot r" /><span className="dot y" /><span className="dot g" />
               <div className="dash__url">québec-re.app/dashboard</div>
               <div className="dash__live"><span className="blink-dot" />Live</div>
             </div>
 
+            {/* Metrics */}
             <div className="dash__metrics">
               {[['847','Listings',null],['23','Strong Buys','#34D399'],['12','Price Drops','#FBBF24']].map(([v,l,c])=>(
                 <div key={l} className="dash__m">
-                  <span className="dash__mv" style={c ? {color:c} : {}}>{v}</span>
+                  <span className="dash__mv" style={c?{color:c}:{}}>{v}</span>
                   <span className="dash__ml">{l}</span>
                 </div>
               ))}
             </div>
 
+            {/* Cards */}
             <div className="dash__cards">
               <PropCard price="$485,000" addr="1234 Rue Sherbrooke, Mtl" score={87} label="Strong Opportunity"
                 cap="6.8%" cf="+$1,240" delay={0.1}
@@ -221,6 +222,7 @@ function Hero() {
             </div>
           </div>
 
+          {/* Floating verdict */}
           <div className="float-card float-card--verdict">
             <span className="blink-dot blink-dot--green" />
             <div>
@@ -230,6 +232,7 @@ function Hero() {
             <span className="float-card__badge">STRONG</span>
           </div>
 
+          {/* Floating alert */}
           <div className="float-card float-card--alert">
             <Bell width="13" height="13" style={{ color:'#FBBF24', flexShrink:0 }} />
             <span>Price drop — 221 Rue Bishop · $18k below comps</span>
@@ -260,7 +263,7 @@ function Marquee() {
 }
 
 // ─── STATS ────────────────────────────────────────────────────────────────────
-function StatNum({ end, suffix = '', started }: any) {
+function StatNum({ end, suffix = '', started }) {
   const val = useCountUp(end, 2200, started)
   return <span className="stat__val">{val}{suffix}</span>
 }
@@ -274,7 +277,7 @@ function Stats() {
     { end: 6,   suffix: 'h', label: 'Data Refresh Cycle' },
   ]
   return (
-    <div className="stats" ref={ref as any}>
+    <div className="stats" ref={ref}>
       {items.map(({ end, suffix, label }, i) => (
         <div key={i} className={`stat ${seen ? 'stat--visible' : ''}`} style={{ transitionDelay: `${i * 0.1}s` }}>
           <StatNum end={end} suffix={suffix} started={seen} />
@@ -305,7 +308,7 @@ function Problem() {
     'Comparable sales validation on every listing',
   ]
   return (
-    <section className="section problem-section" ref={ref as any}>
+    <section className="section problem-section" ref={ref}>
       <div className="container">
         <div className="section-head">
           <div className="chip">The Problem</div>
@@ -370,7 +373,7 @@ const FEATURES = [
 function Features() {
   const [ref, seen] = useInView()
   return (
-    <section className="section" id="features" ref={ref as any}>
+    <section className="section" id="features" ref={ref}>
       <div className="container">
         <div className="section-head">
           <div className="chip">Features</div>
@@ -412,7 +415,7 @@ function HowItWorks() {
       desc: 'Browse ranked properties with scores, AI verdicts, and financial metrics. Filter by cap rate, city, price, or score. Make data-backed decisions in minutes instead of days.' },
   ]
   return (
-    <section className="section hiw" id="how-it-works" ref={ref as any}>
+    <section className="section hiw" id="how-it-works" ref={ref}>
       <div className="container">
         <div className="section-head">
           <div className="chip">How It Works</div>
@@ -448,7 +451,7 @@ function AIDemo() {
   const fr = useTyping(VERDICT_FR, 18, seen)
 
   return (
-    <section className="section demo-section" id="demo" ref={ref as any}>
+    <section className="section demo-section" id="demo" ref={ref}>
       <div className="container">
         <div className="demo-grid">
           <div className={`demo-copy ${seen ? 'demo-copy--visible' : ''}`}>
@@ -466,6 +469,7 @@ function AIDemo() {
           </div>
 
           <div className={`demo-card ${seen ? 'demo-card--visible' : ''}`}>
+            {/* Header */}
             <div className="dc-header">
               <img src="https://images.unsplash.com/photo-1568605114967-8130f3a36994?w=80&q=80" className="dc-img" alt="property" />
               <div className="dc-info">
@@ -476,17 +480,20 @@ function AIDemo() {
               <div className="dc-score dc-score--strong">87</div>
             </div>
 
+            {/* Metrics */}
             <div className="dc-metrics">
               {[['Cap Rate','6.8%',false],['Annual NOI','$32,980',false],['Cash Flow / mo','+$1,240',true],['Welcome Tax','$6,750',false]].map(([k,v,g])=>(
-                <div key={k as string} className="dcm"><span className="dcm-k">{k}</span><span className={`dcm-v ${g?'dcm-v--pos':''}`}>{v}</span></div>
+                <div key={k} className="dcm"><span className="dcm-k">{k}</span><span className={`dcm-v ${g?'dcm-v--pos':''}`}>{v}</span></div>
               ))}
             </div>
 
+            {/* EN verdict */}
             <div className="dc-verdict dc-verdict--en">
               <div className="dc-verdict__label"><span className="pulse-dot pulse-dot--blue" />AI Verdict · English</div>
               <p className="dc-verdict__text">{en || '…'}<span className="cursor">|</span></p>
             </div>
 
+            {/* FR verdict */}
             <div className="dc-verdict dc-verdict--fr">
               <div className="dc-verdict__label"><span className="pulse-dot pulse-dot--purple" />Verdict IA · Français</div>
               <p className="dc-verdict__text">{fr || '…'}</p>
@@ -529,7 +536,7 @@ const TESTIMONIALS = [
 function Testimonials() {
   const [ref, seen] = useInView()
   return (
-    <section className="section" id="testimonials" ref={ref as any}>
+    <section className="section" id="testimonials" ref={ref}>
       <div className="container">
         <div className="section-head">
           <div className="chip">Testimonials</div>
@@ -572,7 +579,7 @@ const CITIES = [
 function Coverage() {
   const [ref, seen] = useInView()
   return (
-    <section className="section coverage-section" ref={ref as any}>
+    <section className="section coverage-section" ref={ref}>
       <div className="container">
         <div className="cov-grid">
           <div className={`cov-copy ${seen ? 'cov-copy--visible' : ''}`}>
@@ -625,18 +632,18 @@ const FAQS = [
   { q: 'Is there a free trial? Do I need a credit card?',
     a: 'Yes — you get a full 14-day free trial with access to all features, all listings, and unlimited AI verdicts. No credit card is required to start. You only enter payment details if you decide to continue after the trial.' },
   { q: 'What makes this different from just using Centris or Realtor.ca?',
-    a: "Those platforms show you listings — we show you investments. We unify all three platforms, eliminate duplicates, calculate financial metrics, find comparable sales, and generate AI investment verdicts for every property. Instead of browsing, you're reviewing ranked opportunities." },
+    a: 'Those platforms show you listings — we show you investments. We unify all three platforms, eliminate duplicates, calculate financial metrics, find comparable sales, and generate AI investment verdicts for every property. Instead of browsing, you\'re reviewing ranked opportunities.' },
   { q: 'Can I cancel anytime?',
     a: 'Absolutely. No contracts, no cancellation fees, no questions asked. You can cancel directly from your account settings in under 30 seconds. If you cancel mid-cycle, you retain access for the remainder of your billing period.' },
 ]
 
 function FAQ() {
-  const [open, setOpen] = useState<number | null>(null)
+  const [open, setOpen] = useState(null)
   const [ref, seen] = useInView()
-  const toggle = (i: number) => setOpen(x => x === i ? null : i)
+  const toggle = (i) => setOpen(x => x === i ? null : i)
 
   return (
-    <section className="section" id="faq" ref={ref as any}>
+    <section className="section" id="faq" ref={ref}>
       <div className="container">
         <div className="section-head">
           <div className="chip">FAQ</div>
@@ -668,7 +675,6 @@ function FAQ() {
 
 // ─── CTA ─────────────────────────────────────────────────────────────────────
 function CTA() {
-  const navigate = useNavigate()
   return (
     <section className="cta-section">
       <div className="cta-section__glow" />
@@ -685,7 +691,7 @@ function CTA() {
           Every hour you wait, investors with better tools are reviewing the same listings. Start your
           free trial now and let AI do the scouting.
         </p>
-        <button className="btn-accent btn-accent--lg btn-glow cta-section__btn" onClick={() => navigate('/dashboard')}>
+        <button className="btn-accent btn-accent--lg btn-glow cta-section__btn">
           Start Analyzing Free — No CC Required
           <ArrowRight width="18" height="18" />
         </button>
@@ -747,7 +753,7 @@ function Footer() {
 }
 
 // ─── APP ─────────────────────────────────────────────────────────────────────
-export default function LandingPage() {
+export default function App() {
   return (
     <div className="app">
       <Navbar />
