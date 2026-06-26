@@ -138,7 +138,7 @@ class FinancialCalculator:
 
         # ── Cash-on-cash ──────────────────────────────────────────────────────
         cash_on_cash = None
-        welcome_tax  = self._welcome_tax(price, prop.city) if price else None
+        welcome_tax  = self._welcome_tax(price, prop.city, getattr(prop, "evaluation_fonciere", None)) if price else None
         if monthly_cash_flow is not None and down_payment:
             total_cash = down_payment + (welcome_tax or 0) + ((price or 0) * 0.01)
             annual_cf  = monthly_cash_flow * 12

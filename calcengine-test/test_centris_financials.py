@@ -202,6 +202,7 @@ def fetch_cheap(client, url):
 def fetch_full(client, url):
     return client.scrape(ScrapeConfig(
         url=url, asp=True, render_js=True, country="CA", session=SESSION,
+        rendering_wait=3000,   # wait 3s for calculator JS to populate #taxe
     ))
 
 
@@ -296,6 +297,74 @@ def fmt_pct(val) -> str:
 
 def divider():
     print(f"    {'─' * 34}")
+
+
+# ── Welcome Tax calculator ────────────────────────────────────────────────────
+
+# 2026 indexed brackets — RLRQ c. D-15.1
+# 4-bracket structure (4th tier added by Quebec Bill 47 / 2022 amendment)
+WELCOME_TAX_BRACKETS = [
+    (62_900,       0.005),   # 0.5%
+    (315_000,      0.010),   # 1.0%
+    (552_300,      0.015),   # 1.5%
+    (float("inf"), 0.020),   # 2.0%  ← added in 2022 amendment
+]
+MONTREAL_EXTRA_THRESHOLD = 500_000
+MONTREAL_EXTRA_RATE      = 0.030   # 3.0% — Montreal city by-law replaces 2% above $500k
+
+
+def calculate_welcome_tax(asking_price: float | None, assessment_total: float | None, city: str) -> dict:
+    """
+    Calculate welcome tax using tax_base = max(asking_price, assessment_total).
+    Returns breakdown dict with per-bracket amounts.
+    """
+    if not asking_price:
+        return {"error": "No asking price available."}
+
+    tax_base = asking_price
+    base_source = "asking price"
+    if assessment_total and assessment_total > asking_price:
+        tax_base = assessment_total
+        base_source = "municipal assessment (higher than asking price)"
+
+    is_montreal = "montr" in city.lower()
+    brackets = list(WELCOME_TAX_BRACKETS)
+    if is_montreal:
+        # Replace everything above $500k with Montreal 3% by-law rate.
+        # Base brackets up to $315k stay; 1.5% bracket is capped at $500k.
+        brackets = [
+            (62_900,                   0.005),
+            (315_000,                  0.010),
+            (MONTREAL_EXTRA_THRESHOLD, 0.015),  # 1.5% up to $500k
+            (float("inf"),             MONTREAL_EXTRA_RATE),  # 3.0% above $500k
+        ]
+
+    lines = []
+    total = 0.0
+    prev  = 0.0
+    for ceiling, rate in brackets:
+        if tax_base <= prev:
+            break
+        bracket_max = min(tax_base, ceiling)
+        taxable = bracket_max - prev
+        amount  = round(taxable * rate, 2)
+        total  += amount
+        up_to_label = f"${ceiling:,.0f}" if ceiling != float("inf") else "no limit"
+        lines.append({
+            "range":   f"${prev:,.0f} – {up_to_label}",
+            "rate":    f"{rate * 100:.1f}%",
+            "taxable": taxable,
+            "amount":  amount,
+        })
+        prev = ceiling
+
+    return {
+        "tax_base":        tax_base,
+        "base_source":     base_source,
+        "is_montreal":     is_montreal,
+        "bracket_lines":   lines,
+        "total":           round(total, 2),
+    }
 
 
 # ── NOI & Cap Rate calculator ─────────────────────────────────────────────────
@@ -403,6 +472,118 @@ def calculate_noi_caprate(
     return results
 
 
+# ── Transfer tax via Centris calculator page (Scrapfly JS injection) ──────────
+
+def get_transfer_tax_via_js(client, asking_price: float, assessment_total: float, city: str) -> str | None:
+    """
+    Navigate to the Centris calculator page, inject the assessment + price into
+    the form fields, trigger the Calculate button, and return the result text
+    from #taxe.
+    """
+    CALC_URL = "https://www.centris.ca/fr/outils/calculatrice"
+
+    # Map city name to Centris calcConfigId
+    city_lower = city.lower().strip()
+    if "montr" in city_lower:
+        calc_config = "montr\u00e9al"
+    elif "laval" in city_lower:
+        calc_config = "laval"
+    elif "longueuil" in city_lower:
+        calc_config = "longueuil"
+    elif "qu\u00e9bec" in city_lower or "quebec" in city_lower:
+        calc_config = "qu\u00e9bec"
+    else:
+        calc_config = "default"
+
+    js_script = f"""
+        // Helper: set value on a React-controlled input and fire input + change events
+        function setVal(el, val) {{
+            if (!el) return;
+            var nativeSetter = Object.getOwnPropertyDescriptor(
+                window.HTMLInputElement.prototype, 'value'
+            ).set;
+            nativeSetter.call(el, val);
+            el.dispatchEvent(new Event('input',  {{ bubbles: true }}));
+            el.dispatchEvent(new Event('change', {{ bubbles: true }}));
+        }}
+
+        // Set hidden calcConfigId so the calculator knows which city brackets to apply
+        var configInput = document.getElementById('calcConfigId');
+        setVal(configInput, '{calc_config}');
+
+        // Fill price of property
+        var priceInput = document.getElementById('propriete');
+        setVal(priceInput, '{int(asking_price)}');
+
+        // Fill municipal assessment total
+        var assessInput = document.getElementById('evalMunicipale');
+        setVal(assessInput, '{int(assessment_total or 0)}');
+
+        // Short pause so the form state settles before clicking
+        await new Promise(r => setTimeout(r, 500));
+
+        // Click the Calculate button
+        var btn = document.getElementById('Calcul_btTotalMutation');
+        if (btn) {{
+            btn.click();
+        }}
+
+        // Wait for result to populate (AJAX response)
+        await new Promise(r => setTimeout(r, 4000));
+    """
+
+    try:
+        result = client.scrape(ScrapeConfig(
+            url=CALC_URL,
+            asp=True,
+            render_js=True,
+            country="CA",
+            session=SESSION,
+            js=js_script,
+            rendering_wait=3000,
+        ))
+        credits = result.context.get("cost", {}).get("total", "?")
+        print(f"  Calculator page fetched | Credits used: {credits}")
+
+        if result.upstream_status_code != 200:
+            print(f"  [WARN] Calculator page returned {result.upstream_status_code}")
+            return None
+
+        from parsel import Selector
+        sel = Selector(text=result.content)
+
+        # Result is in #taxe — collect all text nodes inside
+        taxe_texts = sel.css("#taxe ::text").getall()
+        taxe_text = " ".join(t.strip() for t in taxe_texts if t.strip())
+        taxe_text = re.sub(r"[^\d.]", "", taxe_text)
+
+        if taxe_text and taxe_text.replace(".", "").isdigit():
+            return taxe_text
+
+        # Fallback selectors
+        for selector in (".calcul-mutation ::text", ".total-mutation ::text",
+                         "[id*='taxe'] ::text", "[id*='mutation'] ::text",
+                         ".resultat-mutation ::text"):
+            fallback_texts = sel.css(selector).getall()
+            fallback = " ".join(t.strip() for t in fallback_texts if t.strip())
+            fallback = re.sub(r"[^\d.]", "", fallback)
+            if fallback and fallback.replace(".", "").isdigit():
+                return fallback
+
+        # Debug: print a snippet around mutation-related elements to diagnose
+        debug_html = sel.css("[id*='taxe'], [id*='mutation'], [class*='mutation']").get(default="")
+        if debug_html:
+            print(f"  [DEBUG] Calculator result area HTML:\n    {debug_html[:500]}")
+        else:
+            print(f"  [DEBUG] No #taxe / mutation elements found in response.")
+
+        return None
+
+    except Exception as e:
+        print(f"  [WARN] Transfer tax JS fetch failed: {e}")
+        return None
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
@@ -505,6 +686,18 @@ def main():
     year_built = carac.get("année de construction", "N/A")
     units      = carac.get("nombre d'unités") or carac.get("nombre d'unites") or carac.get("unités résidentielles") or "N/A"
 
+    # ── Transfer Tax — read #taxe directly from the already-scraped page ─────
+    # The Centris property page embeds the calculator in #CalculTaxe and
+    # pre-populates #taxe via JS once the page loads (city + price are preset).
+    # No separate request needed — just read from the same `sel`.
+    taxe_texts = sel.css("#taxe ::text").getall()
+    taxe_clean = re.sub(r"[^\d.]", "", " ".join(t.strip() for t in taxe_texts if t.strip()))
+    transfer_tax_raw = taxe_clean if taxe_clean and taxe_clean.replace(".", "").isdigit() else None
+    if transfer_tax_raw:
+        print(f"\n  Transfer tax read from page: ${float(transfer_tax_raw):,.2f}")
+    else:
+        print(f"\n  Transfer tax not in page HTML — will use local calculation.")
+
     # Get tax year from label key e.g. "municipales (2026)"
     muni_year = next((re.search(r"\d{4}", k).group()
                       for k in carac if "municipales" in k and re.search(r"\d{4}", k)), "")
@@ -525,6 +718,13 @@ def main():
     print(f"    Building                 : {fmt(batiment)}")
     divider()
     print(f"    Total                    : {fmt(assessment_total)}")
+
+    print()
+    print("  TRANSFER TAX (Droits de mutation — from Centris)")
+    if transfer_tax_raw:
+        print(f"    TRANSFER TAX             : ${float(transfer_tax_raw):,.2f}")
+    else:
+        print(f"    N/A  (page may need JS rendering — ensure render_js=True)")
 
     print()
     print("  TAXES")

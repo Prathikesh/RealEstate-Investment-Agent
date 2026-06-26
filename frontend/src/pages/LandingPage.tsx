@@ -21,6 +21,8 @@ const Close       = (p: any) => <svg {...p} viewBox="0 0 24 24" fill="none" stro
 const ChevDown    = (p: any) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
 const Quote       = (p: any) => <svg {...p} viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V20c0 1 0 1 1 1z"/><path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3c0 1 0 1 1 1z"/></svg>
 const Shield      = (p: any) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+const Sun         = (p: any) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+const Moon        = (p: any) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
 
 // ─── HOOKS ────────────────────────────────────────────────────────────────────
 function useInView(threshold = 0.12) {
@@ -71,7 +73,7 @@ function hexToRgb(hex: string) {
 }
 
 // ─── NAVBAR ───────────────────────────────────────────────────────────────────
-function Navbar() {
+function Navbar({ theme, onToggle }: { theme: 'dark' | 'light', onToggle: () => void }) {
   const navigate = useNavigate()
   const [scrolled, setScrolled] = useState(false)
   const [open, setOpen] = useState(false)
@@ -103,6 +105,9 @@ function Navbar() {
         </div>
 
         <div className="nav__actions">
+          <button className="theme-toggle" onClick={onToggle} title="Toggle theme">
+            {theme === 'dark' ? <Sun width="16" height="16" /> : <Moon width="16" height="16" />}
+          </button>
           <button className="btn-ghost-sm" onClick={() => navigate('/dashboard')}>Sign In</button>
           <button className="btn-accent" onClick={() => navigate('/dashboard')}>Start Free Trial</button>
         </div>
@@ -538,15 +543,12 @@ function Testimonials() {
         </div>
 
         <div className="testi-grid">
-          {TESTIMONIALS.map(({ name, role, avatar, initials, stars, quote }, i) => (
+          {TESTIMONIALS.map(({ name, role, avatar, initials, quote }, i) => (
             <div key={i} className={`testi-card ${seen ? 'testi-card--visible' : ''}`} style={{ transitionDelay: `${i * 0.1}s` }}>
               <div className="testi-card__top">
                 <Quote width="28" height="28" className="testi-quote-icon" />
               </div>
               <p className="testi-card__quote">"{quote}"</p>
-              <div className="testi-card__stars">
-                {Array.from({ length: stars }).map((_, k) => <Star key={k} width="14" height="14" />)}
-              </div>
               <div className="testi-card__author">
                 <span className="testi-av" style={{ background: avatar }}>{initials}</span>
                 <div>
@@ -748,9 +750,11 @@ function Footer() {
 
 // ─── APP ─────────────────────────────────────────────────────────────────────
 export default function LandingPage() {
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark')
+  const toggleTheme = () => setTheme(t => t === 'dark' ? 'light' : 'dark')
   return (
-    <div className="app">
-      <Navbar />
+    <div className={`app app--${theme}`}>
+      <Navbar theme={theme} onToggle={toggleTheme} />
       <Hero />
       <Marquee />
       <Stats />

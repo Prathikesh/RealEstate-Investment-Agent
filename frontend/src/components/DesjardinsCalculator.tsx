@@ -179,7 +179,6 @@ export default function DesjardinsCalculator({ askingPrice }: Props) {
           <div className="flex items-center gap-3 min-h-[44px]">
             {showResult && (
               <>
-                <span className="text-2xl text-green-700">🤲</span>
                 <span className="text-lg font-bold text-ink">
                   {result != null ? `${fmtCAD(result)} ${freqLabel}` : '—'}
                 </span>
@@ -195,7 +194,7 @@ export default function DesjardinsCalculator({ askingPrice }: Props) {
             onClick={() => alert('This calculator is for illustration purposes only. Contact Desjardins for your actual mortgage rate and terms. Uses Canadian semi-annual compounding as required by the Interest Act, RSC 1985, c I-15, s 6.')}
             className="text-xs text-muted hover:text-ink underline inline-flex items-center gap-1"
           >
-            ⚖️ Legal note
+            Legal note
           </button>
         </div>
       </div>
