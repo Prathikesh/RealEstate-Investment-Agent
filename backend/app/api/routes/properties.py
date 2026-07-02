@@ -335,14 +335,28 @@ async def get_property(
 @router.get("/{property_id}/comparables", response_model=list[ComparablePropertySchema])
 async def get_comparables(
     property_id: uuid.UUID,
+    by: str = Query("match", description="Comma-separated criteria: match | distance,price,sqft,type"),
     db: AsyncSession = Depends(get_db),
 ) -> list[ComparablePropertySchema]:
-    """Return the individual comparable properties for a property.
+    """Return comparable properties for a property, ranked by the chosen lens(es).
 
-    If comparable_ids was already stored (populated during analysis), use those.
-    Otherwise fall back to running ComparableFinder live so the tab works for
-    properties that were analyzed before this column was added.
+    by=match           — the analysis pipeline's stored comparable set (same type,
+                         nearby, price ±40%, similarity-scored). Falls back to a
+                         live ComparableFinder run when not yet stored. Exclusive —
+                         other criteria are ignored when match is present.
+    by=distance        — nearest active listings of any type (requires coordinates)
+    by=price           — active listings with the closest asking price
+    by=sqft            — active listings with the closest living area
+    by=type            — active listings of the same property type, best score first
+    by=distance,price  — any comma-separated combination: 'type' filters to the
+                         same property type; the numeric criteria are normalized
+                         (distance/25 km, |Δprice|/price, |Δsqft|/sqft) and summed,
+                         closest combined ranking first.
     """
+    from geoalchemy2.functions import ST_Distance, ST_GeomFromEWKB
+    from geoalchemy2.types import Geography
+    from sqlalchemy import cast, null, Float
+
     from app.agent.comparables import ComparableFinder
 
     prop = await db.scalar(
@@ -351,39 +365,99 @@ async def get_comparables(
     if not prop:
         raise HTTPException(status_code=404, detail="Property not found")
 
-    # ── Resolve comparable property IDs ──────────────────────────────────────
-    ids = prop.comparable_ids or []
+    VALID_CRITERIA = {"match", "distance", "price", "sqft", "type"}
+    criteria = {c.strip() for c in by.split(",") if c.strip()}
+    if not criteria or not criteria <= VALID_CRITERIA:
+        raise HTTPException(status_code=422, detail=f"by must be a comma-separated subset of {sorted(VALID_CRITERIA)}")
 
-    if not ids:
-        # Fallback: run the finder live for properties not yet re-analyzed
-        try:
-            finder = ComparableFinder(db)
-            comp_set = await finder.find(prop)
-            ids = [str(c.property_id) for c in comp_set.comparables]
-            # Persist so next call is instant
-            prop.comparable_ids = ids
-            await db.commit()
-        except Exception as exc:
-            logger.warning(f"Live comparable search failed for {property_id}: {exc}")
-            return []
+    MAX_RESULTS = 12
 
-    if not ids:
-        return []
+    # Distance expression — included in every mode so cards can show "x.x km"
+    if prop.location is not None:
+        prop_geo  = cast(ST_GeomFromEWKB(prop.location), Geography)
+        dist_expr = ST_Distance(cast(Property.location, Geography), prop_geo).label("dist_m")
+    else:
+        dist_expr = cast(null(), Float).label("dist_m")
 
-    try:
-        comp_uuids = [uuid.UUID(i) for i in ids]
-    except (ValueError, AttributeError):
-        return []
-
-    # ── Fetch matched properties ──────────────────────────────────────────────
-    comps = list((await db.scalars(
-        select(Property)
-        .where(Property.id.in_(comp_uuids))
+    base = (
+        select(Property, dist_expr)
         .options(selectinload(Property.sources))
-    )).all())
+        .where(Property.id != prop.id)
+        .where(Property.asking_price.isnot(None))
+    )
+    active = Property.status.in_([PropertyStatus.ACTIVE, PropertyStatus.PRICE_CHANGED])
+
+    ordered_ids: list[uuid.UUID] = []   # preserves similarity rank in match mode
+
+    if "match" in criteria:
+        ids = prop.comparable_ids or []
+        if not ids:
+            # Fallback: run the finder live for properties not yet re-analyzed
+            try:
+                finder = ComparableFinder(db)
+                comp_set = await finder.find(prop)
+                ids = [str(c.property_id) for c in comp_set.comparables]
+                prop.comparable_ids = ids
+                await db.commit()
+            except Exception as exc:
+                logger.warning(f"Live comparable search failed for {property_id}: {exc}")
+                return []
+        try:
+            ordered_ids = [uuid.UUID(i) for i in ids]
+        except (ValueError, AttributeError):
+            return []
+        if not ordered_ids:
+            return []
+        stmt = base.where(Property.id.in_(ordered_ids))
+
+    else:
+        # Combined ranking: 'type' filters; numeric criteria are normalized to a
+        # comparable scale and summed — the smallest combined difference first.
+        stmt = base.where(active)
+        rank_terms = []
+
+        if "type" in criteria:
+            stmt = stmt.where(Property.property_type == prop.property_type)
+
+        if "distance" in criteria:
+            if prop.location is None:
+                return []
+            stmt = stmt.where(Property.location.isnot(None))
+            rank_terms.append(dist_expr / 25_000.0)          # 1.0 at 25 km
+
+        if "price" in criteria:
+            if not prop.asking_price:
+                return []
+            rank_terms.append(func.abs(Property.asking_price - prop.asking_price) / prop.asking_price)
+
+        if "sqft" in criteria:
+            if not prop.sqft_total:
+                return []
+            stmt = stmt.where(Property.sqft_total.isnot(None))
+            rank_terms.append(func.abs(Property.sqft_total - prop.sqft_total) / float(prop.sqft_total))
+
+        if rank_terms:
+            combined = rank_terms[0]
+            for term in rank_terms[1:]:
+                combined = combined + term
+            stmt = stmt.order_by(combined)
+        else:  # only 'type' selected
+            stmt = stmt.order_by(
+                (Property.city == prop.city).desc(),
+                Property.score.desc().nulls_last(),
+            )
+
+        stmt = stmt.limit(MAX_RESULTS)
+
+    rows = (await db.execute(stmt)).unique().all()
+
+    # Match mode: restore stored similarity order
+    if ordered_ids:
+        rank = {pid: i for i, pid in enumerate(ordered_ids)}
+        rows = sorted(rows, key=lambda r: rank.get(r[0].id, len(rank)))
 
     result = []
-    for c in comps:
+    for c, dist_m in rows:
         listing_url = next(
             (s.source_url for s in (c.sources or []) if s.is_active and s.source_url),
             None,
@@ -401,6 +475,7 @@ async def get_comparables(
             cap_rate=c.cap_rate,
             listing_url=listing_url,
             photos=(c.photos or [])[:1],
+            distance_km=round(dist_m / 1000, 2) if dist_m is not None else None,
         ))
 
     return result

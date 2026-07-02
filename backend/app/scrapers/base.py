@@ -69,6 +69,9 @@ class RawProperty:
     # Évaluation foncière — municipal assessed value (≠ asking price, updated every 3yr)
     # Used for more accurate tax estimation when listing discloses it
     evaluation_fonciere: Optional[float] = None
+    # Welcome tax (droits de mutation) read from the source site's own calculator
+    # (Centris pre-populates #taxe via JS) — authoritative over local bracket math
+    welcome_tax: Optional[float] = None
 
     # Media
     photos: list[str] = field(default_factory=list)

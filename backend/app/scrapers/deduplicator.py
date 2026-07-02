@@ -243,7 +243,8 @@ class PropertyDeduplicator:
             school_taxes_annual=raw.school_taxes_annual,
             condo_fees_monthly=raw.condo_fees_monthly,
             evaluation_fonciere=raw.evaluation_fonciere,
-            raw_expenses={},
+            welcome_tax=raw.welcome_tax,
+            raw_expenses={"welcome_tax_centris": raw.welcome_tax} if raw.welcome_tax else {},
             is_new=True,
             needs_reanalysis=True,
             first_seen_at=now,
@@ -283,6 +284,12 @@ class PropertyDeduplicator:
                 "event":  "price_reduction" if changes["price"]["delta"] < 0 else "price_increase",
             })
             prop.price_history = history
+
+        # Welcome tax from the source site's calculator is authoritative —
+        # always refresh it (it changes when the asking price changes)
+        if raw.welcome_tax:
+            prop.welcome_tax = raw.welcome_tax
+            prop.raw_expenses = {**(prop.raw_expenses or {}), "welcome_tax_centris": raw.welcome_tax}
 
         # Fill in missing fields from this source (never overwrite good data)
         self._fill_gaps(prop, raw)

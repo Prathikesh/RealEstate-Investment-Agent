@@ -5,7 +5,7 @@ import {
   ArrowLeft, ExternalLink, RefreshCw, MapPin, Calendar,
   Building2, Ruler, AlertCircle, TrendingUp,
   Clock, BarChart2, Bookmark, BookmarkCheck,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, Sparkles, CircleDollarSign,
 } from 'lucide-react'
 import {
   BarChart, Bar, AreaChart, Area,
@@ -17,28 +17,7 @@ import clsx from 'clsx'
 import { fetchProperty, type PropertyDetail } from '../api'
 import ScoreBadge from '../components/ScoreBadge'
 import { useLang } from '../context/LanguageContext'
-import DesjardinsCalculator from '../components/DesjardinsCalculator'
-
-// ── Quebec land transfer tax (droits de mutation) ─────────────────────────────
-// Source: RLRQ c. D-15.1 — 2026 indexed brackets
-const QC_BRACKETS: [number, number][] = [
-  [55_200,    0.005],
-  [276_200,   0.010],
-  [552_300,   0.015],
-  [1_104_600, 0.020],
-  [Infinity,  0.025],
-]
-
-function calcWelcomeTax(price: number, _city?: string | null): number {
-  const brackets = QC_BRACKETS
-  let tax = 0, prev = 0
-  for (const [ceiling, rate] of brackets) {
-    if (price <= prev) break
-    tax += (Math.min(price, ceiling) - prev) * rate
-    prev = ceiling
-  }
-  return Math.round(tax)
-}
+import FinancingWorkbench from '../components/FinancingWorkbench'
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 
@@ -1359,66 +1338,11 @@ function BriefTab({ prop }: { prop: PropertyDetail }) {
 // ── Financials tab ────────────────────────────────────────────────────────────
 
 function FinancialsTab({ prop, t, pricePerSqft }: { prop: PropertyDetail; t: (k: string) => string; pricePerSqft: number | null }) {
-  const capGood  = prop.cap_rate != null && prop.cap_rate >= 5
-  const cfGood   = prop.monthly_cash_flow != null && prop.monthly_cash_flow >= 0
-  const discGood = prop.discount_pct != null && prop.discount_pct > 5
-
   return (
     <div className="space-y-5">
 
-      {/* ── Hero metrics ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {/* Cap Rate */}
-        <div className={clsx(
-          'rounded-2xl p-5 border space-y-1',
-          capGood ? 'bg-gradient-to-br from-emerald-50 to-emerald-100/50 border-emerald-200' :
-                    'bg-gradient-to-br from-slate-50 to-slate-100/50 border-slate-200',
-        )}>
-          <p className="text-xs font-bold text-muted uppercase tracking-widest">Cap Rate</p>
-          <p className={clsx('text-4xl font-black font-mono leading-none', capGood ? 'text-emerald-700' : 'text-ink')}>
-            {fmtPct(prop.cap_rate)}
-          </p>
-          <p className={clsx('text-xs font-semibold', capGood ? 'text-emerald-600' : 'text-muted')}>
-            {prop.cap_rate == null ? 'No data' : prop.cap_rate >= 6 ? '↑ Above benchmark (6%)' : prop.cap_rate >= 4.5 ? '→ Acceptable range' : '↓ Below floor (4.5%)'}
-          </p>
-        </div>
-
-        {/* Monthly Cash Flow */}
-        <div className={clsx(
-          'rounded-2xl p-5 border space-y-1',
-          cfGood ? 'bg-gradient-to-br from-blue-50 to-blue-100/50 border-blue-200' :
-                   'bg-gradient-to-br from-red-50 to-red-100/50 border-red-200',
-        )}>
-          <p className="text-xs font-bold text-muted uppercase tracking-widest">Monthly Cash Flow</p>
-          <p className={clsx('text-4xl font-black font-mono leading-none', cfGood ? 'text-blue-700' : 'text-red-600')}>
-            {prop.monthly_cash_flow != null ? fmtCAD(prop.monthly_cash_flow) : '—'}
-          </p>
-          <p className={clsx('text-xs font-semibold', cfGood ? 'text-blue-600' : 'text-red-500')}>
-            {prop.monthly_cash_flow == null ? 'No data' : prop.monthly_cash_flow > 500 ? '↑ Strong surplus' : prop.monthly_cash_flow > 0 ? '→ Break-even' : '↓ Top-up required'}
-          </p>
-        </div>
-
-        {/* Below Market */}
-        <div className={clsx(
-          'rounded-2xl p-5 border space-y-1',
-          discGood ? 'bg-gradient-to-br from-violet-50 to-violet-100/50 border-violet-200' :
-                     'bg-gradient-to-br from-amber-50 to-amber-100/50 border-amber-200',
-        )}>
-          <p className="text-xs font-bold text-muted uppercase tracking-widest">vs Market</p>
-          <p className={clsx('text-4xl font-black font-mono leading-none', discGood ? 'text-violet-700' : 'text-amber-700')}>
-            {prop.discount_pct != null
-              ? `${prop.discount_pct > 0 ? '-' : '+'}${Math.abs(prop.discount_pct).toFixed(1)}%`
-              : '—'}
-          </p>
-          <p className={clsx('text-xs font-semibold', discGood ? 'text-violet-600' : 'text-amber-600')}>
-            {prop.discount_pct == null ? 'No comps yet' :
-             prop.discount_pct >= 10   ? '↑ Big discount — strong buy' :
-             prop.discount_pct >= 3    ? '→ Modest discount' :
-             prop.discount_pct >= -2   ? '→ Market price' :
-                                         '↓ Above market value'}
-          </p>
-        </div>
-      </div>
+      {/* ── Financing Workbench — single source for all financial values ── */}
+      <FinancingWorkbench prop={prop} pricePerSqft={pricePerSqft} />
 
       {/* ── Market comparison bar ── */}
       {prop.asking_price != null && prop.comparable_median_price != null && (
@@ -1461,180 +1385,10 @@ function FinancialsTab({ prop, t, pricePerSqft }: { prop: PropertyDetail; t: (k:
           </div>
         </div>
       )}
-
-      {/* ── Returns grid ── */}
-      <div className="card space-y-4">
-        <h3 className="text-sm font-bold text-ink border-b border-surface-border pb-3">Investment Returns</h3>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          {[
-            { label: 'Annual NOI',     value: fmtCAD(prop.noi_annual),          note: 'net operating income',  good: prop.noi_annual != null && prop.noi_annual > 0 },
-            { label: 'Cap Rate',       value: fmtPct(prop.cap_rate),            note: '≥6% = strong buy',     good: capGood },
-            { label: 'Cash-on-Cash',   value: fmtPct(prop.cash_on_cash_return), note: 'return on down payment', good: prop.cash_on_cash_return != null && prop.cash_on_cash_return > 0 },
-            { label: 'Monthly CF',     value: prop.monthly_cash_flow != null ? `${fmtCAD(prop.monthly_cash_flow)}/mo` : '—', note: 'at 20% down', good: cfGood },
-            { label: 'Rental Income',  value: fmtCAD(prop.rental_income_monthly), note: '/month gross',        good: null },
-            { label: 'GRM',            value: prop.grm != null ? `${prop.grm.toFixed(1)}×` : '—', note: '≤12 excellent · ≤15 OK', good: prop.grm != null && prop.grm <= 15 },
-          ].map(m => (
-            <div key={m.label} className={clsx(
-              'rounded-xl border p-3.5 space-y-1 transition-all duration-200 hover:shadow-sm hover:-translate-y-0.5',
-              m.good === true  ? 'border-emerald-200 bg-emerald-50/50' :
-              m.good === false ? 'border-red-200 bg-red-50/50' :
-                                 'border-surface-border bg-surface',
-            )}>
-              <p className="text-[10px] font-bold text-muted uppercase tracking-widest">{m.label}</p>
-              <p className={clsx(
-                'text-lg font-black font-mono leading-none',
-                m.good === true ? 'text-emerald-700' : m.good === false ? 'text-red-600' : 'text-ink',
-              )}>{m.value}</p>
-              <p className="text-[10px] text-muted">{m.note}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* ── Acquisition costs ── */}
-      <div className="card space-y-4">
-        <h3 className="text-sm font-bold text-ink border-b border-surface-border pb-3">Acquisition Costs</h3>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          {[
-            { label: 'Down Payment (20%)', value: fmtCAD(prop.down_payment_20pct),   note: 'cash required' },
-            { label: 'Monthly Mortgage',   value: fmtCAD(prop.monthly_mortgage),      note: '5.5%, 25yr amort.' },
-            { label: 'Welcome Tax',        value: fmtCAD(prop.welcome_tax ?? (prop.asking_price ? calcWelcomeTax(prop.asking_price) : null)), note: 'droits de mutation · one-time' },
-            { label: 'Municipal Tax',      value: prop.municipal_taxes_annual != null ? `${fmtCAD(prop.municipal_taxes_annual)}/yr` : '—', note: 'annual' },
-            { label: 'School Tax',         value: prop.school_taxes_annual != null ? `${fmtCAD(prop.school_taxes_annual)}/yr` : '—', note: 'annual' },
-            ...(prop.condo_fees_monthly != null ? [{ label: 'Condo Fees', value: `${fmtCAD(prop.condo_fees_monthly)}/mo`, note: 'monthly' }] : []),
-            ...(pricePerSqft != null ? [{ label: 'Price / Sqft', value: fmtCAD(pricePerSqft), note: 'asking price ÷ area' }] : []),
-          ].map(m => (
-            <div key={m.label} className="rounded-xl border border-surface-border bg-surface p-3.5 space-y-1 hover:shadow-sm hover:-translate-y-0.5 transition-all duration-200">
-              <p className="text-[10px] font-bold text-muted uppercase tracking-widest">{m.label}</p>
-              <p className="text-lg font-black font-mono text-ink leading-none">{m.value}</p>
-              <p className="text-[10px] text-muted">{m.note}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <IncomeExpenseAnalysis prop={prop} />
-
-      {/* ── Tax Summary ── */}
-      <div className="card overflow-hidden p-0">
-        <div className="px-5 py-4 border-b border-surface-border flex items-center justify-between">
-          <div>
-            <h3 className="text-sm font-bold text-ink">Tax Summary</h3>
-            <p className="text-xs text-muted mt-0.5">Scraped from Centris — actual values</p>
-          </div>
-          <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700 border border-emerald-200">Live Data</span>
-        </div>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-surface-border bg-surface/60">
-              <th className="px-5 py-3 text-left text-xs text-muted font-semibold uppercase tracking-wider">Tax Type</th>
-              <th className="px-5 py-3 text-right text-xs text-muted font-semibold uppercase tracking-wider">Amount</th>
-              <th className="px-5 py-3 text-right text-xs text-muted font-semibold uppercase tracking-wider">Frequency</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-surface-border">
-            {[
-              { name: 'Municipal Tax', value: prop.municipal_taxes_annual != null ? fmtCAD(prop.municipal_taxes_annual) : '—', freq: 'Annual' },
-              { name: 'School Tax',    value: prop.school_taxes_annual != null ? fmtCAD(prop.school_taxes_annual) : '—',    freq: 'Annual' },
-              { name: 'Land Transfer Tax (droits de mutation)', value: fmtCAD(prop.welcome_tax ?? (prop.asking_price != null ? calcWelcomeTax(prop.asking_price, prop.city) : null)), freq: 'One-time' },
-            ].map(row => (
-              <tr key={row.name} className="hover:bg-surface/40 transition-colors">
-                <td className="px-5 py-3.5 text-ink font-medium">{row.name}</td>
-                <td className="px-5 py-3.5 text-right font-mono font-bold text-ink">{row.value}</td>
-                <td className="px-5 py-3.5 text-right">
-                  <span className={clsx(
-                    'px-2 py-0.5 rounded-full text-[10px] font-bold',
-                    row.freq === 'One-time' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700',
-                  )}>{row.freq}</span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <DesjardinsCalculator askingPrice={prop.asking_price} />
     </div>
   )
 }
 
-// ── Income & Expense Analysis ─────────────────────────────────────────────────
-// Uses only real scraped values from Centris — no estimates.
-// NOI    : Gross Revenue − actual taxes (no vacancy deduction)
-// Cap Rate: NOI / Asking Price × 100
-
-function IncomeExpenseAnalysis({ prop }: { prop: PropertyDetail }) {
-  const price       = prop.asking_price
-  const rentMonthly = prop.rental_income_monthly
-  if (!price || !rentMonthly) return null
-
-  const grossAnnual  = rentMonthly * 12
-  const municipalTax = prop.municipal_taxes_annual ?? 0
-  const schoolTax    = prop.school_taxes_annual    ?? 0
-  const totalExpenses = municipalTax + schoolTax
-
-  const noi     = grossAnnual - totalExpenses
-  const capRate = (noi / price) * 100
-
-  const rows: { label: string; value: number; note?: string; bold?: boolean; indent?: boolean; negative?: boolean }[] = [
-    { label: 'Gross Rental Income (annual)', value: grossAnnual },
-    { label: 'Municipal Taxes',              value: municipalTax,    negative: true, indent: true, note: 'actual' },
-    { label: 'School Tax',                   value: schoolTax,       negative: true, indent: true, note: 'actual' },
-    { label: 'Total Expenses',               value: totalExpenses,   bold: true, negative: true },
-  ]
-
-  const capVerdict = capRate >= 6 ? { label: 'STRONG', cls: 'text-score-strong' }
-                   : capRate >= 4.5 ? { label: 'ACCEPTABLE', cls: 'text-score-market' }
-                   : { label: 'LOW', cls: 'text-score-notrecommended' }
-
-  return (
-    <div className="rounded-xl border border-surface-border bg-surface-card overflow-hidden">
-      <div className="px-5 py-3.5 border-b border-surface-border bg-surface">
-        <h3 className="text-sm font-semibold text-ink">Income &amp; Expense Analysis</h3>
-        <p className="text-xs text-muted mt-0.5">Scraped from Centris — actual listed values</p>
-      </div>
-
-      <table className="w-full text-sm">
-        <tbody>
-          {rows.map(r => (
-            <tr key={r.label} className={`border-b border-surface-border last:border-0 ${r.bold ? 'bg-surface font-semibold' : ''}`}>
-              <td className={`px-5 py-2.5 text-ink ${r.indent ? 'pl-9' : ''}`}>
-                {r.label}
-                {r.note && <span className="ml-1.5 text-xs text-muted font-normal">({r.note})</span>}
-              </td>
-              <td className={`px-5 py-2.5 text-right font-mono ${r.negative ? 'text-score-notrecommended' : 'text-score-strong'} ${r.bold ? '' : 'font-normal'}`}>
-                {r.negative ? `−${fmtCAD(r.value)}` : fmtCAD(r.value)}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-
-      <div className="grid grid-cols-2 divide-x divide-surface-border border-t-2 border-surface-border">
-        <div className="px-5 py-4">
-          <p className="text-xs text-muted uppercase tracking-wide mb-1">Net Operating Income</p>
-          <p className={`text-2xl font-bold font-mono ${noi >= 0 ? 'text-score-strong' : 'text-score-notrecommended'}`}>
-            {fmtCAD(noi)}
-          </p>
-          <p className="text-xs text-muted mt-0.5">annual</p>
-        </div>
-        <div className="px-5 py-4">
-          <p className="text-xs text-muted uppercase tracking-wide mb-1">Cap Rate</p>
-          <p className={`text-2xl font-bold font-mono ${capVerdict.cls}`}>
-            {capRate.toFixed(2)}%
-          </p>
-          <p className={`text-xs mt-0.5 font-semibold ${capVerdict.cls}`}>{capVerdict.label}</p>
-        </div>
-      </div>
-
-      <div className="px-5 py-2.5 bg-surface border-t border-surface-border">
-        <p className="text-xs text-muted">
-          Cap rate benchmarks: ≥6% Strong · 4.5–6% Acceptable · &lt;4.5% Low — Quebec multi-family market standard
-        </p>
-      </div>
-    </div>
-  )
-}
 
 // ── Comparables tab ───────────────────────────────────────────────────────────
 
@@ -1651,67 +1405,135 @@ type ComparableProp = {
   cap_rate: number | null
   listing_url: string | null
   photos: string[] | null
+  distance_km: number | null
+}
+
+type CompareMode = 'match' | 'distance' | 'price' | 'sqft' | 'type'
+
+const COMPARE_MODES: { key: CompareMode; label: string; icon: typeof Sparkles; hint: string }[] = [
+  { key: 'match',    label: 'Best match', icon: Sparkles,         hint: 'Same type nearby, price ±40%, ranked by similarity' },
+  { key: 'distance', label: 'Distance',   icon: MapPin,           hint: 'Nearest active listings, any type' },
+  { key: 'price',    label: 'Price',      icon: CircleDollarSign, hint: 'Active listings with the closest asking price' },
+  { key: 'sqft',     label: 'Size',       icon: Ruler,            hint: 'Active listings with the closest living area' },
+  { key: 'type',     label: 'Type',       icon: Building2,        hint: 'Same property type, best score first' },
+]
+
+const EMPTY_REASON: Record<CompareMode, string> = {
+  match:    'No analysis comparables yet — run Reanalyze, or try another view.',
+  distance: 'This property has no coordinates, so distance search is unavailable.',
+  price:    'This property has no asking price, so price search is unavailable.',
+  sqft:     'This property has no living-area data, so size search is unavailable.',
+  type:     'No other active listings of this type found.',
 }
 
 function ComparablesTab({ prop, t }: { prop: PropertyDetail; t: (k: string) => string }) {
+  // Multi-select: combine criteria (e.g. Distance + Price). 'match' is exclusive —
+  // it's already a composite similarity ranking of its own.
+  const [modes, setModes] = useState<CompareMode[]>(['match'])
+
+  const toggleMode = (key: CompareMode) => {
+    setModes(prev => {
+      if (key === 'match') return ['match']
+      let next = prev.filter(m => m !== 'match')
+      next = next.includes(key) ? next.filter(m => m !== key) : [...next, key]
+      return next.length === 0 ? ['match'] : next
+    })
+  }
+
+  const isMatch  = modes.includes('match')
+  const selected = COMPARE_MODES.filter(m => modes.includes(m.key))
+  const modesKey = [...modes].sort().join(',')
+
+  const hint = isMatch
+    ? COMPARE_MODES[0].hint
+    : selected.length === 1
+      ? selected[0].hint
+      : `${modes.includes('type') ? 'Same property type only · ' : ''}ranked by combined closeness: ${
+          selected.filter(m => m.key !== 'type').map(m => m.label).join(' + ') || 'best score first'}`
+
+  const emptyReason =
+    (modes.includes('price') && prop.asking_price == null && EMPTY_REASON.price) ||
+    (modes.includes('sqft') && prop.sqft_total == null && EMPTY_REASON.sqft) ||
+    (modes.includes('distance') && 'No results — this property may be missing map coordinates.') ||
+    EMPTY_REASON[modes[0]]
+
   const { data: comps, isLoading } = useQuery<ComparableProp[]>({
-    queryKey: ['comparables', prop.id],
+    queryKey: ['comparables', prop.id, modesKey],
     queryFn: async () => {
-      const res = await fetch(`/api/properties/${prop.id}/comparables`)
+      const res = await fetch(`/api/properties/${prop.id}/comparables?by=${modesKey}`)
       if (!res.ok) return []
       return res.json()
     },
-    enabled: !!prop.comparable_count && prop.comparable_count > 0,
   })
-
-  if (!prop.comparable_count) {
-    return (
-      <div className="card py-16 text-center space-y-3">
-        <div className="w-16 h-16 rounded-2xl bg-surface-border/50 flex items-center justify-center mx-auto">
-          <AlertCircle size={28} className="text-muted" />
-        </div>
-        <p className="text-ink font-semibold">{t('noComparables')}</p>
-        <p className="text-xs text-muted max-w-xs mx-auto">Run Reanalyze to find comparable properties in the database.</p>
-      </div>
-    )
-  }
 
   return (
     <div className="space-y-5">
 
-      {/* ── Summary stats ── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {[
-          { label: 'Comparable Sales',  value: String(prop.comparable_count ?? 0),  sub: 'matched in area',    accent: 'text-accent' },
-          { label: 'Median Price',      value: fmtCAD(prop.comparable_median_price), sub: 'market benchmark',   accent: 'text-ink' },
-          { label: 'Average Price',     value: fmtCAD(prop.comparable_mean_price),   sub: 'mean of comps',      accent: 'text-ink' },
-          {
-            label: 'You Save',
-            value: prop.value_gap != null ? `${prop.value_gap > 0 ? '-' : '+'}${fmtCAD(Math.abs(prop.value_gap))}` : '—',
-            sub: `vs median (${Math.abs(prop.discount_pct ?? 0).toFixed(1)}%)`,
-            accent: prop.value_gap != null && prop.value_gap > 0 ? 'text-emerald-600' : 'text-red-500',
-          },
-        ].map(s => (
-          <div key={s.label} className="card p-4 space-y-1 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200">
-            <p className="text-[10px] font-bold text-muted uppercase tracking-widest">{s.label}</p>
-            <p className={clsx('text-xl font-black font-mono leading-tight', s.accent)}>{s.value}</p>
-            <p className="text-[10px] text-muted">{s.sub}</p>
-          </div>
-        ))}
-      </div>
-
-      {prop.analysis_confidence && (
-        <div className="flex items-center gap-2 text-xs text-muted px-1">
-          <TrendingUp size={13} />
-          <span>Matched within 2–25 km — same type, price ±40%, scored by sqft/year/units</span>
-          <ConfidencePill confidence={prop.analysis_confidence} t={t} />
+      {/* ── Summary stats (from the stored analysis) ── */}
+      {!!prop.comparable_count && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[
+            { label: 'Comparable Sales',  value: String(prop.comparable_count ?? 0),  sub: 'matched in area',    accent: 'text-accent' },
+            { label: 'Median Price',      value: fmtCAD(prop.comparable_median_price), sub: 'market benchmark',   accent: 'text-ink' },
+            { label: 'Average Price',     value: fmtCAD(prop.comparable_mean_price),   sub: 'mean of comps',      accent: 'text-ink' },
+            {
+              label: 'You Save',
+              value: prop.value_gap != null ? `${prop.value_gap > 0 ? '-' : '+'}${fmtCAD(Math.abs(prop.value_gap))}` : '—',
+              sub: `vs median (${Math.abs(prop.discount_pct ?? 0).toFixed(1)}%)`,
+              accent: prop.value_gap != null && prop.value_gap > 0 ? 'text-emerald-600' : 'text-red-500',
+            },
+          ].map(s => (
+            <div key={s.label} className="card p-4 space-y-1 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200">
+              <p className="text-[10px] font-bold text-muted uppercase tracking-widest">{s.label}</p>
+              <p className={clsx('text-xl font-black font-mono leading-tight', s.accent)}>{s.value}</p>
+              <p className="text-[10px] text-muted">{s.sub}</p>
+            </div>
+          ))}
         </div>
       )}
+
+      {/* ── Compare-by control (multi-select) ── */}
+      <div className="card p-4 space-y-2">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-[#134E4A]">
+            Compare by <span className="normal-case font-medium text-muted tracking-normal">— combine criteria</span>
+          </p>
+          {prop.analysis_confidence && isMatch && <ConfidencePill confidence={prop.analysis_confidence} t={t} />}
+        </div>
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Comparison criteria — multiple can be selected">
+          {COMPARE_MODES.map(m => {
+            const Icon = m.icon
+            const on = modes.includes(m.key)
+            return (
+              <button
+                key={m.key}
+                type="button"
+                aria-pressed={on}
+                onClick={() => toggleMode(m.key)}
+                className={clsx(
+                  'inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border cursor-pointer',
+                  'transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-700/40',
+                  on
+                    ? 'bg-[#0F766E] border-[#0F766E] text-white'
+                    : 'bg-white border-surface-border text-muted hover:text-ink hover:border-slate-400',
+                )}
+              >
+                <Icon size={13} strokeWidth={2} />
+                {m.label}
+              </button>
+            )
+          })}
+        </div>
+        <p className="text-xs text-muted flex items-center gap-1.5">
+          <TrendingUp size={12} className="shrink-0" />
+          {hint}
+        </p>
+      </div>
 
       {/* ── Property cards grid ── */}
       <div>
         <h3 className="text-xs font-bold text-muted uppercase tracking-widest mb-3">
-          {isLoading ? 'Loading…' : `${comps?.length ?? 0} Matched Properties`}
+          {isLoading ? 'Loading…' : `${comps?.length ?? 0} Properties · ${selected.map(m => m.label).join(' + ')}`}
         </h3>
 
         {isLoading ? (
@@ -1722,8 +1544,8 @@ function ComparablesTab({ prop, t }: { prop: PropertyDetail; t: (k: string) => s
           </div>
         ) : !comps || comps.length === 0 ? (
           <div className="card py-10 text-center space-y-2">
-            <p className="text-sm text-muted">No comparable property details yet.</p>
-            <p className="text-xs text-muted">Click Reanalyze to populate the list.</p>
+            <AlertCircle size={22} className="mx-auto text-muted" />
+            <p className="text-sm text-muted">{emptyReason}</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1732,9 +1554,15 @@ function ComparablesTab({ prop, t }: { prop: PropertyDetail; t: (k: string) => s
                 ? prop.asking_price - c.asking_price : null
               const cheaper = priceDiff != null && priceDiff > 0
               return (
-                <div
+                <Link
+                  to={`/properties/${c.id}`}
                   key={c.id}
-                  className="group bg-white border border-surface-border rounded-2xl overflow-hidden hover:shadow-lg hover:-translate-y-1 hover:border-accent/30 transition-all duration-250"
+                  aria-label={`Open ${c.full_address}`}
+                  className={clsx(
+                    'group block bg-white border border-surface-border rounded-2xl overflow-hidden cursor-pointer',
+                    'hover:shadow-lg hover:-translate-y-1 hover:border-[#0F766E]/40 transition-all duration-250',
+                    'focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-700/50',
+                  )}
                 >
                   {/* Photo */}
                   <div className="relative overflow-hidden bg-surface" style={{ aspectRatio: '16/7' }}>
@@ -1765,14 +1593,22 @@ function ComparablesTab({ prop, t }: { prop: PropertyDetail; t: (k: string) => s
                         {cheaper ? `−${fmtCAD(priceDiff)}` : `+${fmtCAD(Math.abs(priceDiff))}`}
                       </div>
                     )}
+                    {/* Distance badge */}
+                    {c.distance_km != null && (
+                      <div className="absolute bottom-2.5 left-3 inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold bg-white/90 text-ink shadow backdrop-blur-sm">
+                        <MapPin size={10} strokeWidth={2.5} className="text-[#0F766E]" />
+                        {c.distance_km < 1 ? `${Math.round(c.distance_km * 1000)} m` : `${c.distance_km.toFixed(1)} km`} away
+                      </div>
+                    )}
                   </div>
 
                   {/* Info */}
                   <div className="p-4 space-y-2">
-                    <p className="text-sm font-bold text-ink leading-snug line-clamp-2 group-hover:text-accent transition-colors">
+                    <p className="text-sm font-bold text-ink leading-snug line-clamp-2 group-hover:text-[#0F766E] transition-colors">
                       {c.full_address}
                     </p>
                     <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted">
+                      <span className="capitalize">{c.property_type.replace(/_/g, ' ')}</span>
                       {c.unit_count  && <span>{c.unit_count} units</span>}
                       {c.sqft_total  && <span>{c.sqft_total.toLocaleString()} sqft</span>}
                       {c.year_built  && <span>Built {c.year_built}</span>}
@@ -1794,7 +1630,9 @@ function ComparablesTab({ prop, t }: { prop: PropertyDetail; t: (k: string) => s
                             href={c.listing_url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="p-1.5 rounded-lg text-muted hover:text-accent hover:bg-surface transition-colors"
+                            aria-label="Open original listing in a new tab"
+                            onClick={e => e.stopPropagation()}
+                            className="p-1.5 rounded-lg text-muted hover:text-[#0F766E] hover:bg-surface transition-colors"
                           >
                             <ExternalLink size={13} />
                           </a>
@@ -1802,7 +1640,7 @@ function ComparablesTab({ prop, t }: { prop: PropertyDetail; t: (k: string) => s
                       </div>
                     </div>
                   </div>
-                </div>
+                </Link>
               )
             })}
           </div>

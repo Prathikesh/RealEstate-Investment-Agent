@@ -214,7 +214,10 @@ class InvestmentPipeline:
         prop.grm                 = fp.grm
         prop.monthly_cash_flow   = fp.monthly_cash_flow
         prop.cash_on_cash_return = fp.cash_on_cash_return
-        prop.welcome_tax         = fp.welcome_tax
+        # Welcome tax scraped from Centris's own calculator is authoritative;
+        # only fall back to calc-engine / local bracket estimates without it
+        scraped_wt = (prop.raw_expenses or {}).get("welcome_tax_centris")
+        prop.welcome_tax         = scraped_wt or fp.welcome_tax
         prop.down_payment_20pct  = fp.down_payment
         prop.monthly_mortgage    = fp.monthly_mortgage
 

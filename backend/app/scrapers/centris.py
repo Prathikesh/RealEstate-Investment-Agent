@@ -100,38 +100,16 @@ class CentrisScraper(BaseScraper):
         """
         Fetch a single property detail page.
 
-        Strategy 1 (cheap ~5 credits): no ASP/JS, no session.
-          Session is omitted to avoid proxy pool mismatch (search session uses
-          residential pool; cheap attempt without ASP needs datacenter pool).
-
-        Strategy 2 (full ~45 credits): ASP+JS with session.
-          Fallback if strategy 1 returns blocked/empty content.
+        Always uses full ASP+JS rendering (~45 credits) with a rendering wait:
+        the page embeds Centris's own transfer-tax calculator, whose JS
+        pre-populates #taxe with the exact welcome tax for this property
+        (city by-law brackets included). A cheap non-JS fetch would miss it.
         """
-        # ── Strategy 1: cheap (datacenter, no session, no ASP/JS) ────────────
-        try:
-            cheap = ScrapeConfig(
-                url=url, asp=False, render_js=False, country="ca",
-                # No session= — avoids residential/datacenter pool mismatch
-            )
-            result = await self.client.async_scrape(cheap)
-            cost = result.context.get("cost", {}).get("total", 0)
-            self.logger.info(
-                f"[centris] detail-cheap: {result.upstream_status_code} "
-                f"| credits={cost} | {url[-55:]}"
-            )
-            if result.upstream_status_code == 200 and len(result.content) > 8_000:
-                prop = self._parse_detail_page(result.content, source_url=url)
-                if prop and prop.asking_price:
-                    await self._geocode_prop(prop)
-                    return prop
-        except Exception as exc:
-            self.logger.warning(f"Cheap detail attempt failed: {exc}")
-
-        # ── Strategy 2: full ASP+JS with session ─────────────────────────────
         try:
             full = ScrapeConfig(
                 url=url, asp=True, render_js=True, country="ca",
                 session=self._SESSION,
+                rendering_wait=3000,  # let calculator JS populate #taxe
             )
             result = await self.client.async_scrape(full)
             cost = result.context.get("cost", {}).get("total", 0)
@@ -352,6 +330,10 @@ class CentrisScraper(BaseScraper):
         # Insurance — real amount from listing (better than our 0.2% estimate)
         insurance_annual = self._lookup_money(carac, "assurances", "insurance")
 
+        # Welcome tax — Centris embeds its transfer-tax calculator on the page
+        # and pre-populates #taxe via JS (requires render_js fetch)
+        welcome_tax = self._extract_welcome_tax(soup)
+
         # ── Days on market / listing date ─────────────────────────────────────
         days_on_market = self._extract_days_on_market(soup, carac)
         listed_at      = self._extract_listed_date(soup, carac)
@@ -387,6 +369,8 @@ class CentrisScraper(BaseScraper):
             raw_data["units"] = units_data
         if insurance_annual:
             raw_data["insurance_annual"] = insurance_annual
+        if welcome_tax:
+            raw_data["welcome_tax_centris"] = welcome_tax
 
         return RawProperty(
             source=self.SOURCE,
@@ -414,6 +398,7 @@ class CentrisScraper(BaseScraper):
             school_taxes_annual=school_tax,
             condo_fees_monthly=condo_fees,
             evaluation_fonciere=evaluation,
+            welcome_tax=welcome_tax,
             description=description,
             photos=photos,
             days_on_market=days_on_market,
@@ -579,6 +564,39 @@ class CentrisScraper(BaseScraper):
                     digits = re.sub(r"[^\d]", "", val)
                     if digits and int(digits) > 0:
                         return float(digits)
+        return None
+
+    @staticmethod
+    def _extract_welcome_tax(soup: BeautifulSoup) -> Optional[float]:
+        """
+        Read the welcome tax from Centris's embedded transfer-tax calculator.
+        The page JS pre-populates #taxe for this property (city + price preset),
+        so this is Centris's own authoritative number — only present when the
+        page was fetched with render_js.
+
+        Handles French formatting: "23 581,25 $" (spaces = thousands, comma = decimals).
+        """
+        for selector in ("#taxe", "[id*='taxe']", ".calcul-mutation", "[class*='mutation']"):
+            el = soup.select_one(selector)
+            if not el:
+                continue
+            text = el.get_text(" ", strip=True)
+            # Keep digits, comma, dot; drop currency symbols and spaces (incl. \xa0)
+            cleaned = re.sub(r"[^\d,.]", "", text)
+            if not cleaned:
+                continue
+            # French decimals: comma is the decimal separator ("23581,25")
+            if "," in cleaned and "." not in cleaned:
+                cleaned = cleaned.replace(",", ".")
+            else:
+                cleaned = cleaned.replace(",", "")
+            try:
+                value = float(cleaned)
+            except ValueError:
+                continue
+            # Sanity bounds — welcome tax on a listing is between $100 and $500k
+            if 100 <= value <= 500_000:
+                return round(value, 2)
         return None
 
     @staticmethod

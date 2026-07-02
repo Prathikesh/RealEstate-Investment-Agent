@@ -23,6 +23,7 @@ class ComparablePropertySchema(BaseModel):
     cap_rate:       Optional[float]
     listing_url:    Optional[str]
     photos:         Optional[list[str]]
+    distance_km:    Optional[float] = None
 
 
 class CrossSitePrice(BaseModel):
