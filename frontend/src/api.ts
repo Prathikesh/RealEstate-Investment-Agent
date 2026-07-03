@@ -27,6 +27,7 @@ export interface PropertyCard {
   sqft_total: number | null
   year_built: number | null
   bedrooms_total: number | null
+  bathrooms_total?: number | null  // only sent by the detail endpoint
   asking_price: number | null
   price_per_sqft: number | null
   score: number | null
