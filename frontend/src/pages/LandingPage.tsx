@@ -749,11 +749,70 @@ function Footer() {
 }
 
 // ─── APP ─────────────────────────────────────────────────────────────────────
+// ─── PROTOTYPE NOTICE ────────────────────────────────────────────────────────
+function PrototypeNotice() {
+  const [open, setOpen] = useState(() => sessionStorage.getItem('proto-notice-seen') !== '1')
+
+  useEffect(() => {
+    if (!open) return
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = '' }
+  }, [open])
+
+  const dismiss = () => {
+    sessionStorage.setItem('proto-notice-seen', '1')
+    setOpen(false)
+  }
+
+  if (!open) return null
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="proto-notice-title"
+      style={{
+        position: 'fixed', inset: 0, zIndex: 9999,
+        background: 'rgba(2,8,16,0.78)', backdropFilter: 'blur(6px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px',
+      }}
+    >
+      <div style={{
+        maxWidth: '480px', width: '100%',
+        background: 'var(--bg1)', border: '1px solid var(--b)', borderRadius: '16px',
+        padding: '32px', textAlign: 'center',
+        boxShadow: '0 24px 80px rgba(0,0,0,0.5)',
+      }}>
+        <div style={{
+          display: 'inline-flex', alignItems: 'center', gap: '6px',
+          padding: '5px 12px', borderRadius: '999px',
+          background: 'var(--blue-lt)', color: 'var(--blue-tx)',
+          fontSize: '12px', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase',
+          marginBottom: '18px',
+        }}>
+          <Zap width="12" height="12" /> Prototype
+        </div>
+        <h2 id="proto-notice-title" style={{ color: 'var(--tx0, #fff)', fontSize: '22px', fontWeight: 700, marginBottom: '12px' }}>
+          You're previewing an early version
+        </h2>
+        <p style={{ color: 'var(--tx1, rgba(255,255,255,0.72))', fontSize: '14.5px', lineHeight: 1.65, marginBottom: '24px' }}>
+          This is a prototype released for testing purposes, loaded with around
+          <strong> 400 sample properties</strong>. The production release will be a single
+          platform covering <strong>every listing across Québec</strong>, refreshed continuously.
+        </p>
+        <button className="btn-accent btn-accent--lg" style={{ width: '100%', justifyContent: 'center' }} onClick={dismiss}>
+          OK, continue to the site
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function LandingPage() {
   const [theme, setTheme] = useState<'dark' | 'light'>('dark')
   const toggleTheme = () => setTheme(t => t === 'dark' ? 'light' : 'dark')
   return (
     <div className={`app app--${theme}`}>
+      <PrototypeNotice />
       <Navbar theme={theme} onToggle={toggleTheme} />
       <Hero />
       <Marquee />
