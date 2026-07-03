@@ -13,7 +13,8 @@ class Settings(BaseSettings):
     database_url: str
 
     # Scrapfly — add SCRAPFLY_API_KEY_2, _3 etc. to .env for automatic fallback
-    scrapfly_api_key: str
+    # Empty = scraping disabled (demo mode)
+    scrapfly_api_key: str = ""
     scrapfly_api_key_2: str = ""
     scrapfly_api_key_3: str = ""
     scrapfly_api_key_4: str = ""
@@ -25,12 +26,12 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "llama3"
 
-    # Google OAuth
-    google_client_id: str
-    google_client_secret: str
+    # Google OAuth — empty = login disabled (demo mode)
+    google_client_id: str = ""
+    google_client_secret: str = ""
 
     # App
-    app_secret_key: str
+    app_secret_key: str = "demo-insecure-secret-change-in-production"
     app_base_url: str = "http://localhost:8000"
     frontend_url: str = "http://localhost:3000"
 

@@ -17,10 +17,13 @@ from app.scheduler import create_scheduler
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    scheduler = create_scheduler()
-    scheduler.start()
+    # No Scrapfly key = demo mode: skip the scraping scheduler entirely
+    scheduler = create_scheduler() if settings.scrapfly_api_key else None
+    if scheduler:
+        scheduler.start()
     yield
-    scheduler.shutdown(wait=False)
+    if scheduler:
+        scheduler.shutdown(wait=False)
 
 
 app = FastAPI(
@@ -33,6 +36,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[settings.frontend_url, "http://localhost:3000", "http://localhost:5173"],
+    allow_origin_regex=r"https://.*\.up\.railway\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
