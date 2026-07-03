@@ -19,6 +19,8 @@ if config.config_file_name is not None:
 
 # Alembic uses a sync psycopg2 URL (strips +asyncpg if present)
 sync_url = settings.database_url.replace("+asyncpg", "")
+if sync_url.startswith("postgres://"):  # legacy scheme rejected by SQLAlchemy 2.x
+    sync_url = sync_url.replace("postgres://", "postgresql://", 1)
 config.set_main_option("sqlalchemy.url", sync_url)
 
 target_metadata = Base.metadata
