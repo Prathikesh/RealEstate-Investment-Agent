@@ -3,6 +3,9 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
+  preview: {
+    allowedHosts: true,  // served behind Railway's proxy
+  },
   server: {
     port: 3000,
     proxy: {
