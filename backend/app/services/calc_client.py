@@ -7,13 +7,14 @@ Used by the pipeline (Stage 2) so the dashboard shows the colleague's
 accurate tax and investment numbers, not our own rough estimates.
 """
 import logging
+import os
 from typing import Optional
 
 import httpx
 
 logger = logging.getLogger(__name__)
 
-CALC_API_URL = "http://localhost:8001/api/v1/property/analyze"
+CALC_API_URL = os.getenv("CALC_ENGINE_URL", "http://localhost:8001") + "/api/v1/property/analyze"
 
 _PTYPE_MAP = {
     "DUPLEX":          "duplex",
