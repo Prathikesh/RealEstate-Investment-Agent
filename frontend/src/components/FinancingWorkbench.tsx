@@ -154,9 +154,18 @@ function InputLine({ label, sub, source = 'assumption', children }: {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
+// Mirrors backend fallback (calculator._estimate_rent): $1,200/unit, units inferred from type
+const UNITS_BY_TYPE: Record<string, number> = {
+  duplex: 2, triplex: 3, quadruplex: 4, quintuplex_plus: 5,
+  single_family: 1, condo: 1, townhouse: 1,
+}
+const DEFAULT_RENT_PER_UNIT = 1200
+
 export default function FinancingWorkbench({ prop, pricePerSqft }: { prop: PropertyDetail; pricePerSqft?: number | null }) {
   const listPrice   = prop.asking_price ?? 0
   const hasRentData = prop.rental_income_monthly != null && prop.rental_income_monthly > 0
+  const estUnits    = prop.unit_count ?? UNITS_BY_TYPE[prop.property_type] ?? 2
+  const rentFallback = DEFAULT_RENT_PER_UNIT * estUnits
 
   const defaults = useMemo(() => ({
     offer:      listPrice > 0 ? String(Math.round(listPrice)) : '',
@@ -164,11 +173,11 @@ export default function FinancingWorkbench({ prop, pricePerSqft }: { prop: Prope
     rate:       '5.50',
     amort:      25,
     freq:       'monthly' as Frequency,
-    rentEst:    '',
-    vacancyPct: '3',
+    rentEst:    hasRentData ? '' : String(rentFallback),
+    vacancyPct: '0',
     mgmtPct:    '0',
-    insurance:  String(Math.round(listPrice * 0.002)),
-    maintPct:   '1.0',
+    insurance:  '0',
+    maintPct:   '0',
   }), [prop.id])  // eslint-disable-line react-hooks/exhaustive-deps
 
   const [offer, setOffer]           = useState(defaults.offer)
@@ -223,12 +232,10 @@ export default function FinancingWorkbench({ prop, pricePerSqft }: { prop: Prope
   const annualCF  = noi - annualDebt
   const capRate   = p > 0 ? (noi / p) * 100 : 0
   const monthlyCF = annualCF / 12
-  const dscr      = annualDebt > 0 ? noi / annualDebt : null
   const grm       = grossAnnual > 0 ? p / grossAnnual : null
 
   const transferTax = prop.welcome_tax
-  const closing     = p * 0.015
-  const cashToClose = dAmt + (transferTax ?? 0) + closing
+  const cashToClose = dAmt + (transferTax ?? 0)
   const coc         = cashToClose > 0 ? (annualCF / cashToClose) * 100 : 0
 
   const freqNoun = freq === 'monthly' ? 'per month' : freq === 'biweekly' ? 'every two weeks' : 'per week'
@@ -319,7 +326,7 @@ export default function FinancingWorkbench({ prop, pricePerSqft }: { prop: Prope
                    aside={<span className="text-[10px] font-medium text-slate-400 uppercase tracking-wide">Editable</span>}>
             <div className="divide-y divide-slate-100">
               {!hasRentData && (
-                <InputLine label="Gross rent (not on listing)">
+                <InputLine label="Gross rent (not on listing)" sub={`est. $${DEFAULT_RENT_PER_UNIT.toLocaleString()}/unit × ${estUnits}`}>
                   <Field label="Gross rent per month" value={rentEst} onChange={setRentEst} suffix="$" width="w-28" />
                 </InputLine>
               )}
@@ -352,7 +359,6 @@ export default function FinancingWorkbench({ prop, pricePerSqft }: { prop: Prope
               <Line label={`Loan amount${cmhcPrem > 0 ? ' (incl. CMHC premium)' : ''}`} value={fmt$(loan)} />
               <Line label={`Down payment (${dPct.toFixed(1)}%)`} value={fmt$(dAmt)} />
               <Line label="Transfer tax" source="centris" value={transferTax != null ? fmt$(transferTax) : '—'} />
-              <Line label="Closing costs, estimated at 1.5%" source="assumption" value={fmt$(closing)} />
               <Line label="Cash required to close" value={fmt$(cashToClose)} bold />
             </div>
           </Section>
@@ -369,7 +375,6 @@ export default function FinancingWorkbench({ prop, pricePerSqft }: { prop: Prope
                 <Line label={`Management, ${toNum(mgmtPct).toFixed(1)}%`} source="assumption" value={fmt$(mgmtFee)} negative indent />
               )}
               <Line label="Net operating income" value={hasRent ? fmt$(noi) : '—'} bold red={hasRent && noi < 0} />
-              <Line label="Debt service" value={fmt$(annualDebt)} negative indent />
               <Line
                 label="Cash flow, annual"
                 value={hasRent ? `${fmt$(annualCF)}${monthlyCF !== 0 ? `  ·  ${fmt$(monthlyCF)}/mo` : ''}` : '—'}
@@ -379,18 +384,21 @@ export default function FinancingWorkbench({ prop, pricePerSqft }: { prop: Prope
           </Section>
 
           <Section icon={Percent} title="Key ratios">
-            <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-slate-100 -mx-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-slate-100 -mx-4">
               {[
-                { label: 'Cap rate',     value: hasRent ? `${capRate.toFixed(2)}%` : '—', red: hasRent && capRate < 4.5 },
-                { label: 'DSCR',         value: hasRent && dscr != null ? dscr.toFixed(2) : '—', red: hasRent && dscr != null && dscr < 1 },
-                { label: 'Cash-on-cash', value: hasRent ? `${coc.toFixed(1)}%` : '—', red: hasRent && coc < 0 },
-                { label: 'GRM',          value: grm != null ? `${grm.toFixed(1)}×` : '—', red: false },
+                { label: 'Cap rate',     value: hasRent ? `${capRate.toFixed(2)}%` : '—', red: hasRent && capRate < 4.5,
+                  formula: 'Net operating income ÷ purchase price' },
+                { label: 'Cash-on-cash', value: hasRent ? `${coc.toFixed(1)}%` : '—', red: hasRent && coc < 0,
+                  formula: 'Annual cash flow ÷ cash required to close' },
+                { label: 'GRM',          value: grm != null ? `${grm.toFixed(1)}×` : '—', red: false,
+                  formula: 'Purchase price ÷ gross annual rent' },
               ].map(m => (
                 <div key={m.label} className="px-4 py-3">
                   <p className="text-xs text-slate-500">{m.label}</p>
                   <p className={clsx('font-mono tabular-nums text-xl font-bold mt-0.5', m.red ? 'text-red-700' : 'text-ink')}>
                     {m.value}
                   </p>
+                  <p className="text-[11px] text-slate-400 mt-1 leading-snug">= {m.formula}</p>
                 </div>
               ))}
             </div>
