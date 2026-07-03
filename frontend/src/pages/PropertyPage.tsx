@@ -14,7 +14,7 @@ import {
   Legend, LabelList,
 } from 'recharts'
 import clsx from 'clsx'
-import { fetchProperty, type PropertyDetail } from '../api'
+import { API_BASE, fetchProperty, type PropertyDetail } from '../api'
 import ScoreBadge from '../components/ScoreBadge'
 import { useLang } from '../context/LanguageContext'
 import FinancingWorkbench from '../components/FinancingWorkbench'
@@ -126,7 +126,7 @@ export default function PropertyPage() {
 
   const reanalyze = useMutation({
     mutationFn: async () => {
-      const res = await fetch(`/api/properties/${id}/analyze`, { method: 'POST' })
+      const res = await fetch(`${API_BASE}/properties/${id}/analyze`, { method: 'POST' })
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
         throw new Error((err as { detail?: string }).detail ?? 'Analysis failed')
@@ -1460,7 +1460,7 @@ function ComparablesTab({ prop, t }: { prop: PropertyDetail; t: (k: string) => s
   const { data: comps, isLoading } = useQuery<ComparableProp[]>({
     queryKey: ['comparables', prop.id, modesKey],
     queryFn: async () => {
-      const res = await fetch(`/api/properties/${prop.id}/comparables?by=${modesKey}`)
+      const res = await fetch(`${API_BASE}/properties/${prop.id}/comparables?by=${modesKey}`)
       if (!res.ok) return []
       return res.json()
     },

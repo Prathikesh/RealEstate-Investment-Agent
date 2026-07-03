@@ -6,6 +6,7 @@
 import { useEffect, useState } from 'react'
 import { RefreshCw, CheckCircle2, XCircle, Clock, X } from 'lucide-react'
 import clsx from 'clsx'
+import { API_BASE } from '../api'
 
 interface SourceStatus {
   target:  number
@@ -55,7 +56,7 @@ export default function ScrapeProgressBar() {
 
     const poll = async () => {
       try {
-        const res = await fetch('/api/admin/scrape-status')
+        const res = await fetch(`${API_BASE}/admin/scrape-status`)
         if (!res.ok) return
         const data: ScrapeStatus = await res.json()
         setStatus(data)
