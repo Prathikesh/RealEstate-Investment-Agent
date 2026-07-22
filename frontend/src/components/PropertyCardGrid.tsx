@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Building2, ArrowRight, GitCompareArrows, Camera, Bed, Bath, TrendingUp, TrendingDown, Minus } from 'lucide-react'
+import { Building2, ArrowRight, GitCompareArrows, Camera, Bed, Bath, TrendingUp, TrendingDown, Minus, Hammer } from 'lucide-react'
 import clsx from 'clsx'
 import ScoreBadge from './ScoreBadge'
 import { useLang } from '../context/LanguageContext'
@@ -120,6 +120,12 @@ export default function PropertyCardGrid({ property: p, className }: Props) {
           {p.multi_site_count != null && p.multi_site_count > 1 && (
             <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500 text-white shadow-md">
               {p.multi_site_count} sites
+            </span>
+          )}
+          {p.zoning_upside && (
+            <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-violet-600 text-white shadow-md">
+              <Hammer size={10} className="shrink-0" />
+              Zoned for {p.zoning_max_units}+ units
             </span>
           )}
         </div>

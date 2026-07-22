@@ -1,15 +1,17 @@
 """
-AI Investment Pipeline — orchestrates all 4 stages for one property.
+AI Investment Pipeline — orchestrates all stages for one property.
 
 Stage 1: ComparableFinder       → ComparableSet
 Stage 2: CalcEngine + Financial → FinancialProfile (live Quebec taxes)
 Stage 3: Risk + Neighbourhood   → feeds into scorer as modifiers
 Stage 4: OpportunityScorer      → ScoreResult (uses all signals)
-Stage 5: BriefGenerator         → str (Claude API, includes description + price history)
+Stage 5: ZoningMatcher + RebuildEconomics → development-potential signal
+Stage 6: BriefGenerator         → str (Claude API, includes description + price history)
 
 Then writes all results back to the Property record.
 """
 import logging
+from dataclasses import asdict
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -20,9 +22,12 @@ from app.agent.brief import BriefGenerator
 from app.agent.calculator import FinancialCalculator
 from app.agent.comparables import ComparableFinder
 from app.agent.neighbourhood import NeighbourhoodAnalyzer, NeighbourhoodContext
+from app.agent.rebuild_economics import RebuildEconomicsCalculator
 from app.agent.risk import RiskAssessment, RiskAssessor
 from app.agent.scorer import OpportunityScorer
+from app.agent.zoning_matcher import ZoningMatcher, current_units
 from app.models.property import AnalysisConfidence, Property, ScoreCategory
+from app.models.zoning import ZoningZone
 from app.services.calc_client import analyze as calc_engine_analyze
 
 logger = logging.getLogger(__name__)
@@ -30,11 +35,13 @@ logger = logging.getLogger(__name__)
 
 class InvestmentPipeline:
     def __init__(self, session: AsyncSession, generate_brief: bool = True):
-        self.session         = session
-        self.comp_finder     = ComparableFinder(session)
-        self.calculator      = FinancialCalculator()
-        self.scorer          = OpportunityScorer()
-        self.brief_generator = BriefGenerator() if generate_brief else None
+        self.session          = session
+        self.comp_finder      = ComparableFinder(session)
+        self.calculator       = FinancialCalculator()
+        self.scorer           = OpportunityScorer()
+        self.zoning_matcher   = ZoningMatcher(session)
+        self.rebuild_calc     = RebuildEconomicsCalculator()
+        self.brief_generator  = BriefGenerator() if generate_brief else None
 
     async def run(
         self,
@@ -122,9 +129,30 @@ class InvestmentPipeline:
             f"nbhd_mod={score.components.get('neighbourhood_modifier', 0):+.0f}"
         )
 
-        # Stage 5 — AI Brief (includes description, price history, risk/neighbourhood context)
+        # Stage 5 — Zoning match + rebuild-to-max economics (development potential)
+        zone: Optional[ZoningZone] = None
+        rebuild_scenario = None
+        try:
+            zone = await self.zoning_matcher.match(prop)
+            if zone:
+                max_units = (zone.rules or {}).get("max_units")
+                if max_units:
+                    rebuild_scenario = self.rebuild_calc.calculate(
+                        prop,
+                        target_units=max_units,
+                        current_units=current_units(prop),
+                        is_open_ended_target=bool((zone.rules or {}).get("is_open_ended")),
+                    )
+                logger.info(
+                    f"  Zoning: {zone.zone_code} | "
+                    f"upside={'yes' if rebuild_scenario else 'no'}"
+                )
+        except Exception as exc:
+            logger.warning(f"  Zoning match failed: {exc}")
+
+        # Stage 6 — AI Brief (includes description, price history, risk/neighbourhood/zoning context)
         brief_en = brief_fr = None
-        extra_context = self._build_brief_context(risk, neighbourhood)
+        extra_context = self._build_brief_context(risk, neighbourhood, zone, rebuild_scenario)
         if self.brief_generator and (force_brief or score.total >= 40):
             brief_en = await self.brief_generator.generate(
                 prop, fp, score, language="en", extra_context=extra_context, force=force_brief
@@ -135,7 +163,7 @@ class InvestmentPipeline:
                 )
 
         # Write results back to property (calc_fields written directly to model)
-        self._update_property(prop, comp_set, fp, score, brief_en, brief_fr, calc_fields)
+        self._update_property(prop, comp_set, fp, score, brief_en, brief_fr, calc_fields, zone, rebuild_scenario)
         return prop
 
     async def run_pending(
@@ -178,6 +206,8 @@ class InvestmentPipeline:
     def _build_brief_context(
         risk: Optional[RiskAssessment],
         neighbourhood: Optional[NeighbourhoodContext],
+        zone: Optional[ZoningZone] = None,
+        rebuild_scenario=None,
     ) -> str:
         lines: list[str] = []
         if risk and risk.items:
@@ -193,10 +223,26 @@ class InvestmentPipeline:
                 if neighbourhood.cap_rate_percentile is not None and neighbourhood.score_percentile is not None
                 else f"NEIGHBOURHOOD ({neighbourhood.sample_size} peers found)"
             )
+        if zone and rebuild_scenario:
+            plus = "+" if rebuild_scenario.is_open_ended_target else ""
+            lines.append(
+                f"ZONING (zone {zone.zone_code}): currently {rebuild_scenario.current_units} unit(s), "
+                f"zoning permits {rebuild_scenario.target_units}{plus} — "
+                f"rebuild-to-max is a rough planning estimate: "
+                f"~${rebuild_scenario.total_rebuild_cost:,.0f} rebuild cost, "
+                f"projected value ~${rebuild_scenario.projected_new_value:,.0f} "
+                f"(net upside ~${rebuild_scenario.net_upside:,.0f} before financing/soft-cost overruns — "
+                f"mention this is indicative only, not a guarantee)"
+            )
         return "\n".join(lines)
 
     @staticmethod
-    def _update_property(prop, comp_set, fp, score, brief_en, brief_fr, calc_fields: dict | None = None) -> None:
+    def _update_property(
+        prop, comp_set, fp, score, brief_en, brief_fr,
+        calc_fields: dict | None = None,
+        zone: Optional[ZoningZone] = None,
+        rebuild_scenario=None,
+    ) -> None:
         now = datetime.now(timezone.utc)
 
         # Comparable data
@@ -250,3 +296,10 @@ class InvestmentPipeline:
         # Compute price_per_sqft if not already set by the scraper
         if prop.price_per_sqft is None and prop.asking_price and prop.sqft_total and prop.sqft_total > 0:
             prop.price_per_sqft = round(prop.asking_price / prop.sqft_total, 2)
+
+        # Zoning match + rebuild economics
+        if zone:
+            prop.zoning_zone_id    = zone.id
+            prop.zoning_matched_at = now
+        if rebuild_scenario:
+            prop.rebuild_economics = asdict(rebuild_scenario)

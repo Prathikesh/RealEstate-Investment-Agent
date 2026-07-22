@@ -85,6 +85,11 @@ class PropertyCard(BaseModel):
     lowest_price_source:  Optional[str]   = None
     lowest_price:         Optional[float] = None
 
+    # Lightweight zoning signal for the card badge — NOT the full ZoningInfo
+    # object, to keep list-view payloads small across a page of 20-100 cards.
+    zoning_max_units: Optional[int]  = None
+    zoning_upside:    Optional[bool] = None
+
     @field_validator("property_type", mode="before")
     @classmethod
     def extract_enum_value(cls, v: Any) -> str:
@@ -103,6 +108,48 @@ class PropertyCard(BaseModel):
         if not v:
             return []
         return v[:1]  # only first photo for list view
+
+
+class ZoningInfo(BaseModel):
+    """Municipal zoning match for a property — see zoning_zones table."""
+    zone_code:        str
+    city:              str
+    type_milieu:       Optional[str] = None   # Laval transect category, e.g. "T4.1"
+    allowed_uses:      Optional[list[str]] = None   # Quebec City H1-H4 presence flags
+    bylaw_reference:   Optional[str] = None
+    confidence:        str            # "geometry_only" | "partial_decode" | "verified"
+    data_version:      Optional[str] = None
+    matched_at:        Optional[datetime] = None
+
+    # Coordinate-verified from the actual bylaw table (Laval T3-T6 categories only).
+    # max_units is a MINIMUM when is_open_ended=True ("4 logements ou plus" —
+    # true ceiling is governed by separate density norms not yet extracted).
+    max_units:          Optional[int] = None
+    is_open_ended:       Optional[bool] = None
+    contigu_permitted:   Optional[bool] = None
+    decode_table_page:   Optional[int] = None
+    permitted_tiers:     Optional[dict[str, list[str]]] = None
+    source_document_url: Optional[str] = None
+
+
+class RebuildEconomicsInfo(BaseModel):
+    """Pre-computed 'rebuild to zoning max' scenario — always a planning estimate."""
+    current_units:              int
+    target_units:                int
+    additional_units:            int
+    estimated_new_floor_area_sqft: float
+    demolition_cost:              float
+    hard_construction_cost:       float
+    soft_costs:                    float
+    contingency:                   float
+    financing_carry_cost:          float
+    total_rebuild_cost:            float
+    total_investment:              float
+    projected_new_noi_annual:      Optional[float] = None
+    projected_new_value:           Optional[float] = None
+    net_upside:                     Optional[float] = None
+    is_open_ended_target:            bool
+    confidence:                       str
 
 
 class PropertyDetail(BaseModel):
@@ -185,6 +232,9 @@ class PropertyDetail(BaseModel):
     first_seen_at:   datetime
     last_seen_at:    datetime
     last_analyzed_at: Optional[datetime]
+
+    zoning: Optional[ZoningInfo] = None
+    rebuild_economics: Optional[RebuildEconomicsInfo] = None
 
     @field_validator("property_type", mode="before")
     @classmethod

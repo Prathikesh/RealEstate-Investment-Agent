@@ -249,15 +249,25 @@ class FinancialCalculator:
     # ── Quebec welcome tax ────────────────────────────────────────────────────
 
     @staticmethod
-    def _welcome_tax(price: float, city: Optional[str] = None) -> float:
+    def _welcome_tax(
+        price: float,
+        city: Optional[str] = None,
+        evaluation_fonciere: Optional[float] = None,
+    ) -> float:
         """
         Droits de mutation immobilière — RLRQ c. D-15.1 (2026 indexed brackets).
         Source: https://www.legisquebec.gouv.qc.ca/en/document/cs/D-15.1
         Brackets are indexed annually by Quebec CPI.
         Last verified: 2026-06-11
 
+        The tax base ("base d'imposition") is the GREATER of the purchase
+        price and the municipal assessed value (évaluation foncière) —
+        using price alone under-counts tax when a property sells below
+        its assessed value, which happens often for older plexes.
+
         Montreal may apply up to 3 % on the portion exceeding $500,000 (city by-law).
         """
+        basis = max(price, evaluation_fonciere) if evaluation_fonciere else price
         is_montreal = city and "montr" in city.lower()
 
         # Build bracket list — add Montreal extra rate if applicable
@@ -274,9 +284,9 @@ class FinancialCalculator:
         tax  = 0.0
         prev = 0.0
         for ceiling, rate in brackets:
-            if price <= prev:
+            if basis <= prev:
                 break
-            taxable = min(price, ceiling) - prev
+            taxable = min(basis, ceiling) - prev
             tax    += taxable * rate
             prev    = ceiling
 

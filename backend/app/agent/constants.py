@@ -156,6 +156,25 @@ RENT_BY_ROOM_TYPE: dict[str, float] = {
     "5.5": 1_400.0,
 }
 
+# ── Rebuild / new-construction cost estimates ─────────────────────────────────
+#
+# Unlike welcome tax (statute) or the mortgage rate (BoC policy), there is no
+# single live government dataset for construction cost per sqft — these are
+# INDUSTRY PLANNING-LEVEL ESTIMATES, not a sourced legal figure. Cross-check
+# against APCHQ (Association des professionnels de la construction et de
+# l'habitation du Québec) or a current Altus Group / RSMeans Canadian cost
+# guide before using for a real decision. Range reflects Quebec wood-frame
+# low-rise multi-unit residential (2-4 storeys), rental-grade finish.
+# Verified: 2026-07-21 (planning estimate, not a live-sourced figure — see above)
+#
+REBUILD_HARD_COST_PER_SQFT = (150.0, 220.0)   # ($/sqft min, max) of new floor area
+REBUILD_DEMO_COST_PER_SQFT = 18.0             # demolition of existing structure
+REBUILD_SOFT_COST_PCT      = 0.18             # architect/engineer/permits, % of hard cost
+REBUILD_CONTINGENCY_PCT    = 0.12             # standard construction contingency
+REBUILD_FINANCING_CARRY_PCT = 0.06            # ~12mo construction loan carry, % of hard+soft
+REBUILD_AVG_UNIT_SQFT      = 850              # typical rental-unit size used to size new floor area
+REBUILD_TARGET_CAP_RATE    = 0.05             # income-approach valuation cap rate for the rebuilt asset
+
 # ── Source metadata (used in UI citations) ────────────────────────────────────
 
 SOURCES = {

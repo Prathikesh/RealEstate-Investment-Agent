@@ -36,3 +36,7 @@ apscheduler==3.11.0
 # ── Utilities ─────────────────────────────────────────────────────────────────
 python-dotenv==1.0.1
 python-slugify==8.0.4
+
+# ── Zoning import ─────────────────────────────────────────────────────────────
+shapely==2.1.2           # geometry parsing for zoning polygon importers
+openpyxl==3.1.5          # reads municipal zoning grid spreadsheets (e.g. Quebec City)

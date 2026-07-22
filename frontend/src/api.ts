@@ -51,6 +51,45 @@ export interface PropertyCard {
   multi_site_count:    number | null
   lowest_price_source: string | null
   lowest_price:        number | null
+
+  zoning_max_units: number | null
+  zoning_upside:    boolean | null
+}
+
+export interface ZoningInfo {
+  zone_code:        string
+  city:              string
+  type_milieu:       string | null
+  allowed_uses:      string[] | null
+  bylaw_reference:   string | null
+  confidence:        string
+  data_version:      string | null
+  matched_at:        string | null
+  max_units:          number | null
+  is_open_ended:       boolean | null
+  contigu_permitted:   boolean | null
+  decode_table_page:   number | null
+  permitted_tiers:     Record<string, string[]> | null
+  source_document_url: string | null
+}
+
+export interface RebuildEconomicsInfo {
+  current_units:                  number
+  target_units:                   number
+  additional_units:               number
+  estimated_new_floor_area_sqft:  number
+  demolition_cost:                number
+  hard_construction_cost:         number
+  soft_costs:                     number
+  contingency:                    number
+  financing_carry_cost:           number
+  total_rebuild_cost:             number
+  total_investment:               number
+  projected_new_noi_annual:       number | null
+  projected_new_value:            number | null
+  net_upside:                     number | null
+  is_open_ended_target:           boolean
+  confidence:                     string
 }
 
 export interface PropertyDetail extends PropertyCard {
@@ -90,6 +129,8 @@ export interface PropertyDetail extends PropertyCard {
   is_flagged: boolean
   last_analyzed_at: string | null
   cross_site_prices: CrossSitePrice[] | null
+  zoning: ZoningInfo | null
+  rebuild_economics: RebuildEconomicsInfo | null
 }
 
 export interface PropertyListResponse {
@@ -289,5 +330,16 @@ export interface MapProperty {
 
 export async function fetchMapProperties(): Promise<MapProperty[]> {
   const { data } = await http.get<MapProperty[]>('/properties/map')
+  return data
+}
+
+export interface ZoningBoundary {
+  zone_code:       string
+  zone_geometry:   GeoJSON.Geometry
+  property_point:  { type: string; coordinates: [number, number] } | null
+}
+
+export async function fetchZoningBoundary(id: string): Promise<ZoningBoundary> {
+  const { data } = await http.get<ZoningBoundary>(`/properties/${id}/zoning/boundary`)
   return data
 }

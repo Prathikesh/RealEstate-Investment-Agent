@@ -7,19 +7,21 @@ GET  /api/properties/{id}                — full property detail
 POST /api/properties/{id}/analyze        — trigger re-analysis (admin use)
 GET  /api/properties/{id}/full-analysis  — on-demand comprehensive AI analysis
 """
+import json
 import logging
 import uuid
 from datetime import datetime, timezone, timedelta
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, select, distinct
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from sqlalchemy import func, select, distinct, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.agent.constants import SOURCES
 from app.agent.full_analysis import run_full_analysis
 from app.agent.pipeline import InvestmentPipeline
+from app.agent.zoning_matcher import current_units as _current_units
 from app.api.deps import get_db
 from app.api.schemas import (
     ComparablePropertySchema,
@@ -27,6 +29,7 @@ from app.api.schemas import (
     NeighbourhoodContextSchema, PropertyCard, PropertyDetail, PropertyListResponse,
     RenovationROISchema, RenovationScenarioSchema, RiskAssessmentSchema, RiskItemSchema,
     ScoreResultSchema, StatsResponse, FiveYearProjectionSchema, YearSnapshotSchema,
+    ZoningInfo, RebuildEconomicsInfo,
 )
 from app.models.property import Property, PropertyStatus, PropertyType, ScoreCategory
 from app.models.source import PropertySource
@@ -57,6 +60,45 @@ def _build_cross_site_prices(sources: list) -> list[CrossSitePrice]:
         )
         for s in sorted(priced, key=lambda x: x.last_price)
     ]
+
+
+# Public, official bylaw document per city — used to build a direct,
+# page-anchored link so an investor can verify the source themselves.
+# Same PDF for every Laval zone; #page= is honoured by browser PDF viewers.
+_LAVAL_BYLAW_PDF_URL = "https://www.laval.ca/wp-content/uploads/2026/06/cdu-1-reglement-2026-06-08.pdf"
+_QUEBEC_CITY_ZONING_PORTAL_URL = "https://carte.ville.quebec.qc.ca/carteinteractive/"
+
+
+def _source_document_url(city: str, decode_table_page: Optional[int]) -> Optional[str]:
+    if city == "laval":
+        return f"{_LAVAL_BYLAW_PDF_URL}#page={decode_table_page}" if decode_table_page else _LAVAL_BYLAW_PDF_URL
+    if city == "quebec_city":
+        return _QUEBEC_CITY_ZONING_PORTAL_URL
+    return None
+
+
+def _build_zoning_info(prop: Property) -> Optional[ZoningInfo]:
+    zone = prop.zoning_zone
+    if not zone:
+        return None
+    rules = zone.rules or {}
+    decode_table_page = rules.get("decode_table_page")
+    return ZoningInfo(
+        zone_code=zone.zone_code,
+        city=zone.city,
+        type_milieu=rules.get("type_milieu"),
+        allowed_uses=rules.get("allowed_uses"),
+        bylaw_reference=zone.bylaw_reference,
+        confidence=rules.get("confidence", "geometry_only"),
+        data_version=zone.data_version,
+        matched_at=prop.zoning_matched_at,
+        max_units=rules.get("max_units"),
+        is_open_ended=rules.get("is_open_ended"),
+        contigu_permitted=rules.get("contigu_permitted"),
+        decode_table_page=decode_table_page,
+        permitted_tiers=rules.get("permitted_tiers"),
+        source_document_url=_source_document_url(zone.city, decode_table_page),
+    )
 
 
 def _lowest_price_source(sources: list) -> tuple[Optional[str], Optional[float]]:
@@ -155,9 +197,12 @@ async def list_properties(
     elif sort_by == "discount":
         stmt = stmt.order_by(Property.discount_pct.desc().nullslast())
 
-    # Paginate + eager load sources (2 queries total, no N+1)
+    # Paginate + eager load sources + zoning_zone (3 queries total, no N+1 —
+    # selectinload batches one IN-query per relationship regardless of page size)
     offset = (page - 1) * page_size
-    stmt = stmt.offset(offset).limit(page_size).options(selectinload(Property.sources))
+    stmt = stmt.offset(offset).limit(page_size).options(
+        selectinload(Property.sources), selectinload(Property.zoning_zone),
+    )
 
     result = await db.execute(stmt)
     items = list(result.scalars().all())
@@ -170,6 +215,11 @@ async def list_properties(
         card.multi_site_count    = len([s for s in p.sources if s.is_active])
         card.lowest_price_source = src_name
         card.lowest_price        = src_price
+        if p.zoning_zone:
+            max_units = (p.zoning_zone.rules or {}).get("max_units")
+            if max_units is not None:
+                card.zoning_max_units = max_units
+                card.zoning_upside    = max_units > _current_units(p)
         cards.append(card)
 
     return PropertyListResponse(
@@ -316,7 +366,7 @@ async def get_property(
     prop = await db.scalar(
         select(Property)
         .where(Property.id == property_id)
-        .options(selectinload(Property.sources))
+        .options(selectinload(Property.sources), selectinload(Property.zoning_zone))
     )
     if not prop:
         raise HTTPException(status_code=404, detail="Property not found")
@@ -327,7 +377,54 @@ async def get_property(
     detail.multi_site_count     = len([s for s in prop.sources if s.is_active])
     detail.lowest_price_source  = src_name
     detail.lowest_price         = src_price
+    detail.zoning                = _build_zoning_info(prop)
+    detail.rebuild_economics     = RebuildEconomicsInfo(**prop.rebuild_economics) if prop.rebuild_economics else None
     return detail
+
+
+# ── Zoning boundary (for the map overlay) ──────────────────────────────────────
+
+@router.get("/{property_id}/zoning/boundary")
+async def get_zoning_boundary(
+    property_id: uuid.UUID,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """
+    Zone polygon + property point as GeoJSON, for the Zoning tab's embedded map.
+
+    Geometry is simplified server-side (ST_SimplifyPreserveTopology, ~11m
+    tolerance) — some zone polygons have thousands of vertices, and shipping
+    full-resolution geometry on every property-page view doesn't scale.
+    Cached for an hour: zone boundaries change on a weekly/monthly refresh
+    cycle at most, so there's no reason to recompute the simplification (a
+    real CPU cost) on every request under real traffic.
+    """
+    prop = await db.scalar(select(Property).where(Property.id == property_id))
+    if not prop:
+        raise HTTPException(status_code=404, detail="Property not found")
+    if not prop.zoning_zone_id:
+        raise HTTPException(status_code=404, detail="No zoning match for this property")
+
+    row = (await db.execute(text("""
+        SELECT
+            ST_AsGeoJSON(ST_SimplifyPreserveTopology(z.geometry, 0.0001)) AS zone_geojson,
+            ST_AsGeoJSON(p.location) AS point_geojson,
+            z.zone_code
+        FROM zoning_zones z
+        JOIN properties p ON p.id = :prop_id
+        WHERE z.id = :zone_id
+    """), {"zone_id": str(prop.zoning_zone_id), "prop_id": str(property_id)})).first()
+
+    if not row or not row.zone_geojson:
+        raise HTTPException(status_code=404, detail="Zone geometry not found")
+
+    response.headers["Cache-Control"] = "public, max-age=3600"
+    return {
+        "zone_code":      row.zone_code,
+        "zone_geometry":  json.loads(row.zone_geojson),
+        "property_point": json.loads(row.point_geojson) if row.point_geojson else None,
+    }
 
 
 # ── Comparable properties list ────────────────────────────────────────────────

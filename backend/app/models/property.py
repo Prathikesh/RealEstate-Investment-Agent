@@ -14,6 +14,7 @@ from sqlalchemy import (
     DateTime,
     Enum as SAEnum,
     Float,
+    ForeignKey,
     Index,
     Integer,
     String,
@@ -195,6 +196,18 @@ class Property(Base):
     )
     last_analyzed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
+    # Zoning / development potential — matched by point-in-polygon against
+    # zoning_zones.geometry. FK rather than a denormalized copy so rule
+    # updates in zoning_zones (re-sync) are reflected without re-matching.
+    zoning_zone_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("zoning_zones.id", ondelete="SET NULL"), nullable=True
+    )
+    zoning_matched_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+    # Pre-computed "rebuild to zoning max" scenario — see agent/rebuild_economics.py.
+    # Cached like every other pipeline output; never computed live per request.
+    rebuild_economics: Mapped[Optional[dict]] = mapped_column(JSONB)
+
     # ── Audit ─────────────────────────────────────────────────────────────────
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -209,6 +222,9 @@ class Property(Base):
     )
     sources: Mapped[list["PropertySource"]] = relationship(  # noqa: F821
         back_populates="property", cascade="all, delete-orphan", lazy="select"
+    )
+    zoning_zone: Mapped[Optional["ZoningZone"]] = relationship(  # noqa: F821
+        lazy="select"
     )
 
     # ── Composite Indexes ─────────────────────────────────────────────────────

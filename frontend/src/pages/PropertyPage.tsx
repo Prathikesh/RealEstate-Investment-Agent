@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -14,7 +14,10 @@ import {
   Legend, LabelList,
 } from 'recharts'
 import clsx from 'clsx'
-import { API_BASE, fetchProperty, type PropertyDetail } from '../api'
+import 'leaflet/dist/leaflet.css'
+import L from 'leaflet'
+import { MapContainer, TileLayer, GeoJSON, CircleMarker, useMap } from 'react-leaflet'
+import { API_BASE, fetchProperty, fetchZoningBoundary, type PropertyDetail } from '../api'
 import ScoreBadge from '../components/ScoreBadge'
 import { useLang } from '../context/LanguageContext'
 import FinancingWorkbench from '../components/FinancingWorkbench'
@@ -98,7 +101,7 @@ function useSaved(prop: PropertyDetail | undefined) {
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 
-const TAB_KEYS = ['aiBrief', 'financials', 'comparables', 'priceHistory'] as const
+const TAB_KEYS = ['aiBrief', 'financials', 'comparables', 'priceHistory', 'zoning'] as const
 type TabKey = typeof TAB_KEYS[number]
 
 const TAB_LABELS: Record<TabKey, string> = {
@@ -106,6 +109,7 @@ const TAB_LABELS: Record<TabKey, string> = {
   financials:   'Financials',
   comparables:  'Comparable Sales',
   priceHistory: 'Price History',
+  zoning:       'Zoning',
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
@@ -398,6 +402,7 @@ export default function PropertyPage() {
         {activeTab === 'financials'   && <FinancialsTab prop={prop} t={t} pricePerSqft={pricePerSqft} />}
         {activeTab === 'comparables'  && <ComparablesTab prop={prop} t={t} />}
         {activeTab === 'priceHistory' && <PriceHistoryTab prop={prop} t={t} />}
+        {activeTab === 'zoning'       && <ZoningTab prop={prop} />}
       </div>
     </div>
   )
@@ -1389,6 +1394,552 @@ function FinancialsTab({ prop, t, pricePerSqft }: { prop: PropertyDetail; t: (k:
   )
 }
 
+
+// ── Zoning tab ─────────────────────────────────────────────────────────────────
+
+const TYPE_MILIEU_LABELS: Record<string, string> = {
+  T1: 'Natural — protected/low-impact areas',
+  T2: 'Agricultural — farming perimeter',
+  T3: 'Suburban — mostly single-family, low density',
+  T4: 'Urban — gentle densification, up to ~2-3 storeys',
+  T5: 'Urban compact — medium-high density, up to 25 storeys',
+  T6: 'Urban centrality — highest density zone',
+  CI: 'Institutional',
+  ZC: 'Commercial zone',
+  ZE: 'Ecological zone',
+  ZH: 'Housing zone',
+  ZI: 'Industrial zone',
+  ZM: 'Mixed zone',
+  ZP: 'Park zone',
+  SZD: 'Special development zone',
+}
+
+function typeMilieuLabel(code: string | null): string | null {
+  if (!code) return null
+  const prefix = code.split('.')[0]
+  return TYPE_MILIEU_LABELS[prefix] ?? null
+}
+
+const UNIT_COUNT_BY_TYPE: Record<string, number> = {
+  single_family: 1, condo: 1, townhouse: 1,
+  duplex: 2, triplex: 3, quadruplex: 4, quintuplex_plus: 5,
+}
+
+function currentUnits(prop: PropertyDetail): number {
+  return prop.unit_count ?? UNIT_COUNT_BY_TYPE[prop.property_type] ?? 1
+}
+
+// ── Map (left column) — big, clean, unobstructed ────────────────────────────
+
+// Adds a scale bar (metres/feet) — a small but real addition for a map that's
+// meant to help judge lot/zone size, not just show location.
+function MapScaleControl() {
+  const map = useMap()
+  useState(() => {
+    const control = L.control.scale({ position: 'bottomleft', imperial: true, metric: true })
+    control.addTo(map)
+    return null
+  })
+  return null
+}
+
+function ZoningMap({ propertyId }: { propertyId: string }) {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['zoning-boundary', propertyId],
+    queryFn: () => fetchZoningBoundary(propertyId),
+    staleTime: 60 * 60 * 1000, // matches the backend's 1h Cache-Control
+  })
+
+  if (isLoading) {
+    return <div className="shimmer rounded-xl border border-surface-border h-full min-h-[420px]" />
+  }
+  if (error || !data) {
+    return (
+      <div className="rounded-xl border border-surface-border bg-surface flex items-center justify-center text-sm text-muted h-full min-h-[420px]">
+        Map unavailable for this property
+      </div>
+    )
+  }
+
+  const [lng, lat] = data.property_point?.coordinates ?? [0, 0]
+
+  return (
+    <div className="rounded-xl overflow-hidden border border-surface-border h-full min-h-[420px]">
+      <MapContainer center={[lat, lng]} zoom={17} style={{ height: '100%', width: '100%' }} scrollWheelZoom={false}>
+        {/* CartoDB Positron — clean, light basemap so the zone overlay reads clearly
+            (default OSM tiles are visually busy — colours, POI icons — and made the
+            purple boundary hard to read against the noise) */}
+        <TileLayer
+          url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+        />
+        <GeoJSON
+          key={data.zone_code}
+          data={data.zone_geometry as GeoJSON.Geometry}
+          style={{ color: '#7c3aed', weight: 3, fillColor: '#7c3aed', fillOpacity: 0.12 }}
+        />
+        {data.property_point && (
+          <CircleMarker center={[lat, lng]} radius={8} pathOptions={{ color: '#fff', weight: 2.5, fillColor: '#DC2626', fillOpacity: 1 }} />
+        )}
+        <MapScaleControl />
+      </MapContainer>
+    </div>
+  )
+}
+
+// Real measurements only — the property's own lot/building size (scraped data).
+// Deliberately NOT showing "zone area" — a zone polygon covers many properties,
+// so that number would look like it's about this property when it isn't.
+function MeasurementsStrip({ prop, z }: { prop: PropertyDetail; z: NonNullable<PropertyDetail['zoning']> }) {
+  return (
+    <div className="grid grid-cols-3 gap-2">
+      <div className="rounded-xl border border-surface-border p-3 text-center">
+        <p className="text-lg font-bold tabular-nums text-ink">{prop.lot_sqft?.toLocaleString() ?? '—'}</p>
+        <p className="text-[11px] text-muted mt-0.5">lot sqft</p>
+      </div>
+      <div className="rounded-xl border border-surface-border p-3 text-center">
+        <p className="text-lg font-bold tabular-nums text-ink">{prop.sqft_total?.toLocaleString() ?? '—'}</p>
+        <p className="text-[11px] text-muted mt-0.5">building sqft</p>
+      </div>
+      <div className="rounded-xl border border-surface-border p-3 text-center">
+        <p className="text-lg font-bold tabular-nums text-ink">{z.zone_code}</p>
+        <p className="text-[11px] text-muted mt-0.5">zone code</p>
+      </div>
+    </div>
+  )
+}
+
+// ── Explainer (right column) — walks through the reasoning, doesn't just assert it ──
+
+const TIER_TRANSLATIONS: Record<string, string> = {
+  '1 logement':            'Single dwelling',
+  '2 ou 3 logements':      '2–3 dwellings',
+  '4 logements ou plus':   '4+ dwellings',
+  'habitation (h2)':       'Duplex (H2)',
+  'habitation collective (h2)': 'Multi-unit (H2)',
+  'habitation (h3)':       'Triplex (H3)',
+  'habitation (h4)':       '4+ unit building (H4)',
+}
+
+const STRUCTURE_TRANSLATIONS: Record<string, string> = {
+  'Isolé':   'standalone building',
+  'Jumelé':  'semi-detached (shared 1 wall)',
+  'Contigu': 'row-house/contiguous',
+}
+
+function cleanTierLabel(raw: string): string {
+  const stripped = raw.replace(/[●\s]+$/g, '').trim().toLowerCase()
+  return TIER_TRANSLATIONS[stripped] ?? raw.replace(/●/g, '').trim()
+}
+
+function ExplainerStep({ n, title, children, last }: { n: number; title: string; children: React.ReactNode; last?: boolean }) {
+  return (
+    <div className="flex gap-4">
+      <div className="flex flex-col items-center shrink-0">
+        <div className="w-7 h-7 rounded-full bg-accent text-white flex items-center justify-center text-xs font-bold shadow-sm">
+          {n}
+        </div>
+        {!last && <div className="w-px flex-1 bg-surface-border mt-1" />}
+      </div>
+      <div className="flex-1 min-w-0 pb-6">
+        <p className="text-[15px] font-bold text-ink mb-1.5 tracking-tight">{title}</p>
+        <div className="text-[13.5px] text-muted leading-[1.6]">{children}</div>
+      </div>
+    </div>
+  )
+}
+
+function PermittedTierChip({ tier, structures }: { tier: string; structures: string[] }) {
+  return (
+    <div className="rounded-lg border border-surface-border bg-surface px-3 py-2">
+      <p className="text-sm font-bold text-ink">{cleanTierLabel(tier)}</p>
+      <p className="text-xs text-muted mt-0.5">
+        {structures.map(s => STRUCTURE_TRANSLATIONS[s] ?? s).join(' · ')}
+      </p>
+    </div>
+  )
+}
+
+function ZoningExplainer({ prop, z }: { prop: PropertyDetail; z: NonNullable<PropertyDetail['zoning']> }) {
+  const current = currentUnits(prop)
+  const permitted = z.max_units ?? null
+  const hasUpside = permitted != null && permitted > current
+  const permittedLabel = permitted != null ? (z.is_open_ended ? `${permitted}+` : `${permitted}`) : null
+  const categoryLabel = typeMilieuLabel(z.type_milieu)
+  const propTypeLabel = prop.property_type.replace(/_/g, ' ')
+
+  const tierEntries = z.permitted_tiers ? Object.entries(z.permitted_tiers) : []
+
+  return (
+    <div className="card flex flex-col">
+      <h3 className="text-base font-bold text-ink mb-5">How we got this number</h3>
+
+      <div className="flex-1">
+        <ExplainerStep n={1} title="What's built here today">
+          This is a <span className="capitalize">{propTypeLabel}</span>
+          {prop.unit_count ? `, ${prop.unit_count} unit${prop.unit_count === 1 ? '' : 's'}` : ` (${current} unit assumed from the property type)`}.
+        </ExplainerStep>
+
+        <ExplainerStep n={2} title="Its zoning classification">
+          This lot sits in zone <span className="font-mono font-semibold text-ink">{z.zone_code}</span>, category{' '}
+          <span className="font-semibold text-ink">{z.type_milieu}</span>
+          {categoryLabel && <> — {categoryLabel.toLowerCase()}</>}.
+        </ExplainerStep>
+
+        {tierEntries.length > 0 ? (
+          <ExplainerStep n={3} title="What the bylaw permits, and why">
+            <p className="mb-2">
+              Per the Code de l'urbanisme{z.decode_table_page && <>, page {z.decode_table_page}</>}, this zone allows:
+            </p>
+            <div className="space-y-1.5">
+              {tierEntries.map(([tier, structures]) => (
+                <PermittedTierChip key={tier} tier={tier} structures={structures} />
+              ))}
+            </div>
+          </ExplainerStep>
+        ) : (
+          <ExplainerStep n={3} title="What the bylaw permits">
+            Zone data is on record, but the specific permitted-use table for this category hasn't
+            been decoded yet — coverage is expanding category by category.
+          </ExplainerStep>
+        )}
+
+        <ExplainerStep n={4} title="The opportunity" last>
+          {permittedLabel != null ? (
+            <>
+              <div className="flex items-center gap-3 my-2 flex-wrap">
+                <div className="text-center">
+                  <p className="text-2xl font-bold tabular-nums text-ink">{current}</p>
+                  <p className="text-[11px] text-muted">today</p>
+                </div>
+                <span className="text-muted">→</span>
+                <div className="text-center">
+                  <p className={clsx('text-2xl font-bold tabular-nums', hasUpside ? 'text-score-strong' : 'text-ink')}>
+                    {permittedLabel}
+                  </p>
+                  <p className="text-[11px] text-muted">permitted</p>
+                </div>
+                {hasUpside && (
+                  <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-score-strong/10 text-score-strong border border-score-strong/25">
+                    +{permitted - current} unit{permitted - current === 1 ? '' : 's'} of upside
+                  </span>
+                )}
+              </div>
+              {z.contigu_permitted && <p>Row-house/contiguous form is also permitted here — often cheaper to build (shared walls).</p>}
+              {z.is_open_ended && <p className="italic mt-1">"{permittedLabel}" is a floor, not a confirmed ceiling — density rules that set the true max aren't decoded yet. Verify with the municipality.</p>}
+              {!hasUpside && <p>No development gap detected — this property is already built at or near what zoning allows.</p>}
+            </>
+          ) : (
+            <p>Not enough decoded data yet to compare current vs. permitted for this zone.</p>
+          )}
+        </ExplainerStep>
+      </div>
+
+      <div className="pt-3 border-t border-surface-border space-y-1">
+        <p className="text-xs text-muted">
+          {z.bylaw_reference}{z.data_version && ` — data as of ${z.data_version}`}
+        </p>
+        {z.source_document_url && (
+          <a
+            href={z.source_document_url} target="_blank" rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-xs font-semibold text-accent hover:underline"
+          >
+            <ExternalLink size={11} />
+            View the official source document
+          </a>
+        )}
+        <p className="text-xs text-muted italic">Indicative only — confirm with the municipality before acting.</p>
+      </div>
+    </div>
+  )
+}
+
+// ── Rebuild Workbench — fully editable, nothing pre-claimed as fact ────────────
+// Mirrors FinancingWorkbench's pattern: every assumption is a visible, editable
+// input; we supply sensible starting defaults, the investor supplies real
+// numbers (contractor quotes, local rent comps) and the math updates live.
+
+const rbToNum = (s: string) => parseFloat(s) || 0
+
+// Suffix is a SIBLING, not an absolutely-positioned overlay — a 4-digit value
+// next to a suffix like "sqft" was overlapping the digits when both shared
+// the same box (the old bug). This can't overlap regardless of value length.
+function RebuildField({ value, onChange, suffix, width = 'w-20', label }: {
+  value: string; onChange: (v: string) => void; suffix?: string; width?: string; label: string
+}) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <input
+        type="text" inputMode="decimal" value={value} aria-label={label}
+        onChange={e => onChange(e.target.value)}
+        className={clsx(
+          width,
+          'rounded-lg border border-surface-border bg-white px-2.5 py-1.5 text-sm text-right font-mono tabular-nums text-ink',
+          'hover:border-accent/50 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/15 transition-colors duration-200',
+        )}
+      />
+      {suffix && <span className="text-xs text-muted whitespace-nowrap shrink-0">{suffix}</span>}
+    </span>
+  )
+}
+
+function RebuildRow({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-4 py-1.5">
+      <span className="text-sm text-muted">
+        {label}
+        {hint && <span className="block text-[11px] text-muted/70">{hint}</span>}
+      </span>
+      {children}
+    </div>
+  )
+}
+
+function RebuildWorkbench({ prop, z }: { prop: PropertyDetail; z: NonNullable<PropertyDetail['zoning']> }) {
+  const current = currentUnits(prop)
+  const defaultTarget = Math.max(current, z.max_units ?? current)
+
+  const defaults = useMemo(() => ({
+    targetUnits: String(defaultTarget),
+    unitSqft:    '850',
+    hardCost:    '185',
+    demoCost:    '18',
+    softPct:     '18',
+    contPct:     '12',
+    financePct:  '6',
+    rentPerUnit: '1400',
+    capRatePct:  '5',
+  }), [prop.id])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  const [targetUnits, setTargetUnits] = useState(defaults.targetUnits)
+  const [unitSqft, setUnitSqft]       = useState(defaults.unitSqft)
+  const [hardCost, setHardCost]       = useState(defaults.hardCost)
+  const [demoCost, setDemoCost]       = useState(defaults.demoCost)
+  const [softPct, setSoftPct]         = useState(defaults.softPct)
+  const [contPct, setContPct]         = useState(defaults.contPct)
+  const [financePct, setFinancePct]   = useState(defaults.financePct)
+  const [rentPerUnit, setRentPerUnit] = useState(defaults.rentPerUnit)
+  const [capRatePct, setCapRatePct]   = useState(defaults.capRatePct)
+
+  const modified = targetUnits !== defaults.targetUnits || unitSqft !== defaults.unitSqft ||
+    hardCost !== defaults.hardCost || demoCost !== defaults.demoCost || softPct !== defaults.softPct ||
+    contPct !== defaults.contPct || financePct !== defaults.financePct ||
+    rentPerUnit !== defaults.rentPerUnit || capRatePct !== defaults.capRatePct
+
+  const reset = () => {
+    setTargetUnits(defaults.targetUnits); setUnitSqft(defaults.unitSqft)
+    setHardCost(defaults.hardCost); setDemoCost(defaults.demoCost); setSoftPct(defaults.softPct)
+    setContPct(defaults.contPct); setFinancePct(defaults.financePct)
+    setRentPerUnit(defaults.rentPerUnit); setCapRatePct(defaults.capRatePct)
+  }
+
+  // ── Live derived numbers — same formula as the old backend estimate,
+  //    just computed here so every input is yours to change. ──────────────────
+  const target = Math.max(current, rbToNum(targetUnits))
+  const newFloorArea = target * rbToNum(unitSqft)
+  const existingFootprint = prop.sqft_total ?? (current * rbToNum(unitSqft))
+
+  const demolitionCost = existingFootprint * rbToNum(demoCost)
+  const hardCostTotal  = newFloorArea * rbToNum(hardCost)
+  const softCosts      = hardCostTotal * (rbToNum(softPct) / 100)
+  const contingency    = (hardCostTotal + softCosts) * (rbToNum(contPct) / 100)
+  const financingCarry = (hardCostTotal + softCosts) * (rbToNum(financePct) / 100)
+  const totalRebuildCost = demolitionCost + hardCostTotal + softCosts + contingency + financingCarry
+
+  const purchasePrice  = prop.asking_price ?? 0
+  const totalInvestment = purchasePrice + totalRebuildCost
+
+  const grossRentAnnual = target * rbToNum(rentPerUnit) * 12
+  const vacancy    = grossRentAnnual * 0.05
+  const insurance  = totalInvestment * 0.002
+  const maintenance = totalInvestment * 0.01
+  const projectedNOI = grossRentAnnual - vacancy - insurance - maintenance
+  const capRate = Math.max(0.1, rbToNum(capRatePct)) / 100
+  const projectedValue = projectedNOI / capRate
+  const netProfit = projectedValue - totalInvestment
+  const hasProfit = netProfit > 0
+
+  return (
+    <div className="card space-y-4">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <h3 className="text-sm font-bold text-ink">Rebuild Calculator</h3>
+          <p className="text-xs text-muted mt-0.5">Every number below is yours to change — plug in real quotes and rents</p>
+        </div>
+        {modified && (
+          <button
+            type="button" onClick={reset}
+            className="text-xs font-semibold px-2.5 py-1 rounded-lg border border-accent/40 text-accent hover:bg-accent/10 transition-colors"
+          >
+            Reset to defaults
+          </button>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 divide-y divide-surface-border sm:divide-y-0">
+        <div className="divide-y divide-surface-border">
+          <RebuildRow label="Units to build" hint={`currently ${current}, zoning permits ${z.max_units}${z.is_open_ended ? '+' : ''}`}>
+            <RebuildField label="Units to build" value={targetUnits} onChange={setTargetUnits} width="w-16" />
+          </RebuildRow>
+          <RebuildRow label="Avg. unit size">
+            <RebuildField label="Average unit size" value={unitSqft} onChange={setUnitSqft} suffix="sqft" width="w-24" />
+          </RebuildRow>
+          <RebuildRow label="Construction cost">
+            <RebuildField label="Construction cost per sqft" value={hardCost} onChange={setHardCost} suffix="$/sqft" width="w-24" />
+          </RebuildRow>
+          <RebuildRow label="Demolition cost">
+            <RebuildField label="Demolition cost per sqft" value={demoCost} onChange={setDemoCost} suffix="$/sqft" width="w-24" />
+          </RebuildRow>
+        </div>
+        <div className="divide-y divide-surface-border">
+          <RebuildRow label="Soft costs" hint="design, permits, fees">
+            <RebuildField label="Soft costs percent" value={softPct} onChange={setSoftPct} suffix="%" width="w-16" />
+          </RebuildRow>
+          <RebuildRow label="Contingency">
+            <RebuildField label="Contingency percent" value={contPct} onChange={setContPct} suffix="%" width="w-16" />
+          </RebuildRow>
+          <RebuildRow label="Financing carry">
+            <RebuildField label="Financing carry percent" value={financePct} onChange={setFinancePct} suffix="%" width="w-16" />
+          </RebuildRow>
+          <RebuildRow label="Rent per unit" hint="new construction often rents above old-stock average">
+            <RebuildField label="Rent per unit per month" value={rentPerUnit} onChange={setRentPerUnit} suffix="$/mo" width="w-24" />
+          </RebuildRow>
+          <RebuildRow label="Valuation cap rate">
+            <RebuildField label="Valuation cap rate" value={capRatePct} onChange={setCapRatePct} suffix="%" width="w-16" />
+          </RebuildRow>
+        </div>
+      </div>
+
+      {/* Proportional cost bar — recomputes live from the inputs above, so the
+          breakdown visibly reacts instead of reading as a static table. */}
+      <div className="pt-3 border-t border-surface-border space-y-2.5">
+        {(() => {
+          const items = [
+            { label: 'Demolition',                              value: demolitionCost, color: '#94A3B8' },
+            { label: `New construction (${newFloorArea.toLocaleString()} sqft)`, value: hardCostTotal,  color: '#0F766E' },
+            { label: 'Soft costs',                                value: softCosts,     color: '#D97706' },
+            { label: 'Contingency',                               value: contingency,   color: '#DC2626' },
+            { label: 'Financing carry',                           value: financingCarry, color: '#7c3aed' },
+          ]
+          const safeTotal = totalRebuildCost || 1
+          return (
+            <>
+              <div className="flex h-3 rounded-full overflow-hidden bg-surface-border">
+                {items.map(it => (
+                  <div key={it.label} style={{ width: `${(it.value / safeTotal) * 100}%`, backgroundColor: it.color }} />
+                ))}
+              </div>
+              <div className="space-y-1.5 text-xs">
+                {items.map(it => (
+                  <div key={it.label} className="flex items-center justify-between">
+                    <span className="flex items-center gap-1.5 text-muted">
+                      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: it.color }} />
+                      {it.label}
+                    </span>
+                    <span className="font-mono font-medium text-ink">{fmtCAD(it.value)}</span>
+                  </div>
+                ))}
+                <div className="flex justify-between pt-1.5 border-t border-surface-border font-semibold text-ink">
+                  <span>Total rebuild cost</span><span className="font-mono">{fmtCAD(totalRebuildCost)}</span>
+                </div>
+              </div>
+            </>
+          )
+        })()}
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="rounded-xl border border-surface-border p-3">
+          <p className="text-xs text-muted mb-1">Total investment</p>
+          <p className="text-lg font-bold tabular-nums text-ink">{fmtCAD(totalInvestment)}</p>
+          <p className="text-[11px] text-muted mt-0.5">purchase price + rebuild cost</p>
+        </div>
+        <div className="rounded-xl border border-surface-border p-3">
+          <p className="text-xs text-muted mb-1">Projected value after rebuild</p>
+          <p className="text-lg font-bold tabular-nums text-ink">{fmtCAD(projectedValue)}</p>
+          <p className="text-[11px] text-muted mt-0.5">income approach, at your inputs above</p>
+        </div>
+      </div>
+
+      <div className={clsx(
+        'rounded-xl p-3 text-center',
+        hasProfit ? 'bg-score-strong/10 border border-score-strong/25' : 'bg-surface-hover border border-surface-border',
+      )}>
+        <p className={clsx('text-lg font-bold tabular-nums', hasProfit ? 'text-score-strong' : 'text-ink')}>
+          {(netProfit >= 0 ? '+' : '') + fmtCAD(netProfit)}
+        </p>
+        <p className="text-xs text-muted mt-0.5">
+          {hasProfit ? 'Profit at these numbers' : 'Loss at these numbers'} — adjust any input above to test your own assumptions
+        </p>
+      </div>
+
+      <p className="text-xs text-muted italic pt-1 border-t border-surface-border">
+        Nothing here is a quote or appraisal — it's a calculator seeded with reasonable starting
+        numbers. Replace them with a real contractor estimate and local rent data before acting on this.
+      </p>
+    </div>
+  )
+}
+
+function ZoningTab({ prop }: { prop: PropertyDetail }) {
+  const z = prop.zoning
+
+  if (!z) {
+    return (
+      <div className="card text-center py-10 space-y-2">
+        <p className="text-sm font-semibold text-ink">No zoning data available yet</p>
+        <p className="text-xs text-muted max-w-md mx-auto">
+          {prop.city} isn't covered by our municipal zoning import yet. Coverage
+          currently includes Laval and Quebec City, expanding city by city.
+        </p>
+      </div>
+    )
+  }
+
+  const isFullyDecoded = z.confidence === 'verified'
+  const isPartial = z.confidence === 'partial_decode'
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h3 className="text-base font-bold text-ink">Zoning &amp; Development Potential</h3>
+        <span className={clsx(
+          'px-2 py-0.5 rounded-lg text-xs font-semibold border',
+          isFullyDecoded ? 'bg-score-strong/10 text-score-strong border-score-strong/25' :
+          isPartial      ? 'bg-score-market/10 text-score-market border-score-market/25' :
+                           'bg-surface-hover text-muted border-surface-border',
+        )}>
+          {isFullyDecoded ? 'Verified' : isPartial ? 'Partial data' : 'Basic zone info'}
+        </span>
+      </div>
+
+      {/* Left: map + real measurements  ·  Right: explainable reasoning.
+          No items-start — grid stretches both columns to equal height, and the
+          left card fills that height (map as flex-1) instead of leaving a gap. */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <div className="card flex flex-col gap-4">
+          <div className="flex-1">
+            <ZoningMap propertyId={prop.id} />
+          </div>
+          <MeasurementsStrip prop={prop} z={z} />
+          {z.source_document_url && (
+            <a
+              href={z.source_document_url} target="_blank" rel="noopener noreferrer"
+              className="flex items-center justify-center gap-1.5 text-xs font-semibold text-accent hover:underline py-1"
+            >
+              <ExternalLink size={12} />
+              Verify on the official {z.city.replace('_', ' ')} government site
+            </a>
+          )}
+        </div>
+
+        <ZoningExplainer prop={prop} z={z} />
+      </div>
+
+      {z.max_units != null && <RebuildWorkbench prop={prop} z={z} />}
+    </div>
+  )
+}
 
 // ── Comparables tab ───────────────────────────────────────────────────────────
 
