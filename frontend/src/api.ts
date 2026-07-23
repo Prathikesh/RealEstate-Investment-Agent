@@ -73,6 +73,18 @@ export interface ZoningInfo {
   source_document_url: string | null
 }
 
+export interface MarketBenchmarkInfo {
+  city_key:           string
+  building_grade:     string
+  band_low:           number
+  band_high:          number
+  property_cap_rate:  number
+  position:           'above' | 'within' | 'below'
+  source_label:       string
+  source_quarter:     string
+  caveat:             string
+}
+
 export interface RebuildEconomicsInfo {
   current_units:                  number
   target_units:                   number
@@ -131,6 +143,7 @@ export interface PropertyDetail extends PropertyCard {
   cross_site_prices: CrossSitePrice[] | null
   zoning: ZoningInfo | null
   rebuild_economics: RebuildEconomicsInfo | null
+  market_benchmark: MarketBenchmarkInfo | null
 }
 
 export interface PropertyListResponse {

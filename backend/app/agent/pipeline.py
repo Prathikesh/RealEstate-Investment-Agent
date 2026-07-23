@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agent.brief import BriefGenerator
 from app.agent.calculator import FinancialCalculator
 from app.agent.comparables import ComparableFinder
+from app.agent.market_benchmark import MarketBenchmark, MarketBenchmarkComparator
 from app.agent.neighbourhood import NeighbourhoodAnalyzer, NeighbourhoodContext
 from app.agent.rebuild_economics import RebuildEconomicsCalculator
 from app.agent.risk import RiskAssessment, RiskAssessor
@@ -41,6 +42,7 @@ class InvestmentPipeline:
         self.scorer           = OpportunityScorer()
         self.zoning_matcher   = ZoningMatcher(session)
         self.rebuild_calc     = RebuildEconomicsCalculator()
+        self.benchmark_comparator = MarketBenchmarkComparator()
         self.brief_generator  = BriefGenerator() if generate_brief else None
 
     async def run(
@@ -97,6 +99,18 @@ class InvestmentPipeline:
             f"cf={fp.monthly_cash_flow}/mo | discount={fp.discount_pct}% | "
             f"taxes_live={not fp.taxes_are_estimated}"
         )
+
+        # Stage 2c — Market Benchmark (Colliers cap rate cross-check, informational only)
+        benchmark: Optional[MarketBenchmark] = None
+        try:
+            benchmark = self.benchmark_comparator.compare(prop, fp.cap_rate)
+            if benchmark:
+                logger.debug(
+                    f"  Benchmark: {benchmark.position} Colliers "
+                    f"{benchmark.city_key} band ({benchmark.band_low*100:.2f}-{benchmark.band_high*100:.2f}%)"
+                )
+        except Exception as exc:
+            logger.warning(f"  Market benchmark failed: {exc}")
 
         # Stage 3a — Risk Assessment (feeds into scorer)
         risk: Optional[RiskAssessment] = None
@@ -163,7 +177,9 @@ class InvestmentPipeline:
                 )
 
         # Write results back to property (calc_fields written directly to model)
-        self._update_property(prop, comp_set, fp, score, brief_en, brief_fr, calc_fields, zone, rebuild_scenario)
+        self._update_property(
+            prop, comp_set, fp, score, brief_en, brief_fr, calc_fields, zone, rebuild_scenario, benchmark
+        )
         return prop
 
     async def run_pending(
@@ -242,6 +258,7 @@ class InvestmentPipeline:
         calc_fields: dict | None = None,
         zone: Optional[ZoningZone] = None,
         rebuild_scenario=None,
+        benchmark: Optional[MarketBenchmark] = None,
     ) -> None:
         now = datetime.now(timezone.utc)
 
@@ -303,3 +320,7 @@ class InvestmentPipeline:
             prop.zoning_matched_at = now
         if rebuild_scenario:
             prop.rebuild_economics = asdict(rebuild_scenario)
+
+        # Colliers cap rate benchmark (informational only)
+        if benchmark:
+            prop.market_benchmark = asdict(benchmark)

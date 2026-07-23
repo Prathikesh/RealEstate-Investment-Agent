@@ -1390,6 +1390,49 @@ function FinancialsTab({ prop, t, pricePerSqft }: { prop: PropertyDetail; t: (k:
           </div>
         </div>
       )}
+
+      {/* ── Colliers cap rate benchmark ── */}
+      {prop.market_benchmark && (() => {
+        const mb = prop.market_benchmark
+        const cityLabel = mb.city_key === 'montreal' ? 'Montréal' : 'Québec City'
+        const gradeLabel = mb.building_grade === 'class_a' ? 'Class A' : 'Class B'
+        const positionCls =
+          mb.position === 'within' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+          mb.position === 'above'  ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                                      'bg-amber-50 text-amber-700 border-amber-200'
+        const positionLabel =
+          mb.position === 'within' ? 'Within market band' :
+          mb.position === 'above'  ? 'Above market band' :
+                                      'Below market band'
+        return (
+          <div className="card space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-ink">Cap Rate vs. Colliers Benchmark</h3>
+              <span className={clsx('px-2 py-0.5 rounded-full text-xs font-semibold border', positionCls)}>
+                {positionLabel}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-xs text-muted mb-1">This property</p>
+                <p className="font-mono font-bold text-ink text-lg">{mb.property_cap_rate.toFixed(2)}%</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted mb-1">{cityLabel} Multifamily ({gradeLabel})</p>
+                <p className="font-mono font-bold text-muted text-lg">
+                  {(mb.band_low * 100).toFixed(2)}%–{(mb.band_high * 100).toFixed(2)}%
+                </p>
+              </div>
+            </div>
+            <p className="text-[11px] text-muted/70 leading-snug pt-1 border-t border-surface-border">
+              {mb.caveat}
+            </p>
+            <p className="text-[10px] text-muted/50">
+              Source: {mb.source_label}, {mb.source_quarter}
+            </p>
+          </div>
+        )
+      })()}
     </div>
   )
 }

@@ -235,6 +235,7 @@ class PropertyDetail(BaseModel):
 
     zoning: Optional[ZoningInfo] = None
     rebuild_economics: Optional[RebuildEconomicsInfo] = None
+    market_benchmark: Optional[dict] = None
 
     @field_validator("property_type", mode="before")
     @classmethod

@@ -208,6 +208,11 @@ class Property(Base):
     # Cached like every other pipeline output; never computed live per request.
     rebuild_economics: Mapped[Optional[dict]] = mapped_column(JSONB)
 
+    # Cap rate vs. the Colliers Cap Rate Report's institutional multifamily band
+    # for this city — see agent/market_benchmark.py. Informational only; null
+    # for property types/cities the report doesn't cover.
+    market_benchmark: Mapped[Optional[dict]] = mapped_column(JSONB)
+
     # ── Audit ─────────────────────────────────────────────────────────────────
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

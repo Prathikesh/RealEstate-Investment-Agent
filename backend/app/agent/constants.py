@@ -175,6 +175,38 @@ REBUILD_FINANCING_CARRY_PCT = 0.06            # ~12mo construction loan carry, %
 REBUILD_AVG_UNIT_SQFT      = 850              # typical rental-unit size used to size new floor area
 REBUILD_TARGET_CAP_RATE    = 0.05             # income-approach valuation cap rate for the rebuilt asset
 
+# ── Colliers institutional multifamily cap rate bands ─────────────────────────
+#
+# Source:  Colliers Canada — Quarterly Cap Rate Report
+# URL:     https://www.collierscanada.com/en-ca/research (search "Cap Rate Report")
+# Update:  QUARTERLY. Colliers publishes this as a copyrighted PDF, not a public
+#          API/feed — there is no scraper for this. When a new quarter's report
+#          arrives, open it, find each city's page, and re-type the "Multifamily"
+#          row's Class A / Class B Low-High values below. Bump COLLIERS_REPORT_QUARTER.
+# Verified: 2026-07-22 (Q1 2026 edition — Colliers had not yet published a Q2 2026
+#           Cap Rate Report as of this date)
+#
+# IMPORTANT — what this benchmark is and isn't:
+#   Colliers surveys INSTITUTIONAL-SCALE multifamily transactions (larger
+#   purpose-built rental buildings). It has no category for 2-6 unit walk-up
+#   plexes, which trade in a completely separate small-investor market. Class B
+#   (low-rise, wood-frame, no amenities — per Colliers' own glossary) is the
+#   closest available proxy for a small plex, and is what this app applies to
+#   DUPLEX/TRIPLEX/QUADRUPLEX/QUINTUPLEX_PLUS listings. Treat it as a directional
+#   cross-check, not a precise valuation — real small-plex pricing in Quebec
+#   follows a different convention entirely (MRB / gross rent multiplier, per
+#   APCIQ), which this dict does not attempt to model.
+#
+# Bands are (low, high) as decimal fractions (0.0400 = 4.00%).
+#
+COLLIERS_REPORT_QUARTER = "Q1 2026"
+
+COLLIERS_CAP_RATE_BANDS: dict[str, dict[str, tuple[float, float]]] = {
+    "montreal": {"class_a": (0.0400, 0.0500), "class_b": (0.0400, 0.0525)},
+    "québec":   {"class_a": (0.0400, 0.0500), "class_b": (0.0450, 0.0550)},
+    "quebec":   {"class_a": (0.0400, 0.0500), "class_b": (0.0450, 0.0550)},
+}
+
 # ── Source metadata (used in UI citations) ────────────────────────────────────
 
 SOURCES = {
@@ -205,5 +237,12 @@ SOURCES = {
         "publisher": "Individual municipalities",
         "frequency": "Annually (January)",
         "verified":  "2026-06-11 (approximate)",
+    },
+    "colliers_cap_rate": {
+        "name":      f"Colliers Canada Cap Rate Report — {COLLIERS_REPORT_QUARTER}",
+        "url":       "https://www.collierscanada.com/en-ca/research",
+        "publisher": "Colliers Canada, Valuation & Advisory Services",
+        "frequency": "Quarterly",
+        "verified":  "2026-07-22",
     },
 }
