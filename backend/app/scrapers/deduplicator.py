@@ -58,6 +58,9 @@ class PropertyDeduplicator:
         now = datetime.now(timezone.utc)
         changes: dict = {}
 
+        if raw.is_delisted:
+            return await self._mark_delisted(raw, now)
+
         existing = await self._find_existing(raw)
 
         if existing:
@@ -75,6 +78,28 @@ class PropertyDeduplicator:
         self._add_snapshot(existing, raw, changes, now)
 
         return existing, is_new
+
+    async def _mark_delisted(self, raw: RawProperty, now: datetime) -> tuple[Property, bool]:
+        """
+        Handle a "listing not found" signal from the scraper: the source has
+        removed/sold this listing since we last saw it. Only status is
+        touched — raw carries no real field data (price/address/etc. are all
+        None), so running it through the normal update/snapshot pipeline
+        would overwrite good existing data with nothing.
+        """
+        existing = (await self.session.scalars(
+            select(Property).where(Property.mls_number == raw.mls_number)
+        )).first()
+        if not existing:
+            raise ValueError(
+                f"Got a delisted signal for MLS {raw.mls_number!r} but no matching "
+                f"property exists — scrape_detail() should only be called with a "
+                f"URL already stored on an existing property."
+            )
+        if existing.status != PropertyStatus.DELISTED:
+            existing.status = PropertyStatus.DELISTED
+            existing.last_scraped_at = now
+        return existing, False
 
     # ── Find (4-tier cascade) ─────────────────────────────────────────────────
 

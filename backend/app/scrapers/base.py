@@ -85,6 +85,11 @@ class RawProperty:
     raw_data: dict = field(default_factory=dict)
     scraped_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
+    # True when the source redirected to a "listing not found" page (sold/removed
+    # since we last scraped it) — all other fields are meaningless in this case;
+    # the deduplicator should only update status, never overwrite existing data.
+    is_delisted: bool = False
+
 
 # ── Credit-error detection ─────────────────────────────────────────────────────
 

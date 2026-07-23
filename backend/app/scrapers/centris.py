@@ -22,6 +22,7 @@ Detail page key patterns:
 """
 import json as _json
 import re
+import uuid
 from pathlib import Path
 from typing import Optional
 
@@ -100,23 +101,57 @@ class CentrisScraper(BaseScraper):
         """
         Fetch a single property detail page.
 
-        Always uses full ASP+JS rendering (~45 credits) with a rendering wait:
-        the page embeds Centris's own transfer-tax calculator, whose JS
-        pre-populates #taxe with the exact welcome tax for this property
-        (city by-law brackets included). A cheap non-JS fetch would miss it.
+        Always uses full ASP+JS rendering (~45 credits) with a JS scenario:
+        the page embeds Centris's own transfer-tax calculator, but #taxe stays
+        at "0,00 $" until the "Calculer" button is actually clicked — a passive
+        rendering_wait alone never triggers it (confirmed by inspection: both
+        #propriete and #evalMunicipale are server-rendered with the correct
+        values already, only the click computes #taxe).
+
+        Uses a fresh, one-off session per call rather than the shared
+        self._SESSION used for search-page scraping: a session that has
+        already loaded this (or another) Centris page stops re-rendering the
+        calculator widget on subsequent loads — confirmed by testing, and the
+        likely reason this never worked at all before, independent of the
+        click. Detail fetches are one-shot lookups, so they don't need
+        continuity with the multi-page search session.
+
+        Not every listing has the calculator — Centris only renders it when
+        it has municipal assessment data for that property (confirmed: some
+        listings' pages have no #CalculTaxe div at all). ignore_if_not_visible
+        makes the click a no-op in that case rather than failing the whole
+        detail scrape (and losing sqft/rent/tax data along with it).
         """
         try:
             full = ScrapeConfig(
                 url=url, asp=True, render_js=True, country="ca",
-                session=self._SESSION,
-                rendering_wait=3000,  # let calculator JS populate #taxe
+                session=f"centris-detail-{uuid.uuid4().hex[:8]}",
+                rendering_wait=3000,
+                js_scenario=[
+                    {"click": {"selector": "#Calcul_btTotalMutation", "ignore_if_not_visible": True}},
+                    {"wait": 1500},
+                ],
             )
             result = await self.client.async_scrape(full)
             cost = result.context.get("cost", {}).get("total", 0)
+            final_url = result.context.get("url", "") or ""
             self.logger.info(
                 f"[centris] detail-full: {result.upstream_status_code} "
                 f"| credits={cost} | {url[-55:]}"
             )
+
+            # Centris redirects to "...?listingnotfound=<mls>" when a listing has
+            # been sold/removed since we last scraped it — the resulting page has
+            # no real listing content (no price, no calculator, nothing to parse).
+            # Signal this back rather than returning None, so the caller can mark
+            # the existing property delisted instead of silently retrying forever.
+            if "listingnotfound=" in final_url:
+                mls = url.rstrip("/").rsplit("/", 1)[-1]
+                self.logger.info(f"[centris] listing delisted: {mls}")
+                return RawProperty(
+                    source=self.SOURCE, source_url=url, mls_number=mls, is_delisted=True,
+                )
+
             if result.upstream_status_code == 200:
                 prop = self._parse_detail_page(result.content, source_url=url)
                 if prop:
