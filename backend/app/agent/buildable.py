@@ -25,6 +25,21 @@ SQFT_PER_M2 = 10.7639
 def estimate_max_units(lot_area_m2: Optional[float], rules: dict) -> dict:
     """Return {units, method, max_coverage_pct, max_storeys, lot_area_m2}."""
     rules = rules or {}
+
+    # Montréal (PUM 2050): planning-grade estimate from the minimum average net
+    # density target (dwellings/hectare), which the plan applies only in
+    # residential/mixed affectations. This is a city planning target, not a
+    # per-lot permit — the UI frames it that way.
+    if rules.get("method") == "density_target":
+        base = {"max_coverage_pct": None, "max_storeys": None, "lot_area_m2": lot_area_m2}
+        density = rules.get("density_per_ha")
+        if not rules.get("is_residential"):
+            return {"units": None, "method": "non_residential", **base}
+        if lot_area_m2 and density:
+            units = max(1, round((lot_area_m2 / 10000.0) * density))
+            return {"units": units, "method": "density_target", **base}
+        return {"units": None, "method": "insufficient_data", **base}
+
     tier_cap = rules.get("tier_cap")
     coverage = rules.get("max_coverage_pct")
     storeys  = rules.get("max_storeys")

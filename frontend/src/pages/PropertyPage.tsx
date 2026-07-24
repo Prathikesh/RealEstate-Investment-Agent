@@ -1491,9 +1491,13 @@ function MeasurementsStrip({ prop, z }: { prop: PropertyDetail; z: NonNullable<P
         <p className="text-lg font-bold tabular-nums text-ink">{prop.sqft_total?.toLocaleString() ?? '—'}</p>
         <p className="text-[11px] text-muted mt-0.5">building sqft</p>
       </div>
+      {/* Montréal's internal PUM ids aren't meaningful to a user — show the land-use
+          designation instead; Laval/QC keep their real zone code. */}
       <div className="rounded-xl border border-surface-border p-3 text-center">
-        <p className="text-lg font-bold tabular-nums text-ink">{z.zone_code}</p>
-        <p className="text-[11px] text-muted mt-0.5">zone code</p>
+        <p className="text-base font-bold text-ink truncate" title={z.affectation ?? z.zone_code}>
+          {z.affectation ?? z.zone_code}
+        </p>
+        <p className="text-[11px] text-muted mt-0.5">{z.affectation ? 'land use' : 'zone code'}</p>
       </div>
     </div>
   )
@@ -1576,6 +1580,23 @@ function PermittedTierChip({ tier, structures }: { tier: string; structures: str
   )
 }
 
+// Montréal PUM 2050 vocabulary → plain English (the plan is published in French).
+const INTENS_INFO: Record<string, { label: string; desc: string }> = {
+  'Douce':          { label: 'gentle',       desc: 'modest, incremental densification' },
+  'Intermédiaire':  { label: 'intermediate', desc: 'moderate densification is encouraged' },
+  'Élevée':         { label: 'high',         desc: 'the city is actively targeting densification here' },
+}
+const AFFECT_DESC: Record<string, string> = {
+  'Résidentiel':                                     'primarily housing',
+  'Mixte':                                           'mixed-use — housing alongside shops and services',
+  'Conservation':                                    'protected / conservation land',
+  'Agricole':                                        'agricultural',
+  'Activités économiques':                           'employment / economic activity',
+  'Activités diversifiées':                          'diversified activity',
+  'Récréation et accès aux rives':                   'recreation and waterfront access',
+  'Grande emprise ou grande infrastructure publique': 'major public infrastructure',
+}
+
 function ZoningExplainer({ prop, z }: { prop: PropertyDetail; z: NonNullable<PropertyDetail['zoning']> }) {
   const current = currentUnits(prop)
   const permitted = z.estimated_max_units ?? null
@@ -1591,6 +1612,12 @@ function ZoningExplainer({ prop, z }: { prop: PropertyDetail; z: NonNullable<Pro
 
   const tierEntries = z.permitted_tiers ? Object.entries(z.permitted_tiers) : []
 
+  // Montréal follows the citywide master plan (PUM 2050), not a per-lot form-based
+  // code — so its steps read differently (land-use + density target, not a grille).
+  const isMontreal = z.plan_name != null
+  const intens = z.intensification ? INTENS_INFO[z.intensification] : null
+  const affectDesc = z.affectation ? AFFECT_DESC[z.affectation] : null
+
   return (
     <div className="card flex flex-col">
       <h3 className="text-base font-bold text-ink mb-5">How we got this number</h3>
@@ -1601,32 +1628,99 @@ function ZoningExplainer({ prop, z }: { prop: PropertyDetail; z: NonNullable<Pro
           {prop.unit_count ? `, ${prop.unit_count} unit${prop.unit_count === 1 ? '' : 's'}` : ` (${current} unit assumed from the property type)`}.
         </ExplainerStep>
 
-        <ExplainerStep n={2} title="Its zoning classification">
-          This lot sits in zone <span className="font-mono font-semibold text-ink">{z.zone_code}</span>, category{' '}
-          <span className="font-semibold text-ink">{z.type_milieu}</span>
-          {categoryLabel && <> — {categoryLabel.toLowerCase()}</>}.
-        </ExplainerStep>
+        {isMontreal ? (
+          <>
+            <ExplainerStep n={2} title="Its land-use designation">
+              Under Montréal's <span className="font-semibold text-ink">{z.plan_name}</span>, this lot is in
+              a <span className="font-semibold text-ink">{z.affectation}</span> area
+              {affectDesc && <> — {affectDesc}</>}.
+              {intens && <> The plan sets urban intensification here to <span className="font-semibold text-ink">{intens.label}</span> — {intens.desc}.</>}
+            </ExplainerStep>
 
-        {tierEntries.length > 0 ? (
-          <ExplainerStep n={3} title="What the bylaw permits, and why">
-            <p className="mb-2">
-              Per the Code de l'urbanisme{z.decode_table_page && <>, page {z.decode_table_page}</>}, this zone allows:
-            </p>
-            <div className="space-y-1.5">
-              {tierEntries.map(([tier, structures]) => (
-                <PermittedTierChip key={tier} tier={tier} structures={structures} />
-              ))}
-            </div>
-          </ExplainerStep>
+            <ExplainerStep n={3} title="What the city plan targets">
+              {z.min_density_per_ha != null ? (
+                <>
+                  The plan sets a <strong className="text-ink">minimum average net density of {z.min_density_per_ha} dwellings per hectare</strong> for
+                  this area. Montréal's exact per-lot limits (height, units) are set by the borough zoning bylaw —
+                  this citywide layer shows the density the city is planning for.
+                </>
+              ) : (
+                <>This designation isn't residential, so the plan sets no dwelling-density target here.</>
+              )}
+            </ExplainerStep>
+          </>
         ) : (
-          <ExplainerStep n={3} title="What the bylaw permits">
-            Zone data is on record, but the specific permitted-use table for this category hasn't
-            been decoded yet — coverage is expanding category by category.
-          </ExplainerStep>
+          <>
+            <ExplainerStep n={2} title="Its zoning classification">
+              This lot sits in zone <span className="font-mono font-semibold text-ink">{z.zone_code}</span>, category{' '}
+              <span className="font-semibold text-ink">{z.type_milieu}</span>
+              {categoryLabel && <> — {categoryLabel.toLowerCase()}</>}.
+            </ExplainerStep>
+
+            {tierEntries.length > 0 ? (
+              <ExplainerStep n={3} title="What the bylaw permits, and why">
+                <p className="mb-2">
+                  Per the Code de l'urbanisme{z.decode_table_page && <>, page {z.decode_table_page}</>}, this zone allows:
+                </p>
+                <div className="space-y-1.5">
+                  {tierEntries.map(([tier, structures]) => (
+                    <PermittedTierChip key={tier} tier={tier} structures={structures} />
+                  ))}
+                </div>
+              </ExplainerStep>
+            ) : (
+              <ExplainerStep n={3} title="What the bylaw permits">
+                Zone data is on record, but the specific permitted-use table for this category hasn't
+                been decoded yet — coverage is expanding category by category.
+              </ExplainerStep>
+            )}
+          </>
         )}
 
         <ExplainerStep n={4} title="The opportunity" last>
-          {permittedLabel != null ? (
+          {isMontreal ? (
+            z.estimate_method === 'density_target' && permitted != null ? (
+              <>
+                <div className="flex items-center gap-4 my-1 mb-3 flex-wrap">
+                  <div className="text-center">
+                    <p className="text-3xl font-black tabular-nums text-ink leading-none">{current}</p>
+                    <p className="text-[11px] text-muted mt-1">built today</p>
+                  </div>
+                  <ChevronRight size={20} className="text-muted/50" />
+                  <div className="text-center">
+                    <p className={clsx('text-3xl font-black tabular-nums leading-none', hasUpside ? 'text-score-strong' : 'text-ink')}>~{permitted}</p>
+                    <p className="text-[11px] text-muted mt-1">planned density</p>
+                  </div>
+                  {hasUpside && (
+                    <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-score-strong/10 text-score-strong border border-score-strong/25">
+                      +{permitted - current} of upside
+                    </span>
+                  )}
+                </div>
+                <p>
+                  At the plan's target of <strong className="text-ink">~{z.min_density_per_ha} dwellings/ha</strong>, this{' '}
+                  <strong className="text-ink">{lotSqft != null ? `${lotSqft.toLocaleString()} sqft` : ''}</strong> lot
+                  {z.estimate_lot_source === 'assessment_roll' && <span className="text-muted"> (official record)</span>} works
+                  out to roughly <strong className="text-ink">~{permitted} unit{permitted === 1 ? '' : 's'}</strong> of planned
+                  density. A city planning target, not a per-lot permit — confirm exact limits with the borough.
+                </p>
+              </>
+            ) : z.estimate_method === 'non_residential' ? (
+              <p>
+                This area is designated <strong className="text-ink">{z.affectation}</strong> — not intended for
+                residential development, so there's no added-unit potential here.
+              </p>
+            ) : z.min_density_per_ha != null ? (
+              <p>
+                This is a densification-friendly area — the plan targets{' '}
+                <strong className="text-ink">~{z.min_density_per_ha} dwellings/ha</strong>
+                {intens && <> ({intens.label} intensification)</>}. We don't have this lot's size on record yet, so we
+                can't estimate units, but the density target still signals the city wants more homes here.
+              </p>
+            ) : (
+              <p>Not enough data to estimate development potential for this area yet.</p>
+            )
+          ) : permittedLabel != null ? (
             <>
               <div className="flex items-center gap-4 my-1 mb-3 flex-wrap">
                 <div className="text-center">
@@ -1980,7 +2074,7 @@ function ZoningTab({ prop }: { prop: PropertyDetail }) {
     )
   }
 
-  const isFullyDecoded = z.confidence === 'verified'
+  const isFullyDecoded = z.confidence === 'verified' || z.confidence === 'official'
   const isPartial = z.confidence === 'partial_decode'
 
   return (

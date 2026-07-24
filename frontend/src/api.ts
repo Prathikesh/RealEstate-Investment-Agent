@@ -72,11 +72,17 @@ export interface ZoningInfo {
   permitted_tiers:     Record<string, string[]> | null
   source_document_url: string | null
   estimated_max_units: number | null
-  estimate_method:     string | null   // use_permission | envelope | non_residential
+  estimate_method:     string | null   // use_permission | envelope | non_residential | density_target
   max_coverage_pct:    number | null
   max_storeys:         number | null
   estimate_lot_m2:     number | null
   estimate_lot_source: string | null   // assessment_roll | listing
+
+  // Montréal master-plan layer (PUM 2050) — planning-grade, not a per-lot permit
+  affectation:         string | null   // Résidentiel | Mixte | Conservation | …
+  intensification:     string | null   // Douce | Intermédiaire | Élevée
+  min_density_per_ha:  number | null   // min. average net density target (log/ha)
+  plan_name:           string | null
 }
 
 export interface MarketBenchmarkInfo {

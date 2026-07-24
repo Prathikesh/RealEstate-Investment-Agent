@@ -151,11 +151,17 @@ class ZoningInfo(BaseModel):
 
     # Honest per-property buildable estimate (see agent/buildable.py)
     estimated_max_units: Optional[int] = None
-    estimate_method:     Optional[str] = None   # use_permission | envelope | non_residential
+    estimate_method:     Optional[str] = None   # use_permission | envelope | non_residential | density_target
     max_coverage_pct:    Optional[float] = None
     max_storeys:         Optional[int] = None
     estimate_lot_m2:     Optional[float] = None   # lot area the estimate used
     estimate_lot_source: Optional[str] = None     # "assessment_roll" | "listing"
+
+    # Montréal master-plan layer (PUM 2050) — planning-grade, not a per-lot permit.
+    affectation:         Optional[str] = None     # "Résidentiel" | "Mixte" | "Conservation" | …
+    intensification:     Optional[str] = None     # "Douce" | "Intermédiaire" | "Élevée"
+    min_density_per_ha:  Optional[float] = None    # min. average net density target (log/ha)
+    plan_name:           Optional[str] = None
 
 
 class RebuildEconomicsInfo(BaseModel):
