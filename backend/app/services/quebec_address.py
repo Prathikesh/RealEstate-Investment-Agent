@@ -57,11 +57,17 @@ def roll_match_key(civic: str, street_name: str) -> Optional[str]:
 
 
 def full_address_match_key(full_address: str) -> Optional[str]:
-    """Build the key from a scraped free-text address ('2100 Rue de Castellane, ...')."""
+    """Build the key from a scraped free-text address ('2100 Rue de Castellane, ...').
+
+    Handles plex civic ranges common in Montréal listings — '4300 - 4302 Av.
+    Carlton' or '2305 - 2309, Rue Wurtele' — by keeping the FIRST civic (which
+    matches the roll's CIVIQUE_DEBUT) and dropping the '- 4302' so the second
+    number doesn't leak into the street core.
+    """
     if not full_address:
         return None
-    first = full_address.split(",")[0].strip()
-    m = re.match(r"^\s*(\d+)\s+(.*)$", first)   # leading civic number required
+    # civic (optionally a '- civic2' range), optional comma, then street up to next comma.
+    m = re.match(r"^\s*(\d+)\s*(?:-\s*\d+)?\s*,?\s+([^,]+)", full_address)
     if not m:
         return None
     civic, street = m.group(1), m.group(2)

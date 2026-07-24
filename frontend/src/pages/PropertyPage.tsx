@@ -1680,31 +1680,39 @@ function ZoningExplainer({ prop, z }: { prop: PropertyDetail; z: NonNullable<Pro
         <ExplainerStep n={4} title="The opportunity" last>
           {isMontreal ? (
             z.estimate_method === 'density_target' && permitted != null ? (
-              <>
-                <div className="flex items-center gap-4 my-1 mb-3 flex-wrap">
-                  <div className="text-center">
-                    <p className="text-3xl font-black tabular-nums text-ink leading-none">{current}</p>
-                    <p className="text-[11px] text-muted mt-1">built today</p>
-                  </div>
-                  <ChevronRight size={20} className="text-muted/50" />
-                  <div className="text-center">
-                    <p className={clsx('text-3xl font-black tabular-nums leading-none', hasUpside ? 'text-score-strong' : 'text-ink')}>~{permitted}</p>
-                    <p className="text-[11px] text-muted mt-1">planned density</p>
-                  </div>
-                  {hasUpside && (
+              hasUpside ? (
+                <>
+                  <div className="flex items-center gap-4 my-1 mb-3 flex-wrap">
+                    <div className="text-center">
+                      <p className="text-3xl font-black tabular-nums text-ink leading-none">{current}</p>
+                      <p className="text-[11px] text-muted mt-1">built today</p>
+                    </div>
+                    <ChevronRight size={20} className="text-muted/50" />
+                    <div className="text-center">
+                      <p className="text-3xl font-black tabular-nums leading-none text-score-strong">~{permitted}</p>
+                      <p className="text-[11px] text-muted mt-1">planned density</p>
+                    </div>
                     <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-score-strong/10 text-score-strong border border-score-strong/25">
                       +{permitted - current} of upside
                     </span>
-                  )}
-                </div>
+                  </div>
+                  <p>
+                    The plan's minimum density target of <strong className="text-ink">~{z.min_density_per_ha} dwellings/ha</strong> works
+                    out to about <strong className="text-ink">~{permitted} unit{permitted === 1 ? '' : 's'}</strong> on this{' '}
+                    <strong className="text-ink">{lotSqft != null ? `${lotSqft.toLocaleString()} sqft` : ''}</strong> lot
+                    {z.estimate_lot_source === 'assessment_roll' && <span className="text-muted"> (official record)</span>} — more
+                    than the {current} built today, signalling densification upside. A city planning target, not a per-lot
+                    permit; confirm exact limits with the borough.
+                  </p>
+                </>
+              ) : (
                 <p>
-                  At the plan's target of <strong className="text-ink">~{z.min_density_per_ha} dwellings/ha</strong>, this{' '}
-                  <strong className="text-ink">{lotSqft != null ? `${lotSqft.toLocaleString()} sqft` : ''}</strong> lot
-                  {z.estimate_lot_source === 'assessment_roll' && <span className="text-muted"> (official record)</span>} works
-                  out to roughly <strong className="text-ink">~{permitted} unit{permitted === 1 ? '' : 's'}</strong> of planned
-                  density. A city planning target, not a per-lot permit — confirm exact limits with the borough.
+                  This lot is already built at or above the city's minimum density target
+                  {z.min_density_per_ha != null && <> (<strong className="text-ink">~{z.min_density_per_ha} dwellings/ha</strong>)</>}.
+                  Any further upside would come from the borough's specific zoning bylaw (height, units) — not the
+                  citywide plan, which only sets a density floor.
                 </p>
-              </>
+              )
             ) : z.estimate_method === 'non_residential' ? (
               <p>
                 This area is designated <strong className="text-ink">{z.affectation}</strong> — not intended for

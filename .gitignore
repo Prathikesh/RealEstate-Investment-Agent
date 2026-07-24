@@ -75,3 +75,4 @@ frontend/tsconfig.tsbuildinfo
 # ── Misc ─────────────────────────────────────────────────────────────────────
 .cache/
 *.tmp
+backend/data/montreal/assessment_roll.jsonl
