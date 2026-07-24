@@ -1,11 +1,11 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, lazy, Suspense } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft, ExternalLink, RefreshCw, MapPin, Calendar,
   Building2, Ruler, AlertCircle, TrendingUp,
   Clock, BarChart2, Bookmark, BookmarkCheck,
-  ChevronLeft, ChevronRight, Sparkles, CircleDollarSign,
+  ChevronLeft, ChevronRight, Sparkles, CircleDollarSign, ShieldCheck,
 } from 'lucide-react'
 import {
   BarChart, Bar, AreaChart, Area,
@@ -14,13 +14,13 @@ import {
   Legend, LabelList,
 } from 'recharts'
 import clsx from 'clsx'
-import 'leaflet/dist/leaflet.css'
-import L from 'leaflet'
-import { MapContainer, TileLayer, GeoJSON, CircleMarker, useMap } from 'react-leaflet'
-import { API_BASE, fetchProperty, fetchZoningBoundary, type PropertyDetail } from '../api'
+import { API_BASE, fetchProperty, type PropertyDetail } from '../api'
 import ScoreBadge from '../components/ScoreBadge'
 import { useLang } from '../context/LanguageContext'
 import FinancingWorkbench from '../components/FinancingWorkbench'
+
+// Code-split: MapLibre (~210KB gzip) loads only when the Zoning tab renders.
+const ZoningMap = lazy(() => import('../components/ZoningMap'))
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 
@@ -1472,64 +1472,6 @@ function currentUnits(prop: PropertyDetail): number {
   return prop.unit_count ?? UNIT_COUNT_BY_TYPE[prop.property_type] ?? 1
 }
 
-// ── Map (left column) — big, clean, unobstructed ────────────────────────────
-
-// Adds a scale bar (metres/feet) — a small but real addition for a map that's
-// meant to help judge lot/zone size, not just show location.
-function MapScaleControl() {
-  const map = useMap()
-  useState(() => {
-    const control = L.control.scale({ position: 'bottomleft', imperial: true, metric: true })
-    control.addTo(map)
-    return null
-  })
-  return null
-}
-
-function ZoningMap({ propertyId }: { propertyId: string }) {
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['zoning-boundary', propertyId],
-    queryFn: () => fetchZoningBoundary(propertyId),
-    staleTime: 60 * 60 * 1000, // matches the backend's 1h Cache-Control
-  })
-
-  if (isLoading) {
-    return <div className="shimmer rounded-xl border border-surface-border h-full min-h-[420px]" />
-  }
-  if (error || !data) {
-    return (
-      <div className="rounded-xl border border-surface-border bg-surface flex items-center justify-center text-sm text-muted h-full min-h-[420px]">
-        Map unavailable for this property
-      </div>
-    )
-  }
-
-  const [lng, lat] = data.property_point?.coordinates ?? [0, 0]
-
-  return (
-    <div className="rounded-xl overflow-hidden border border-surface-border h-full min-h-[420px]">
-      <MapContainer center={[lat, lng]} zoom={17} style={{ height: '100%', width: '100%' }} scrollWheelZoom={false}>
-        {/* CartoDB Positron — clean, light basemap so the zone overlay reads clearly
-            (default OSM tiles are visually busy — colours, POI icons — and made the
-            purple boundary hard to read against the noise) */}
-        <TileLayer
-          url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-        />
-        <GeoJSON
-          key={data.zone_code}
-          data={data.zone_geometry as GeoJSON.Geometry}
-          style={{ color: '#7c3aed', weight: 3, fillColor: '#7c3aed', fillOpacity: 0.12 }}
-        />
-        {data.property_point && (
-          <CircleMarker center={[lat, lng]} radius={8} pathOptions={{ color: '#fff', weight: 2.5, fillColor: '#DC2626', fillOpacity: 1 }} />
-        )}
-        <MapScaleControl />
-      </MapContainer>
-    </div>
-  )
-}
-
 // Real measurements only — the property's own lot/building size (scraped data).
 // Deliberately NOT showing "zone area" — a zone polygon covers many properties,
 // so that number would look like it's about this property when it isn't.
@@ -1554,52 +1496,78 @@ function MeasurementsStrip({ prop, z }: { prop: PropertyDetail; z: NonNullable<P
 
 // ── Explainer (right column) — walks through the reasoning, doesn't just assert it ──
 
-const TIER_TRANSLATIONS: Record<string, string> = {
-  '1 logement':            'Single dwelling',
-  '2 ou 3 logements':      '2–3 dwellings',
-  '4 logements ou plus':   '4+ dwellings',
-  'habitation (h2)':       'Duplex (H2)',
-  'habitation collective (h2)': 'Multi-unit (H2)',
-  'habitation (h3)':       'Triplex (H3)',
-  'habitation (h4)':       '4+ unit building (H4)',
+const TIER_INFO: Record<string, { label: string; detail: string }> = {
+  '1 logement':               { label: 'Single dwelling', detail: 'One home on the lot — no added-unit potential here unless the zone also permits a higher tier.' },
+  '2 ou 3 logements':         { label: '2–3 dwellings',   detail: 'A duplex or triplex: up to three separate units in one building.' },
+  '4 logements ou plus':      { label: '4+ dwellings',    detail: 'A small apartment building — four units or more. The exact ceiling comes from the lot size, coverage and height limits.' },
+  'habitation (h2)':          { label: 'Duplex (H2)',     detail: 'A two-dwelling residential building.' },
+  'habitation collective (h2)': { label: 'Multi-unit (H2)', detail: 'A multi-dwelling residential building type.' },
+  'habitation (h3)':          { label: 'Triplex (H3)',    detail: 'A three-dwelling building type recognised by the bylaw.' },
+  'habitation (h4)':          { label: '4+ unit building (H4)', detail: 'A residential building of four or more dwellings.' },
 }
 
-const STRUCTURE_TRANSLATIONS: Record<string, string> = {
-  'Isolé':   'standalone building',
-  'Jumelé':  'semi-detached (shared 1 wall)',
-  'Contigu': 'row-house/contiguous',
+const STRUCTURE_INFO: Record<string, { label: string; detail: string }> = {
+  'Isolé':   { label: 'Standalone', detail: 'A free-standing building that doesn’t touch its neighbours.' },
+  'Jumelé':  { label: 'Semi-detached', detail: 'Shares one wall with the building next door.' },
+  'Contigu': { label: 'Row-house', detail: 'Attached on both sides in a row — usually the cheapest form to build (shared walls).' },
 }
 
-function cleanTierLabel(raw: string): string {
-  const stripped = raw.replace(/[●\s]+$/g, '').trim().toLowerCase()
-  return TIER_TRANSLATIONS[stripped] ?? raw.replace(/●/g, '').trim()
+function tierInfo(raw: string) {
+  const key = raw.replace(/[●\s]+$/g, '').trim().toLowerCase()
+  return TIER_INFO[key] ?? { label: raw.replace(/●/g, '').trim(), detail: '' }
 }
 
 function ExplainerStep({ n, title, children, last }: { n: number; title: string; children: React.ReactNode; last?: boolean }) {
   return (
     <div className="flex gap-4">
       <div className="flex flex-col items-center shrink-0">
-        <div className="w-7 h-7 rounded-full bg-accent text-white flex items-center justify-center text-xs font-bold shadow-sm">
+        <div className="w-7 h-7 rounded-full bg-accent text-white flex items-center justify-center text-[13px] font-bold shadow-sm ring-4 ring-accent/10">
           {n}
         </div>
-        {!last && <div className="w-px flex-1 bg-surface-border mt-1" />}
+        {!last && <div className="w-px flex-1 bg-gradient-to-b from-surface-border to-transparent mt-1.5" />}
       </div>
-      <div className="flex-1 min-w-0 pb-6">
-        <p className="text-[15px] font-bold text-ink mb-1.5 tracking-tight">{title}</p>
-        <div className="text-[13.5px] text-muted leading-[1.6]">{children}</div>
+      <div className="flex-1 min-w-0 pb-7">
+        <p className="text-[15px] font-bold text-ink mb-2 tracking-tight">{title}</p>
+        <div className="text-sm text-muted leading-relaxed">{children}</div>
       </div>
     </div>
   )
 }
 
+// Clickable: tap a permitted use to reveal a plain-English explanation.
 function PermittedTierChip({ tier, structures }: { tier: string; structures: string[] }) {
+  const [open, setOpen] = useState(false)
+  const info = tierInfo(tier)
+  const structs = structures.map(s => STRUCTURE_INFO[s] ?? { label: s, detail: '' })
   return (
-    <div className="rounded-lg border border-surface-border bg-surface px-3 py-2">
-      <p className="text-sm font-bold text-ink">{cleanTierLabel(tier)}</p>
-      <p className="text-xs text-muted mt-0.5">
-        {structures.map(s => STRUCTURE_TRANSLATIONS[s] ?? s).join(' · ')}
-      </p>
-    </div>
+    <button
+      type="button" onClick={() => setOpen(o => !o)}
+      className={clsx(
+        'w-full text-left rounded-xl border px-3.5 py-2.5 transition-all duration-200',
+        open ? 'border-accent/40 bg-accent/[0.04] shadow-sm' : 'border-surface-border bg-surface hover:border-accent/30 hover:bg-accent/[0.02]',
+      )}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-sm font-bold text-ink">{info.label}</span>
+        <ChevronRight size={15} className={clsx('text-muted shrink-0 transition-transform duration-200', open && 'rotate-90')} />
+      </div>
+      <p className="text-xs text-muted mt-0.5">{structs.map(s => s.label).join(' · ')}</p>
+      <div className={clsx('grid transition-all duration-200 ease-out', open ? 'grid-rows-[1fr] opacity-100 mt-2.5' : 'grid-rows-[0fr] opacity-0')}>
+        <div className="overflow-hidden">
+          {info.detail && <p className="text-[13px] text-ink/80 leading-relaxed">{info.detail}</p>}
+          {structs.some(s => s.detail) && (
+            <ul className="mt-2 space-y-1">
+              {structs.filter(s => s.detail).map(s => (
+                <li key={s.label} className="text-xs text-muted flex gap-1.5">
+                  <span className="font-semibold text-ink/70 shrink-0">{s.label}:</span>
+                  <span>{s.detail}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    </button>
   )
 }
 
@@ -1612,6 +1580,9 @@ function ZoningExplainer({ prop, z }: { prop: PropertyDetail; z: NonNullable<Pro
   const categoryLabel = typeMilieuLabel(z.type_milieu)
   const propTypeLabel = prop.property_type.replace(/_/g, ' ')
   const lotSqft = z.estimate_lot_m2 != null ? Math.round(z.estimate_lot_m2 * 10.7639) : null
+  // A small lot can't realistically reach a tall zone's full height on its own —
+  // projects at that scale assemble neighbouring lots. Flag it honestly.
+  const needsAssembly = isEnvelope && (z.max_storeys ?? 0) >= 4 && (z.estimate_lot_m2 ?? 9999) < 400
 
   const tierEntries = z.permitted_tiers ? Object.entries(z.permitted_tiers) : []
 
@@ -1652,43 +1623,52 @@ function ZoningExplainer({ prop, z }: { prop: PropertyDetail; z: NonNullable<Pro
         <ExplainerStep n={4} title="The opportunity" last>
           {permittedLabel != null ? (
             <>
-              <div className="flex items-center gap-3 my-2 flex-wrap">
+              <div className="flex items-center gap-4 my-1 mb-3 flex-wrap">
                 <div className="text-center">
-                  <p className="text-2xl font-bold tabular-nums text-ink">{current}</p>
-                  <p className="text-[11px] text-muted">today</p>
+                  <p className="text-3xl font-black tabular-nums text-ink leading-none">{current}</p>
+                  <p className="text-[11px] text-muted mt-1">built today</p>
                 </div>
-                <span className="text-muted">→</span>
+                <ChevronRight size={20} className="text-muted/50" />
                 <div className="text-center">
-                  <p className={clsx('text-2xl font-bold tabular-nums', hasUpside ? 'text-score-strong' : 'text-ink')}>
+                  <p className={clsx('text-3xl font-black tabular-nums leading-none', hasUpside ? 'text-score-strong' : 'text-ink')}>
                     {permittedLabel}
                   </p>
-                  <p className="text-[11px] text-muted">permitted</p>
+                  <p className="text-[11px] text-muted mt-1">{isEnvelope ? 'zoning capacity' : 'max permitted'}</p>
                 </div>
                 {hasUpside && permitted != null && (
                   <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-score-strong/10 text-score-strong border border-score-strong/25">
-                    +{permitted - current} unit{permitted - current === 1 ? '' : 's'} of upside
+                    +{permitted - current} of upside
                   </span>
                 )}
               </div>
 
               {isEnvelope ? (
-                <p className="text-[13px]">
-                  Estimated from the buildable envelope: a{' '}
+                <p>
+                  Estimated from the zoning envelope: a{' '}
                   <strong className="text-ink">{lotSqft != null ? `${lotSqft.toLocaleString()} sqft` : ''}</strong> lot
                   {z.estimate_lot_source === 'assessment_roll' && <span className="text-muted"> (official record)</span>} ×{' '}
-                  <strong className="text-ink">{z.max_coverage_pct}%</strong> max coverage ×{' '}
-                  <strong className="text-ink">{z.max_storeys}</strong> storeys, at a typical unit size.
-                  This is an <strong>estimate of potential</strong>, not a permit — confirm with the municipality.
+                  <strong className="text-ink">{z.max_coverage_pct}%</strong> coverage ×{' '}
+                  <strong className="text-ink">{z.max_storeys}</strong> storeys. A theoretical maximum, not a permit.
                 </p>
               ) : (
-                <p className="text-[13px]">
+                <p>
                   This zone caps residential buildings at <strong className="text-ink">{permitted} dwelling{permitted === 1 ? '' : 's'}</strong>{' '}
                   regardless of lot size, so there's {hasUpside ? 'limited' : 'no'} added-unit potential here
                   {current <= 1 && permitted === 1 ? ' — value would come from a rebuild or subdivision, not more units' : ''}.
                 </p>
               )}
-              {z.contigu_permitted && <p className="mt-1">Row-house/contiguous form is also permitted here — often cheaper to build (shared walls).</p>}
-              {!hasUpside && !isEnvelope && current > 1 && <p className="mt-1">Already built at or near what zoning allows.</p>}
+
+              {needsAssembly && (
+                <div className="mt-2.5 rounded-lg bg-score-market/10 border border-score-market/25 px-3 py-2">
+                  <p className="text-[13px] text-score-market">
+                    <strong>Reality check:</strong> this lot is small ({lotSqft?.toLocaleString()} sqft). A building near
+                    the zone's full height would realistically need <strong>lot assembly</strong> with neighbouring
+                    properties — treat the figure as the zone's capacity, not what fits on this lot alone.
+                  </p>
+                </div>
+              )}
+              {z.contigu_permitted && <p className="mt-2 text-[13px]">Row-house/contiguous form is also permitted — usually cheaper to build.</p>}
+              {!hasUpside && !isEnvelope && current > 1 && <p className="mt-2 text-[13px]">Already built at or near what zoning allows.</p>}
             </>
           ) : (
             <p>Not enough data to estimate development potential for this zone yet.</p>
@@ -1823,16 +1803,21 @@ function RebuildWorkbench({ prop, z }: { prop: PropertyDetail; z: NonNullable<Pr
   return (
     <div className="card space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <div>
-          <h3 className="text-sm font-bold text-ink">Rebuild Calculator</h3>
-          <p className="text-xs text-muted mt-0.5">Every number below is yours to change — plug in real quotes and rents</p>
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center">
+            <CircleDollarSign size={17} className="text-accent" />
+          </div>
+          <div>
+            <h3 className="text-base font-bold text-ink">Rebuild Calculator</h3>
+            <p className="text-xs text-muted mt-0.5">Every number is yours to change — plug in real quotes and rents</p>
+          </div>
         </div>
         {modified && (
           <button
             type="button" onClick={reset}
-            className="text-xs font-semibold px-2.5 py-1 rounded-lg border border-accent/40 text-accent hover:bg-accent/10 transition-colors"
+            className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-accent/40 text-accent hover:bg-accent/10 active:scale-95 transition-all"
           >
-            Reset to defaults
+            <RefreshCw size={12} /> Reset
           </button>
         )}
       </div>
@@ -1910,27 +1895,27 @@ function RebuildWorkbench({ prop, z }: { prop: PropertyDetail; z: NonNullable<Pr
       </div>
 
       <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-xl border border-surface-border p-3">
-          <p className="text-xs text-muted mb-1">Total investment</p>
-          <p className="text-lg font-bold tabular-nums text-ink">{fmtCAD(totalInvestment)}</p>
-          <p className="text-[11px] text-muted mt-0.5">purchase price + rebuild cost</p>
+        <div className="rounded-xl border border-surface-border p-3.5">
+          <p className="text-[10.5px] uppercase tracking-wide text-muted/80 font-semibold mb-1">Total investment</p>
+          <p className="text-xl font-bold tabular-nums text-ink leading-none">{fmtCAD(totalInvestment)}</p>
+          <p className="text-[11px] text-muted mt-1.5">purchase price + rebuild cost</p>
         </div>
-        <div className="rounded-xl border border-surface-border p-3">
-          <p className="text-xs text-muted mb-1">Projected value after rebuild</p>
-          <p className="text-lg font-bold tabular-nums text-ink">{fmtCAD(projectedValue)}</p>
-          <p className="text-[11px] text-muted mt-0.5">income approach, at your inputs above</p>
+        <div className="rounded-xl border border-surface-border p-3.5">
+          <p className="text-[10.5px] uppercase tracking-wide text-muted/80 font-semibold mb-1">Projected value</p>
+          <p className="text-xl font-bold tabular-nums text-ink leading-none">{fmtCAD(projectedValue)}</p>
+          <p className="text-[11px] text-muted mt-1.5">income approach, at your inputs</p>
         </div>
       </div>
 
       <div className={clsx(
-        'rounded-xl p-3 text-center',
-        hasProfit ? 'bg-score-strong/10 border border-score-strong/25' : 'bg-surface-hover border border-surface-border',
+        'rounded-xl p-4 text-center transition-colors duration-300',
+        hasProfit ? 'bg-score-strong/10 border border-score-strong/30' : 'bg-red-50 border border-red-200',
       )}>
-        <p className={clsx('text-lg font-bold tabular-nums', hasProfit ? 'text-score-strong' : 'text-ink')}>
-          {(netProfit >= 0 ? '+' : '') + fmtCAD(netProfit)}
+        <p className={clsx('text-2xl font-black tabular-nums leading-none transition-colors duration-300', hasProfit ? 'text-score-strong' : 'text-red-600')}>
+          {(netProfit >= 0 ? '+' : '−') + fmtCAD(Math.abs(netProfit))}
         </p>
-        <p className="text-xs text-muted mt-0.5">
-          {hasProfit ? 'Profit at these numbers' : 'Loss at these numbers'} — adjust any input above to test your own assumptions
+        <p className="text-xs text-muted mt-1.5">
+          {hasProfit ? 'Estimated profit at these numbers' : 'Estimated loss at these numbers'} — change any input to test your own assumptions
         </p>
       </div>
 
@@ -2015,7 +2000,9 @@ function ZoningTab({ prop }: { prop: PropertyDetail }) {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <div className="card flex flex-col gap-4">
           <div className="flex-1">
-            <ZoningMap propertyId={prop.id} />
+            <Suspense fallback={<div className="shimmer rounded-xl border border-surface-border h-full min-h-[420px]" />}>
+              <ZoningMap propertyId={prop.id} />
+            </Suspense>
           </div>
           <MeasurementsStrip prop={prop} z={z} />
           {z.source_document_url && (
@@ -2046,33 +2033,37 @@ function OfficialRecordsCard({ a, listedUnits, propType }: {
   const listed = listedUnits ?? UNIT_COUNT_BY_TYPE[propType] ?? null
   const correction = a.num_dwellings != null && listed != null && a.num_dwellings !== listed
 
-  const Stat = ({ label, value, sub }: { label: string; value: string; sub?: string }) => (
-    <div className="rounded-xl border border-surface-border p-3">
-      <p className="text-[11px] text-muted mb-0.5">{label}</p>
-      <p className="text-lg font-bold tabular-nums text-ink leading-tight">{value}</p>
-      {sub && <p className="text-[11px] text-muted mt-0.5">{sub}</p>}
+  const Stat = ({ label, value, sub }: { label: string; value: string | null; sub?: string }) => (
+    <div className="rounded-xl border border-surface-border bg-surface/50 p-3.5">
+      <p className="text-[10.5px] uppercase tracking-wide text-muted/80 mb-1 font-semibold">{label}</p>
+      {value != null ? (
+        <p className="text-xl font-bold tabular-nums text-ink leading-none">{value}</p>
+      ) : (
+        <p className="text-sm text-muted/60 italic leading-none pt-1">not on record</p>
+      )}
+      {value != null && sub && <p className="text-[11px] text-muted mt-1">{sub}</p>}
     </div>
   )
 
   return (
     <div className="card space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <h3 className="text-sm font-bold text-ink">Official municipal records</h3>
-        <span className="px-2 py-0.5 rounded-lg text-xs font-semibold border bg-score-strong/10 text-score-strong border-score-strong/25">
-          Government-verified
+        <h3 className="text-base font-bold text-ink">Official municipal records</h3>
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-semibold border bg-score-strong/10 text-score-strong border-score-strong/25">
+          <ShieldCheck size={12} /> Government-verified
         </span>
       </div>
-      <p className="text-xs text-muted">
+      <p className="text-[13px] text-muted leading-relaxed">
         From Quebec's property assessment roll (rôle d'évaluation foncière) — the authoritative source
         for lot size and current dwelling count, independent of the listing.
       </p>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Stat label="Lot area" value={lotSqft != null ? `${lotSqft.toLocaleString()} sqft` : '—'}
+        <Stat label="Lot area" value={lotSqft != null ? `${lotSqft.toLocaleString()} sqft` : null}
               sub={a.lot_area_m2 != null ? `${Math.round(a.lot_area_m2).toLocaleString()} m²` : undefined} />
-        <Stat label="Current dwellings" value={a.num_dwellings != null ? String(a.num_dwellings) : '—'} />
-        <Stat label="Frontage" value={a.frontage_m != null ? `${a.frontage_m.toFixed(1)} m` : '—'} />
-        <Stat label="Year built" value={a.year_built != null ? String(a.year_built) : '—'} />
+        <Stat label="Current dwellings" value={a.num_dwellings != null ? String(a.num_dwellings) : null} />
+        <Stat label="Frontage" value={a.frontage_m != null ? `${a.frontage_m.toFixed(1)} m` : null} />
+        <Stat label="Year built" value={a.year_built != null ? String(a.year_built) : null} />
       </div>
 
       {correction && (
