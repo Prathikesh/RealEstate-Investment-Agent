@@ -32,6 +32,24 @@ from scrapfly import ScrapeConfig
 from app.scrapers.base import BaseScraper, RawProperty
 
 
+def hi_res_photo(url: str) -> str:
+    """Centris serves images through media.ashx with the size baked into the URL
+    (thumbnails come at w=320&h=240 — blurry). Rewrite to a larger size so we
+    store sharp photos. Non-Centris/media URLs are returned unchanged.
+
+    NB: media.ashx only serves a fixed set of preset sizes — 320x240, 640x480
+    and 1024x1024 return real images, but arbitrary sizes (800x600, 1024x768…)
+    return an EMPTY body. We use 640x480: 2x the resolution of the thumbnail,
+    ~3.5x the detail, and it keeps the original 4:3 framing (1024x1024 would
+    crop to a square).
+    """
+    if not url or "media.ashx" not in url:
+        return url
+    url = re.sub(r"([?&]w=)\d+", r"\g<1>640", url)
+    url = re.sub(r"([?&]h=)\d+", r"\g<1>480", url)
+    return url
+
+
 # URL slug (French) → PropertyType enum value
 PROPERTY_TYPE_MAP: dict[str, str] = {
     "plex":          "triplex",        # generic plex fallback
@@ -225,7 +243,7 @@ class CentrisScraper(BaseScraper):
 
         # ── Photos ────────────────────────────────────────────────────────────
         photos = [
-            img["src"] for img in card.select("img[src]")
+            hi_res_photo(img["src"]) for img in card.select("img[src]")
             if img.get("src") and not img["src"].endswith(".svg")
             and img["src"].startswith("http")
         ]
@@ -783,7 +801,7 @@ class CentrisScraper(BaseScraper):
             src = img.get("src") or img.get("data-src") or img.get("data-lazy-src", "")
             if src and src.startswith("http") and not src.endswith(".svg") and src not in seen:
                 seen.add(src)
-                photos.append(src)
+                photos.append(hi_res_photo(src))
 
         # Priority 2: all other images (skip icons/logos)
         for img in soup.select("img[src], img[data-src]"):
@@ -792,7 +810,7 @@ class CentrisScraper(BaseScraper):
                     and src not in seen
                     and not any(skip in src for skip in ["logo", "icon", "placeholder", "blank"])):
                 seen.add(src)
-                photos.append(src)
+                photos.append(hi_res_photo(src))
 
         return photos
 
