@@ -84,7 +84,7 @@ export default function AnalysisPage() {
   if (error || !data) return <AnalysisError id={id} />
 
   return (
-    <div className="p-6 space-y-5 max-w-[1400px] mx-auto">
+    <div className="p-6 space-y-5 max-w-[1600px] mx-auto">
 
       {/* Back */}
       <Link
@@ -726,7 +726,7 @@ function DataSourcesSection({
 
 function AnalysisSkeleton() {
   return (
-    <div className="p-6 space-y-5 max-w-[1400px] mx-auto animate-pulse">
+    <div className="p-6 space-y-5 max-w-[1600px] mx-auto animate-pulse">
       <div className="h-4 w-32 bg-surface-border rounded" />
       <div className="card space-y-4">
         <div className="h-6 w-80 bg-surface-border rounded" />
