@@ -257,8 +257,24 @@ interface LanguageContextType {
 
 const LanguageContext = createContext<LanguageContextType | null>(null)
 
+const LANG_KEY = 'quartis.lang'
+
+function initialLang(): 'en' | 'fr' {
+  try {
+    const saved = localStorage.getItem(LANG_KEY)
+    if (saved === 'en' || saved === 'fr') return saved
+  } catch { /* ignore */ }
+  return 'en'
+}
+
 export function LanguageProvider({ children }: { children: ReactNode }) {
-  const [lang, setLang] = useState<'en' | 'fr'>('en')
+  const [lang, setLangState] = useState<'en' | 'fr'>(initialLang)
+
+  // Persist the choice so it survives reloads (previously reset to English).
+  const setLang = (l: 'en' | 'fr') => {
+    setLangState(l)
+    try { localStorage.setItem(LANG_KEY, l) } catch { /* ignore */ }
+  }
 
   const t = (key: string): string => (TRANSLATIONS[lang] as Record<string, string>)[key] ?? key
 

@@ -1,11 +1,15 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Bell, MapPin, Home, TrendingUp, Globe, CheckCircle2,
-  Smartphone, MessageCircle, Wrench, Layers, Building2,
-  Mail, SlidersHorizontal,
+  Smartphone, MessageCircle, Wrench, Building2,
+  Mail, SlidersHorizontal, ChevronDown, Check, Search,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useLang } from '../context/LanguageContext'
+import {
+  loadPreferences, savePreferences, preferencesToSearchParams, type Preferences,
+} from '../lib/preferences'
 
 const PROPERTY_TYPES = [
   { value: 'duplex',          label: 'Duplex',        sub: '2 units' },
@@ -16,26 +20,16 @@ const PROPERTY_TYPES = [
   { value: 'condo',           label: 'Condo',         sub: 'apartment' },
 ]
 
-const STRATEGIES = [
-  {
-    value: 'buy_and_hold',
-    icon: TrendingUp,
-    label: 'Buy & Hold',
-    desc: 'Monthly rental income from tenants',
-  },
-  {
-    value: 'buy_fix_sell',
-    icon: Wrench,
-    label: 'Flip (Fix & Sell)',
-    desc: 'Buy cheap, renovate, sell for profit',
-  },
-  {
-    value: 'both',
-    icon: Layers,
-    label: 'Both Strategies',
-    desc: 'Any deal that makes financial sense',
-  },
+// Investment goals — now multi-select (client asked for a dropdown where one OR
+// multiple can be picked). "Both" is no longer a separate option: selecting both
+// Buy & Hold and Flip expresses it directly.
+const GOALS = [
+  { value: 'buy_and_hold', icon: TrendingUp, label: 'Buy & Hold',        desc: 'Monthly rental income from tenants' },
+  { value: 'buy_fix_sell', icon: Wrench,     label: 'Flip (Fix & Sell)', desc: 'Buy cheap, renovate, sell for profit' },
 ]
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const digits = (s: string) => s.replace(/\D/g, '')
 
 const BUDGET_RANGES = [
   { value: '0-300000',       label: 'Under $300K' },
@@ -47,30 +41,55 @@ const BUDGET_RANGES = [
 
 export default function Settings() {
   const { t, lang, setLang } = useLang()
+  const navigate = useNavigate()
 
-  const [city, setCity]                     = useState('')
-  const [radius, setRadius]                 = useState(25)
-  const [selectedTypes, setSelectedTypes]   = useState<string[]>(['triplex', 'quadruplex', 'duplex'])
-  const [strategy, setStrategy]             = useState('both')
-  const [budget, setBudget]                 = useState('300000-750000')
-  const [minScore, setMinScore]             = useState(60)
-  const [emailAlerts, setEmailAlerts]       = useState(true)
-  const [smsAlerts, setSmsAlerts]           = useState(false)
-  const [whatsappAlerts, setWhatsappAlerts] = useState(false)
-  const [phoneNumber, setPhoneNumber]       = useState('')
-  const [newListingAlerts, setNewListingAlerts] = useState(true)
-  const [priceDropAlerts, setPriceDropAlerts]   = useState(true)
+  const initial = loadPreferences()
+  const [city, setCity]                     = useState(initial.city)
+  const [radius, setRadius]                 = useState(initial.radius)
+  const [selectedTypes, setSelectedTypes]   = useState<string[]>(initial.propertyTypes)
+  const [goals, setGoals]                   = useState<string[]>(initial.goals)
+  const [budget, setBudget]                 = useState(initial.budget)
+  const [minScore, setMinScore]             = useState(initial.minScore)
+  const [emailAlerts, setEmailAlerts]       = useState(initial.emailAlerts)
+  const [email, setEmail]                   = useState(initial.email)
+  const [smsAlerts, setSmsAlerts]           = useState(initial.smsAlerts)
+  const [whatsappAlerts, setWhatsappAlerts] = useState(initial.whatsappAlerts)
+  const [phoneNumber, setPhoneNumber]       = useState(initial.phoneNumber)
+  const [newListingAlerts, setNewListingAlerts] = useState(initial.newListingAlerts)
+  const [priceDropAlerts, setPriceDropAlerts]   = useState(initial.priceDropAlerts)
   const [saved, setSaved]                   = useState(false)
 
   function toggleType(v: string) {
     setSelectedTypes(prev =>
-      prev.includes(v) ? prev.filter(t => t !== v) : [...prev, v]
+      prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v]
     )
   }
 
+  function current(): Preferences {
+    return {
+      city, radius, budget, propertyTypes: selectedTypes, goals, minScore,
+      emailAlerts, email, smsAlerts, whatsappAlerts, phoneNumber,
+      newListingAlerts, priceDropAlerts,
+    }
+  }
+
+  // Validation — only nags about a contact when its channel is actually on.
+  const emailError = emailAlerts && email.trim() !== '' && !EMAIL_RE.test(email.trim())
+  const emailMissing = emailAlerts && email.trim() === ''
+  const phoneNeeded = (smsAlerts || whatsappAlerts) && digits(phoneNumber).length < 10
+  const canSave = !emailError && !phoneNeeded
+
   function handleSave() {
+    if (!canSave) return
+    savePreferences(current())
     setSaved(true)
     setTimeout(() => setSaved(false), 2500)
+  }
+
+  function applyToSearch() {
+    savePreferences(current())
+    const qs = preferencesToSearchParams(current())
+    navigate(qs ? `/properties?${qs}` : '/properties')
   }
 
   return (
@@ -82,15 +101,25 @@ export default function Settings() {
           <h1 className="text-2xl font-bold text-ink">{t('settings_title')}</h1>
           <p className="text-sm text-muted mt-0.5">Customize your investment search preferences and alert delivery.</p>
         </div>
-        <button
-          onClick={handleSave}
-          className="btn-primary shrink-0"
-        >
-          {saved
-            ? <><CheckCircle2 size={15} /> Saved!</>
-            : 'Save preferences'
-          }
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={applyToSearch}
+            className="btn-ghost"
+            title="Save and open the Properties list filtered by these preferences"
+          >
+            <Search size={15} /> Apply to search
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={!canSave}
+            className="btn-primary disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {saved
+              ? <><CheckCircle2 size={15} /> Saved!</>
+              : 'Save preferences'
+            }
+          </button>
+        </div>
       </div>
 
       {/* ── Two-column layout ────────────────────────────────────────────── */}
@@ -171,35 +200,9 @@ export default function Settings() {
             </div>
           </SectionCard>
 
-          {/* Investment strategy */}
+          {/* Investment goal — multi-select dropdown */}
           <SectionCard title="Investment Goal" icon={<Home size={14} />}>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {STRATEGIES.map(s => {
-                const Icon = s.icon
-                const active = strategy === s.value
-                return (
-                  <button
-                    key={s.value}
-                    onClick={() => setStrategy(s.value)}
-                    className={clsx(
-                      'p-4 rounded-xl border text-left transition-all',
-                      active
-                        ? 'border-accent bg-accent/8 ring-1 ring-accent/25'
-                        : 'border-surface-border bg-white hover:border-accent/40 hover:bg-surface-hover',
-                    )}
-                  >
-                    <div className={clsx(
-                      'w-8 h-8 rounded-lg flex items-center justify-center mb-3',
-                      active ? 'bg-accent/15' : 'bg-surface',
-                    )}>
-                      <Icon size={16} className={active ? 'text-accent' : 'text-muted'} />
-                    </div>
-                    <p className="text-sm font-bold text-ink">{s.label}</p>
-                    <p className="text-xs text-muted mt-1 leading-snug">{s.desc}</p>
-                  </button>
-                )
-              })}
-            </div>
+            <GoalDropdown selected={goals} onChange={setGoals} />
           </SectionCard>
         </div>
 
@@ -252,6 +255,20 @@ export default function Settings() {
                 onChange={setEmailAlerts}
                 icon={<Mail size={14} className="text-accent" />}
               />
+              {emailAlerts && (
+                <label className="block">
+                  <span className="text-xs font-semibold text-muted uppercase tracking-wider block mb-2">Email address</span>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    placeholder="you@example.com"
+                    className={clsx('input', (emailError || emailMissing) && 'border-score-market ring-1 ring-score-market/30')}
+                  />
+                  {emailError && <p className="text-xs text-score-market mt-1.5">Enter a valid email address.</p>}
+                  {emailMissing && <p className="text-xs text-muted mt-1.5">Add an email to receive alerts.</p>}
+                </label>
+              )}
 
               <div className="pt-3 border-t border-surface-border space-y-3">
                 <label className="block">
@@ -285,9 +302,9 @@ export default function Settings() {
                   icon={<MessageCircle size={14} className="text-green-500" />}
                 />
 
-                {(smsAlerts || whatsappAlerts) && !phoneNumber && (
+                {phoneNeeded && (
                   <p className="text-xs text-score-market bg-score-market/10 border border-score-market/30 rounded-lg px-3 py-2">
-                    Enter a phone number above to activate.
+                    Enter a valid phone number above to activate SMS/WhatsApp.
                   </p>
                 )}
               </div>
@@ -372,6 +389,86 @@ function ToggleRow({ label, sub, value, onChange, icon }: {
           value ? 'translate-x-5' : 'translate-x-0.5',
         )} />
       </button>
+    </div>
+  )
+}
+
+// ── Investment-goal multi-select dropdown ─────────────────────────────────────
+
+function GoalDropdown({ selected, onChange }: {
+  selected: string[]
+  onChange: (v: string[]) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    function onDown(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [open])
+
+  function toggle(v: string) {
+    onChange(selected.includes(v) ? selected.filter(x => x !== v) : [...selected, v])
+  }
+
+  const summary = selected.length === 0
+    ? 'Select one or more goals…'
+    : GOALS.filter(g => selected.includes(g.value)).map(g => g.label).join(', ')
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between gap-2 px-4 py-3 rounded-xl border border-surface-border bg-white text-left hover:border-accent/40 transition-colors"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        <span className={clsx('text-sm truncate', selected.length ? 'text-ink font-medium' : 'text-muted')}>
+          {summary}
+        </span>
+        <ChevronDown size={16} className={clsx('text-muted shrink-0 transition-transform', open && 'rotate-180')} />
+      </button>
+
+      {open && (
+        <div className="absolute z-20 mt-2 w-full rounded-xl border border-surface-border bg-white shadow-lg overflow-hidden" role="listbox">
+          {GOALS.map(g => {
+            const Icon = g.icon
+            const active = selected.includes(g.value)
+            return (
+              <button
+                key={g.value}
+                type="button"
+                onClick={() => toggle(g.value)}
+                className={clsx(
+                  'w-full flex items-center gap-3 px-4 py-3 text-left transition-colors',
+                  active ? 'bg-accent/8' : 'hover:bg-surface-hover',
+                )}
+                role="option"
+                aria-selected={active}
+              >
+                <div className={clsx('w-8 h-8 rounded-lg flex items-center justify-center shrink-0', active ? 'bg-accent/15' : 'bg-surface')}>
+                  <Icon size={16} className={active ? 'text-accent' : 'text-muted'} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-bold text-ink">{g.label}</p>
+                  <p className="text-xs text-muted leading-snug">{g.desc}</p>
+                </div>
+                <span className={clsx(
+                  'w-5 h-5 rounded-md border flex items-center justify-center shrink-0',
+                  active ? 'bg-accent border-accent' : 'border-surface-border',
+                )}>
+                  {active && <Check size={13} className="text-white" />}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
