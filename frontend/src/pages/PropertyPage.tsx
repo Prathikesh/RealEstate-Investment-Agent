@@ -1476,11 +1476,16 @@ function currentUnits(prop: PropertyDetail): number {
 // Deliberately NOT showing "zone area" — a zone polygon covers many properties,
 // so that number would look like it's about this property when it isn't.
 function MeasurementsStrip({ prop, z }: { prop: PropertyDetail; z: NonNullable<PropertyDetail['zoning']> }) {
+  // Prefer the scraped lot size; fall back to the official assessment-roll lot
+  // (same figure the buildable estimate uses), converting m² → sqft.
+  const lotFromRecord = z.estimate_lot_m2 != null ? Math.round(z.estimate_lot_m2 * 10.7639) : null
+  const lotSqft = prop.lot_sqft ?? lotFromRecord
+  const lotIsOfficial = prop.lot_sqft == null && lotFromRecord != null
   return (
     <div className="grid grid-cols-3 gap-2">
       <div className="rounded-xl border border-surface-border p-3 text-center">
-        <p className="text-lg font-bold tabular-nums text-ink">{prop.lot_sqft?.toLocaleString() ?? '—'}</p>
-        <p className="text-[11px] text-muted mt-0.5">lot sqft</p>
+        <p className="text-lg font-bold tabular-nums text-ink">{lotSqft?.toLocaleString() ?? '—'}</p>
+        <p className="text-[11px] text-muted mt-0.5">lot sqft{lotIsOfficial && <span className="text-accent"> · official</span>}</p>
       </div>
       <div className="rounded-xl border border-surface-border p-3 text-center">
         <p className="text-lg font-bold tabular-nums text-ink">{prop.sqft_total?.toLocaleString() ?? '—'}</p>

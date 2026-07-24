@@ -12,6 +12,26 @@ import { fetchZoningBoundary } from '../api'
 
 const ACCENT = '#7c3aed'
 
+// Walk a GeoJSON Polygon/MultiPolygon and return its [[minLng,minLat],[maxLng,maxLat]]
+// bounding box, so we can frame the zone even when the property has no geocoded point.
+function geometryBounds(geom: any): [[number, number], [number, number]] | null {
+  if (!geom?.coordinates) return null
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  const visit = (c: any) => {
+    if (typeof c[0] === 'number') {
+      const [x, y] = c
+      if (x < minX) minX = x
+      if (x > maxX) maxX = x
+      if (y < minY) minY = y
+      if (y > maxY) maxY = y
+    } else {
+      c.forEach(visit)
+    }
+  }
+  visit(geom.coordinates)
+  return minX === Infinity ? null : [[minX, minY], [maxX, maxY]]
+}
+
 export default function ZoningMap({ propertyId }: { propertyId: string }) {
   const { data, isLoading, error } = useQuery({
     queryKey: ['zoning-boundary', propertyId],
@@ -24,7 +44,12 @@ export default function ZoningMap({ propertyId }: { propertyId: string }) {
 
   useEffect(() => {
     if (!data || !containerRef.current || mapRef.current) return
-    const [lng, lat] = data.property_point?.coordinates ?? [0, 0]
+    const bounds = geometryBounds(data.zone_geometry)
+    // Prefer the property's own point; otherwise fall back to the zone's centre so
+    // the map never lands on null-island when a listing has no geocoded location.
+    const point = data.property_point?.coordinates
+    const [lng, lat] = point
+      ?? (bounds ? [(bounds[0][0] + bounds[1][0]) / 2, (bounds[0][1] + bounds[1][1]) / 2] : [-73.7, 45.6])
 
     const map = new maplibregl.Map({
       container: containerRef.current,
@@ -40,6 +65,18 @@ export default function ZoningMap({ propertyId }: { propertyId: string }) {
     map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left')
 
     map.on('load', () => {
+      // The map often mounts inside a freshly-shown tab before its container has
+      // final dimensions, which leaves it stuck at world zoom. Resize to pick up
+      // the real size, then explicitly frame the property/zone so we always land
+      // on the right place at street level (keeping the 3D tilt).
+      map.resize()
+      if (point) {
+        const pad = 0.0016 // ~150m box around the property → tight street-level view
+        map.fitBounds([[point[0] - pad, point[1] - pad], [point[0] + pad, point[1] + pad]],
+          { pitch: 55, bearing: -18, duration: 0 })
+      } else if (bounds) {
+        map.fitBounds(bounds, { padding: 50, pitch: 55, bearing: -18, maxZoom: 16.8, duration: 0 })
+      }
       // find the vector source in the loaded style (openfreemap uses "openmaptiles")
       const style = map.getStyle()
       const vecSource = Object.keys(style.sources).find(id => (style.sources[id] as any).type === 'vector')
