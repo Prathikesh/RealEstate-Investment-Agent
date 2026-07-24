@@ -148,7 +148,7 @@ export default function PropertyPage() {
   const pricePerSqft = derivedPricePerSqft(prop)
 
   return (
-    <div className="p-6 space-y-5 max-w-[1400px] animate-slide-up">
+    <div className="p-6 space-y-5 max-w-[1400px] mx-auto animate-slide-up">
 
       {/* Back */}
       <Link
