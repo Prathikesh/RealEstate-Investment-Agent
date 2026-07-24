@@ -71,6 +71,12 @@ export interface ZoningInfo {
   decode_table_page:   number | null
   permitted_tiers:     Record<string, string[]> | null
   source_document_url: string | null
+  estimated_max_units: number | null
+  estimate_method:     string | null   // use_permission | envelope | non_residential
+  max_coverage_pct:    number | null
+  max_storeys:         number | null
+  estimate_lot_m2:     number | null
+  estimate_lot_source: string | null   // assessment_roll | listing
 }
 
 export interface MarketBenchmarkInfo {
@@ -102,6 +108,22 @@ export interface RebuildEconomicsInfo {
   net_upside:                     number | null
   is_open_ended_target:           boolean
   confidence:                     string
+}
+
+export interface ConstraintFlag {
+  type:        string   // agricultural | flood | heritage
+  name:        string | null
+  explanation: string | null
+  source_url:  string | null
+}
+
+export interface AssessmentInfo {
+  lot_area_m2:   number | null
+  num_dwellings: number | null
+  frontage_m:    number | null
+  year_built:    number | null
+  roll_year:     string | null
+  source_url:    string | null
 }
 
 export interface PropertyDetail extends PropertyCard {
@@ -144,6 +166,8 @@ export interface PropertyDetail extends PropertyCard {
   zoning: ZoningInfo | null
   rebuild_economics: RebuildEconomicsInfo | null
   market_benchmark: MarketBenchmarkInfo | null
+  assessment: AssessmentInfo | null
+  constraints: ConstraintFlag[] | null
 }
 
 export interface PropertyListResponse {

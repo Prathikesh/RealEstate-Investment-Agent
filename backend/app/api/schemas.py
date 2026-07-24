@@ -42,6 +42,24 @@ class CrossSitePrice(BaseModel):
     agency_name:  Optional[str] = None
 
 
+class ConstraintFlag(BaseModel):
+    """A development deal-killer overlay the property falls inside."""
+    type:        str            # agricultural | flood | heritage
+    name:        Optional[str] = None
+    explanation: Optional[str] = None
+    source_url:  Optional[str] = None
+
+
+class AssessmentInfo(BaseModel):
+    """Official record from Quebec's rôle d'évaluation foncière (authoritative)."""
+    lot_area_m2:   Optional[float] = None
+    num_dwellings: Optional[int]   = None
+    frontage_m:    Optional[float] = None
+    year_built:    Optional[int]   = None
+    roll_year:     Optional[str]   = None
+    source_url:    Optional[str]   = None
+
+
 class PropertyCard(BaseModel):
     """Compact property representation for list/dashboard views."""
     model_config = ConfigDict(from_attributes=True)
@@ -130,6 +148,14 @@ class ZoningInfo(BaseModel):
     decode_table_page:   Optional[int] = None
     permitted_tiers:     Optional[dict[str, list[str]]] = None
     source_document_url: Optional[str] = None
+
+    # Honest per-property buildable estimate (see agent/buildable.py)
+    estimated_max_units: Optional[int] = None
+    estimate_method:     Optional[str] = None   # use_permission | envelope | non_residential
+    max_coverage_pct:    Optional[float] = None
+    max_storeys:         Optional[int] = None
+    estimate_lot_m2:     Optional[float] = None   # lot area the estimate used
+    estimate_lot_source: Optional[str] = None     # "assessment_roll" | "listing"
 
 
 class RebuildEconomicsInfo(BaseModel):
@@ -235,6 +261,8 @@ class PropertyDetail(BaseModel):
 
     zoning: Optional[ZoningInfo] = None
     rebuild_economics: Optional[RebuildEconomicsInfo] = None
+    assessment: Optional[AssessmentInfo] = None
+    constraints: Optional[list[ConstraintFlag]] = None
     market_benchmark: Optional[dict] = None
 
     @field_validator("property_type", mode="before")

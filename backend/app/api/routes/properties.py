@@ -18,6 +18,8 @@ from sqlalchemy import func, select, distinct, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.agent.buildable import estimate_max_units
+from app.agent.constraint_matcher import CONSTRAINT_EXPLAIN
 from app.agent.constants import SOURCES
 from app.agent.full_analysis import run_full_analysis
 from app.agent.pipeline import InvestmentPipeline
@@ -29,7 +31,7 @@ from app.api.schemas import (
     NeighbourhoodContextSchema, PropertyCard, PropertyDetail, PropertyListResponse,
     RenovationROISchema, RenovationScenarioSchema, RiskAssessmentSchema, RiskItemSchema,
     ScoreResultSchema, StatsResponse, FiveYearProjectionSchema, YearSnapshotSchema,
-    ZoningInfo, RebuildEconomicsInfo,
+    ZoningInfo, RebuildEconomicsInfo, AssessmentInfo, ConstraintFlag,
 )
 from app.models.property import Property, PropertyStatus, PropertyType, ScoreCategory
 from app.models.source import PropertySource
@@ -77,12 +79,26 @@ def _source_document_url(city: str, decode_table_page: Optional[int]) -> Optiona
     return None
 
 
+def _property_lot_m2(prop: Property) -> tuple[Optional[float], Optional[str]]:
+    """Best available lot area in m² — prefer the official assessment roll."""
+    ad = prop.assessment_data or {}
+    if ad.get("lot_area_m2"):
+        return float(ad["lot_area_m2"]), "assessment_roll"
+    if prop.lot_sqft:
+        return float(prop.lot_sqft) / 10.7639, "listing"
+    return None, None
+
+
 def _build_zoning_info(prop: Property) -> Optional[ZoningInfo]:
     zone = prop.zoning_zone
     if not zone:
         return None
     rules = zone.rules or {}
     decode_table_page = rules.get("decode_table_page")
+
+    lot_m2, lot_source = _property_lot_m2(prop)
+    est = estimate_max_units(lot_m2, rules)
+
     return ZoningInfo(
         zone_code=zone.zone_code,
         city=zone.city,
@@ -98,6 +114,12 @@ def _build_zoning_info(prop: Property) -> Optional[ZoningInfo]:
         decode_table_page=decode_table_page,
         permitted_tiers=rules.get("permitted_tiers"),
         source_document_url=_source_document_url(zone.city, decode_table_page),
+        estimated_max_units=est.get("units"),
+        estimate_method=est.get("method"),
+        max_coverage_pct=est.get("max_coverage_pct"),
+        max_storeys=est.get("max_storeys"),
+        estimate_lot_m2=lot_m2,
+        estimate_lot_source=lot_source,
     )
 
 
@@ -216,10 +238,11 @@ async def list_properties(
         card.lowest_price_source = src_name
         card.lowest_price        = src_price
         if p.zoning_zone:
-            max_units = (p.zoning_zone.rules or {}).get("max_units")
-            if max_units is not None:
-                card.zoning_max_units = max_units
-                card.zoning_upside    = max_units > _current_units(p)
+            lot_m2, _ = _property_lot_m2(p)
+            est = estimate_max_units(lot_m2, p.zoning_zone.rules or {})
+            if est.get("units") is not None:
+                card.zoning_max_units = est["units"]
+                card.zoning_upside    = est["units"] > _current_units(p)
         cards.append(card)
 
     return PropertyListResponse(
@@ -379,6 +402,14 @@ async def get_property(
     detail.lowest_price         = src_price
     detail.zoning                = _build_zoning_info(prop)
     detail.rebuild_economics     = RebuildEconomicsInfo(**prop.rebuild_economics) if prop.rebuild_economics else None
+    detail.assessment            = AssessmentInfo(**prop.assessment_data) if prop.assessment_data else None
+    detail.constraints           = [
+        ConstraintFlag(
+            type=c["type"], name=c.get("name"), source_url=c.get("source_url"),
+            explanation=c.get("explanation") or CONSTRAINT_EXPLAIN.get(c["type"]),
+        )
+        for c in (prop.development_constraints or [])
+    ] or None
     return detail
 
 

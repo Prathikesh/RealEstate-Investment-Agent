@@ -27,6 +27,9 @@ from app.agent.rebuild_economics import RebuildEconomicsCalculator
 from app.agent.risk import RiskAssessment, RiskAssessor
 from app.agent.scorer import OpportunityScorer
 from app.agent.zoning_matcher import ZoningMatcher, current_units
+from app.agent.assessment_matcher import AssessmentMatcher
+from app.agent.constraint_matcher import ConstraintMatcher
+from app.agent.buildable import estimate_max_units
 from app.models.property import AnalysisConfidence, Property, ScoreCategory
 from app.models.zoning import ZoningZone
 from app.services.calc_client import analyze as calc_engine_analyze
@@ -41,6 +44,8 @@ class InvestmentPipeline:
         self.calculator       = FinancialCalculator()
         self.scorer           = OpportunityScorer()
         self.zoning_matcher   = ZoningMatcher(session)
+        self.assessment_matcher = AssessmentMatcher(session)
+        self.constraint_matcher = ConstraintMatcher(session)
         self.rebuild_calc     = RebuildEconomicsCalculator()
         self.benchmark_comparator = MarketBenchmarkComparator()
         self.brief_generator  = BriefGenerator() if generate_brief else None
@@ -143,23 +148,50 @@ class InvestmentPipeline:
             f"nbhd_mod={score.components.get('neighbourhood_modifier', 0):+.0f}"
         )
 
-        # Stage 5 — Zoning match + rebuild-to-max economics (development potential)
+        # Stage 5a — Assessment roll match (authoritative lot area + current units)
+        assessment: Optional[dict] = None
+        try:
+            assessment = await self.assessment_matcher.match(prop)
+            if assessment:
+                logger.info(
+                    f"  Assessment: lot={assessment.get('lot_area_m2')}m² "
+                    f"units={assessment.get('num_dwellings')} (roll {assessment.get('roll_year')})"
+                )
+        except Exception as exc:
+            logger.warning(f"  Assessment match failed: {exc}")
+
+        # Stage 5a2 — Development constraints (agricultural / flood / heritage deal-killers)
+        constraints: list[dict] = []
+        try:
+            constraints = await self.constraint_matcher.match(prop)
+            if constraints:
+                logger.info(f"  Constraints: {[c['type'] for c in constraints]}")
+        except Exception as exc:
+            logger.warning(f"  Constraint match failed: {exc}")
+
+        # Stage 5b — Zoning match + rebuild-to-max economics (development potential)
         zone: Optional[ZoningZone] = None
         rebuild_scenario = None
         try:
             zone = await self.zoning_matcher.match(prop)
             if zone:
-                max_units = (zone.rules or {}).get("max_units")
-                if max_units:
+                # Honest buildable estimate from the OFFICIAL lot area + reliable
+                # zone rules (coverage/storeys), not a guessed unit code.
+                lot_m2 = (prop.assessment_data or {}).get("lot_area_m2")
+                if not lot_m2 and prop.lot_sqft:
+                    lot_m2 = prop.lot_sqft / 10.7639
+                est = estimate_max_units(lot_m2, zone.rules or {})
+                target = est.get("units")
+                if target and target > current_units(prop):
                     rebuild_scenario = self.rebuild_calc.calculate(
                         prop,
-                        target_units=max_units,
+                        target_units=target,
                         current_units=current_units(prop),
-                        is_open_ended_target=bool((zone.rules or {}).get("is_open_ended")),
+                        is_open_ended_target=(est.get("method") == "envelope"),
                     )
                 logger.info(
-                    f"  Zoning: {zone.zone_code} | "
-                    f"upside={'yes' if rebuild_scenario else 'no'}"
+                    f"  Zoning: {zone.zone_code} | est_units={target} "
+                    f"({est.get('method')}) | upside={'yes' if rebuild_scenario else 'no'}"
                 )
         except Exception as exc:
             logger.warning(f"  Zoning match failed: {exc}")
@@ -180,6 +212,9 @@ class InvestmentPipeline:
         self._update_property(
             prop, comp_set, fp, score, brief_en, brief_fr, calc_fields, zone, rebuild_scenario, benchmark
         )
+        if assessment:
+            prop.assessment_data = assessment
+        prop.development_constraints = constraints or None
         return prop
 
     async def run_pending(

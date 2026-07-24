@@ -208,6 +208,15 @@ class Property(Base):
     # Cached like every other pipeline output; never computed live per request.
     rebuild_economics: Mapped[Optional[dict]] = mapped_column(JSONB)
 
+    # Matched from the official assessment roll (rôle d'évaluation foncière) —
+    # authoritative lot area + current dwelling count. {lot_area_m2, num_dwellings,
+    # frontage_m, year_built, roll_year, source_url}. Null = no roll match found.
+    assessment_data: Mapped[Optional[dict]] = mapped_column(JSONB)
+
+    # Development deal-killer overlays the property falls inside (agricultural,
+    # flood, heritage) — [{type, name, source_url}]. Empty/null = none found.
+    development_constraints: Mapped[Optional[list]] = mapped_column(JSONB)
+
     # Cap rate vs. the Colliers Cap Rate Report's institutional multifamily band
     # for this city — see agent/market_benchmark.py. Informational only; null
     # for property types/cities the report doesn't cover.

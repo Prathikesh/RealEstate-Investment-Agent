@@ -1605,11 +1605,13 @@ function PermittedTierChip({ tier, structures }: { tier: string; structures: str
 
 function ZoningExplainer({ prop, z }: { prop: PropertyDetail; z: NonNullable<PropertyDetail['zoning']> }) {
   const current = currentUnits(prop)
-  const permitted = z.max_units ?? null
+  const permitted = z.estimated_max_units ?? null
+  const isEnvelope = z.estimate_method === 'envelope'
   const hasUpside = permitted != null && permitted > current
-  const permittedLabel = permitted != null ? (z.is_open_ended ? `${permitted}+` : `${permitted}`) : null
+  const permittedLabel = permitted != null ? (isEnvelope ? `~${permitted}` : `${permitted}`) : null
   const categoryLabel = typeMilieuLabel(z.type_milieu)
   const propTypeLabel = prop.property_type.replace(/_/g, ' ')
+  const lotSqft = z.estimate_lot_m2 != null ? Math.round(z.estimate_lot_m2 * 10.7639) : null
 
   const tierEntries = z.permitted_tiers ? Object.entries(z.permitted_tiers) : []
 
@@ -1662,18 +1664,34 @@ function ZoningExplainer({ prop, z }: { prop: PropertyDetail; z: NonNullable<Pro
                   </p>
                   <p className="text-[11px] text-muted">permitted</p>
                 </div>
-                {hasUpside && (
+                {hasUpside && permitted != null && (
                   <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-score-strong/10 text-score-strong border border-score-strong/25">
                     +{permitted - current} unit{permitted - current === 1 ? '' : 's'} of upside
                   </span>
                 )}
               </div>
-              {z.contigu_permitted && <p>Row-house/contiguous form is also permitted here — often cheaper to build (shared walls).</p>}
-              {z.is_open_ended && <p className="italic mt-1">"{permittedLabel}" is a floor, not a confirmed ceiling — density rules that set the true max aren't decoded yet. Verify with the municipality.</p>}
-              {!hasUpside && <p>No development gap detected — this property is already built at or near what zoning allows.</p>}
+
+              {isEnvelope ? (
+                <p className="text-[13px]">
+                  Estimated from the buildable envelope: a{' '}
+                  <strong className="text-ink">{lotSqft != null ? `${lotSqft.toLocaleString()} sqft` : ''}</strong> lot
+                  {z.estimate_lot_source === 'assessment_roll' && <span className="text-muted"> (official record)</span>} ×{' '}
+                  <strong className="text-ink">{z.max_coverage_pct}%</strong> max coverage ×{' '}
+                  <strong className="text-ink">{z.max_storeys}</strong> storeys, at a typical unit size.
+                  This is an <strong>estimate of potential</strong>, not a permit — confirm with the municipality.
+                </p>
+              ) : (
+                <p className="text-[13px]">
+                  This zone caps residential buildings at <strong className="text-ink">{permitted} dwelling{permitted === 1 ? '' : 's'}</strong>{' '}
+                  regardless of lot size, so there's {hasUpside ? 'limited' : 'no'} added-unit potential here
+                  {current <= 1 && permitted === 1 ? ' — value would come from a rebuild or subdivision, not more units' : ''}.
+                </p>
+              )}
+              {z.contigu_permitted && <p className="mt-1">Row-house/contiguous form is also permitted here — often cheaper to build (shared walls).</p>}
+              {!hasUpside && !isEnvelope && current > 1 && <p className="mt-1">Already built at or near what zoning allows.</p>}
             </>
           ) : (
-            <p>Not enough decoded data yet to compare current vs. permitted for this zone.</p>
+            <p>Not enough data to estimate development potential for this zone yet.</p>
           )}
         </ExplainerStep>
       </div>
@@ -1740,7 +1758,7 @@ function RebuildRow({ label, hint, children }: { label: string; hint?: string; c
 
 function RebuildWorkbench({ prop, z }: { prop: PropertyDetail; z: NonNullable<PropertyDetail['zoning']> }) {
   const current = currentUnits(prop)
-  const defaultTarget = Math.max(current, z.max_units ?? current)
+  const defaultTarget = Math.max(current, z.estimated_max_units ?? current)
 
   const defaults = useMemo(() => ({
     targetUnits: String(defaultTarget),
@@ -1821,7 +1839,7 @@ function RebuildWorkbench({ prop, z }: { prop: PropertyDetail; z: NonNullable<Pr
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 divide-y divide-surface-border sm:divide-y-0">
         <div className="divide-y divide-surface-border">
-          <RebuildRow label="Units to build" hint={`currently ${current}, zoning permits ${z.max_units}${z.is_open_ended ? '+' : ''}`}>
+          <RebuildRow label="Units to build" hint={`currently ${current}, estimated potential ${z.estimate_method === 'envelope' ? '~' : ''}${z.estimated_max_units ?? '—'}`}>
             <RebuildField label="Units to build" value={targetUnits} onChange={setTargetUnits} width="w-16" />
           </RebuildRow>
           <RebuildRow label="Avg. unit size">
@@ -1924,6 +1942,39 @@ function RebuildWorkbench({ prop, z }: { prop: PropertyDetail; z: NonNullable<Pr
   )
 }
 
+const CONSTRAINT_TITLE: Record<string, string> = {
+  agricultural: 'Agricultural zone (CPTAQ)',
+  flood:        'Regulated flood zone',
+  heritage:     'Heritage-protected',
+}
+
+function DealKillerBanner({ flags }: { flags: NonNullable<PropertyDetail['constraints']> }) {
+  return (
+    <div className="rounded-xl border border-red-300 bg-red-50 p-4 space-y-3">
+      <div className="flex items-center gap-2">
+        <AlertCircle size={18} className="text-red-600 shrink-0" />
+        <h4 className="text-sm font-bold text-red-700">
+          Development constraint{flags.length > 1 ? 's' : ''} — check before counting on any upside
+        </h4>
+      </div>
+      <div className="space-y-2">
+        {flags.map(f => (
+          <div key={f.type} className="text-sm">
+            <p className="font-semibold text-red-700">{CONSTRAINT_TITLE[f.type] ?? f.type}</p>
+            <p className="text-red-900/80 leading-snug">{f.explanation}</p>
+            {f.source_url && (
+              <a href={f.source_url} target="_blank" rel="noopener noreferrer"
+                 className="inline-flex items-center gap-1 text-xs font-semibold text-red-700 hover:underline mt-0.5">
+                <ExternalLink size={11} /> official source
+              </a>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function ZoningTab({ prop }: { prop: PropertyDetail }) {
   const z = prop.zoning
 
@@ -1956,6 +2007,8 @@ function ZoningTab({ prop }: { prop: PropertyDetail }) {
         </span>
       </div>
 
+      {prop.constraints && prop.constraints.length > 0 && <DealKillerBanner flags={prop.constraints} />}
+
       {/* Left: map + real measurements  ·  Right: explainable reasoning.
           No items-start — grid stretches both columns to equal height, and the
           left card fills that height (map as flex-1) instead of leaving a gap. */}
@@ -1979,7 +2032,65 @@ function ZoningTab({ prop }: { prop: PropertyDetail }) {
         <ZoningExplainer prop={prop} z={z} />
       </div>
 
-      {z.max_units != null && <RebuildWorkbench prop={prop} z={z} />}
+      {prop.assessment && <OfficialRecordsCard a={prop.assessment} listedUnits={prop.unit_count} propType={prop.property_type} />}
+
+      {z.estimated_max_units != null && z.estimated_max_units > currentUnits(prop) && <RebuildWorkbench prop={prop} z={z} />}
+    </div>
+  )
+}
+
+function OfficialRecordsCard({ a, listedUnits, propType }: {
+  a: NonNullable<PropertyDetail['assessment']>; listedUnits: number | null; propType: string
+}) {
+  const lotSqft = a.lot_area_m2 != null ? Math.round(a.lot_area_m2 * 10.7639) : null
+  const listed = listedUnits ?? UNIT_COUNT_BY_TYPE[propType] ?? null
+  const correction = a.num_dwellings != null && listed != null && a.num_dwellings !== listed
+
+  const Stat = ({ label, value, sub }: { label: string; value: string; sub?: string }) => (
+    <div className="rounded-xl border border-surface-border p-3">
+      <p className="text-[11px] text-muted mb-0.5">{label}</p>
+      <p className="text-lg font-bold tabular-nums text-ink leading-tight">{value}</p>
+      {sub && <p className="text-[11px] text-muted mt-0.5">{sub}</p>}
+    </div>
+  )
+
+  return (
+    <div className="card space-y-4">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h3 className="text-sm font-bold text-ink">Official municipal records</h3>
+        <span className="px-2 py-0.5 rounded-lg text-xs font-semibold border bg-score-strong/10 text-score-strong border-score-strong/25">
+          Government-verified
+        </span>
+      </div>
+      <p className="text-xs text-muted">
+        From Quebec's property assessment roll (rôle d'évaluation foncière) — the authoritative source
+        for lot size and current dwelling count, independent of the listing.
+      </p>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <Stat label="Lot area" value={lotSqft != null ? `${lotSqft.toLocaleString()} sqft` : '—'}
+              sub={a.lot_area_m2 != null ? `${Math.round(a.lot_area_m2).toLocaleString()} m²` : undefined} />
+        <Stat label="Current dwellings" value={a.num_dwellings != null ? String(a.num_dwellings) : '—'} />
+        <Stat label="Frontage" value={a.frontage_m != null ? `${a.frontage_m.toFixed(1)} m` : '—'} />
+        <Stat label="Year built" value={a.year_built != null ? String(a.year_built) : '—'} />
+      </div>
+
+      {correction && (
+        <p className="text-xs text-score-market bg-score-market/10 border border-score-market/25 rounded-lg px-3 py-2">
+          Note: the listing implies {listed} unit{listed === 1 ? '' : 's'}, but the official record shows{' '}
+          <strong>{a.num_dwellings}</strong> — worth verifying which is current.
+        </p>
+      )}
+
+      <p className="text-xs text-muted pt-1 border-t border-surface-border">
+        Source: Rôle d'évaluation foncière {a.roll_year}
+        {a.source_url && (
+          <> · <a href={a.source_url} target="_blank" rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-accent hover:underline">
+            <ExternalLink size={11} /> official data
+          </a></>
+        )}
+      </p>
     </div>
   )
 }
