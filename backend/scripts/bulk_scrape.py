@@ -141,6 +141,7 @@ async def scrape_realtor(
     target: int = 100,
     dry_run: bool = False,
     fetch_details: bool = True,
+    city: str = "montreal",
 ) -> dict:
     """
     Scrape Realtor.ca via API.
@@ -152,11 +153,12 @@ async def scrape_realtor(
     from app.scrapers.realtor import API_URL, API_HEADERS
 
     records_per_page = 50
-    # Montreal only for prototype — best comparable density
-    target_cities = ["montreal"]
+    # Which city bbox(es) to scrape — defaults to Montreal, overridable via --realtor-city.
+    target_cities = [city] if city else ["montreal"]
     cities = {k: v for k, v in QUEBEC_CITY_BBOXES.items() if k in target_cities}
     if not cities:
-        cities = QUEBEC_CITY_BBOXES  # fallback to all
+        logger.warning(f"Unknown realtor city '{city}'. Options: {list(QUEBEC_CITY_BBOXES)}. Falling back to Montreal.")
+        cities = {"montreal": QUEBEC_CITY_BBOXES["montreal"]}
 
     logger.info(
         f"Realtor plan: cities={list(cities.keys())} target={target}"
@@ -402,6 +404,7 @@ async def main(
     realtor_target: int = 100,
     remax_target: int = 100,
     centris_city: str = "montreal",
+    realtor_city: str = "montreal",
     remax_category: str = "multi_family",
     dry_run: bool = False,
     centris_details: bool = True,
@@ -443,6 +446,7 @@ async def main(
             target=realtor_target,
             dry_run=dry_run,
             fetch_details=realtor_details,
+            city=realtor_city,
         )
         if not dry_run:
             totals["new"]     += result.get("new", 0)
@@ -490,6 +494,9 @@ if __name__ == "__main__":
     parser.add_argument("--remax-target",    type=int, default=100)
     parser.add_argument("--centris-city",    type=str, default="montreal",
                         help="City slug for Centris search (default: montreal). Pass empty for province-wide.")
+    parser.add_argument("--realtor-city",    type=str, default="montreal",
+                        help="City bbox for Realtor.ca: montreal | laval | longueuil | south_shore | "
+                             "quebec_city | sherbrooke | gatineau | trois_rivieres (default: montreal).")
     parser.add_argument("--remax-category",  type=str, default="multi_family",
                         choices=["multi_family", "single_family", "condo"],
                         help="ReMax property category (default: multi_family)")
@@ -510,6 +517,7 @@ if __name__ == "__main__":
         realtor_target=args.realtor_target,
         remax_target=args.remax_target,
         centris_city=args.centris_city,
+        realtor_city=args.realtor_city,
         remax_category=args.remax_category,
         dry_run=args.dry_run,
         centris_details=not args.no_details,
