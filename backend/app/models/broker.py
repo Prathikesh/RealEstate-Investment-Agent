@@ -1,6 +1,7 @@
 """
-Broker — a subscriber to the platform. Authenticated via Google OAuth.
-Preferences drive which properties they see and how they're alerted.
+Broker — a subscriber to the platform. Authenticates via email/password
+and/or Google OAuth (app.auth). Preferences drive which properties they
+see and how they're alerted.
 """
 import enum
 import uuid
@@ -30,6 +31,11 @@ class InvestmentStrategy(str, enum.Enum):
     BOTH = "both"
 
 
+class UserRole(str, enum.Enum):
+    USER = "user"
+    ADMIN = "admin"
+
+
 class Language(str, enum.Enum):
     FR = "fr"
     EN = "en"
@@ -42,10 +48,12 @@ class Broker(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    google_id: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    # Nullable: an account may sign in with Google, a password, or both.
+    google_id: Mapped[Optional[str]] = mapped_column(String(100), unique=True, nullable=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     name: Mapped[Optional[str]] = mapped_column(String(200))
     avatar_url: Mapped[Optional[str]] = mapped_column(String(500))
+    password_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
     # ── Location Preferences ──────────────────────────────────────────────────
     # PostGIS POINT — center of the broker's monitoring zone
@@ -81,12 +89,15 @@ class Broker(Base):
     watched_property_ids: Mapped[Optional[list]] = mapped_column(JSONB, default=list)
 
     # ── Account State ─────────────────────────────────────────────────────────
+    role: Mapped[UserRole] = mapped_column(SAEnum(UserRole), default=UserRole.USER, nullable=False)
+    is_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     onboarding_complete: Mapped[bool] = mapped_column(Boolean, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     invited_by: Mapped[Optional[str]] = mapped_column(String(255))
 
     # ── Timestamps ────────────────────────────────────────────────────────────
     last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    last_active_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

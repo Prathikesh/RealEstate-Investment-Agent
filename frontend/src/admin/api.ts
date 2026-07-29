@@ -1,0 +1,98 @@
+import { http } from '../api'
+
+export type Engagement = 'hot_lead' | 'warm' | 'exploring' | 'cold'
+
+export interface UserSummary {
+  id: string
+  email: string
+  name: string | null
+  role: 'user' | 'admin'
+  created_at: string
+  last_login_at: string | null
+  last_active_at: string | null
+  is_online: boolean
+  properties_viewed: number
+  properties_analyzed: number
+  top_page: string | null
+  engagement: Engagement
+}
+
+export interface PageViewSummary {
+  path: string
+  view_count: number
+}
+
+export interface PropertyViewSummary {
+  property_id: string
+  full_address: string | null
+  city: string | null
+  score: number | null
+  view_count: number
+}
+
+export interface SearchLogEntry {
+  filters: Record<string, unknown>
+  created_at: string
+}
+
+export interface ActivityEntry {
+  event_type: 'login' | 'page_view' | 'search' | 'property_view' | 'analysis_view'
+  payload: Record<string, unknown>
+  property_address: string | null
+  created_at: string
+  user_name: string | null
+  user_email: string | null
+}
+
+export interface UserDetail {
+  id: string
+  email: string
+  name: string | null
+  role: 'user' | 'admin'
+  created_at: string
+  last_login_at: string | null
+  last_active_at: string | null
+  is_online: boolean
+  top_pages: PageViewSummary[]
+  viewed_properties: PropertyViewSummary[]
+  analyzed_properties: PropertyViewSummary[]
+  recent_searches: SearchLogEntry[]
+  recent_activity: ActivityEntry[]
+}
+
+export interface ActiveUserSummary {
+  id: string
+  email: string
+  name: string | null
+  event_count: number
+}
+
+export interface AdminOverview {
+  total_users: number
+  online_now: number
+  signups_this_week: number
+  most_active_users: ActiveUserSummary[]
+  most_viewed_properties: PropertyViewSummary[]
+  most_analyzed_properties: PropertyViewSummary[]
+  top_pages: PageViewSummary[]
+}
+
+export async function fetchAdminUsers(): Promise<UserSummary[]> {
+  const { data } = await http.get<UserSummary[]>('/admin/users')
+  return data
+}
+
+export async function fetchAdminUserDetail(id: string): Promise<UserDetail> {
+  const { data } = await http.get<UserDetail>(`/admin/users/${id}`)
+  return data
+}
+
+export async function fetchAdminOverview(): Promise<AdminOverview> {
+  const { data } = await http.get<AdminOverview>('/admin/analytics/overview')
+  return data
+}
+
+export async function fetchActivityFeed(limit = 20): Promise<ActivityEntry[]> {
+  const { data } = await http.get<ActivityEntry[]>('/admin/analytics/activity-feed', { params: { limit } })
+  return data
+}

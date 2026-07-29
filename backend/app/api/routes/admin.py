@@ -1,6 +1,8 @@
 """
 Admin endpoints — manual triggers for scrape + pipeline jobs.
-Not protected by auth (internal use only, no external exposure).
+Every route on this router requires an authenticated admin (see
+app.auth.deps.require_admin) — applied once at the router level so new
+routes added here are protected automatically.
 
 POST /api/admin/pipeline  — run AI pipeline on all needs_reanalysis=True properties
 POST /api/admin/scrape    — run one scrape cycle immediately
@@ -14,11 +16,12 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
+from app.auth.deps import require_admin
 from app.agent.pipeline import InvestmentPipeline
 from app.models.property import Property
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/admin", tags=["admin"])
+router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
 
 @router.get("/status")

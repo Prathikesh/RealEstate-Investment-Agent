@@ -24,7 +24,11 @@ from app.agent.constants import SOURCES
 from app.agent.full_analysis import run_full_analysis
 from app.agent.pipeline import InvestmentPipeline
 from app.agent.zoning_matcher import current_units as _current_units
+from app.analytics.models import EventType
+from app.analytics.service import log_event
 from app.api.deps import get_db
+from app.auth.deps import get_current_user_optional
+from app.models.broker import Broker
 from app.api.schemas import (
     ComparablePropertySchema,
     CrossSitePrice, DataSourceSchema, FinancialProfileSchema, FullAnalysisResponse,
@@ -160,6 +164,7 @@ async def list_properties(
     page:      int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
+    user: Optional[Broker] = Depends(get_current_user_optional),
 ) -> PropertyListResponse:
 
     stmt = select(Property).where(Property.asking_price.isnot(None))
@@ -251,6 +256,19 @@ async def list_properties(
                 card.zoning_max_units = est["units"]
                 card.zoning_upside    = est["units"] > _current_units(p)
         cards.append(card)
+
+    if user:
+        filters_used = {
+            k: v for k, v in {
+                "city": city, "mls_number": mls_number, "property_type": property_type,
+                "score_min": score_min if score_min > 0 else None,
+                "score_max": score_max if score_max < 100 else None,
+                "price_min": price_min, "price_max": price_max, "status": status,
+                "multi_site": multi_site, "has_sqft": has_sqft, "listed_within": listed_within,
+                "sort_by": sort_by if sort_by != "score" else None,
+            }.items() if v is not None
+        }
+        await log_event(db, user.id, EventType.SEARCH, filters_used)
 
     return PropertyListResponse(
         items=cards,
@@ -392,6 +410,7 @@ async def get_map_data(
 async def get_property(
     property_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
+    user: Optional[Broker] = Depends(get_current_user_optional),
 ) -> PropertyDetail:
     prop = await db.scalar(
         select(Property)
@@ -400,6 +419,9 @@ async def get_property(
     )
     if not prop:
         raise HTTPException(status_code=404, detail="Property not found")
+
+    if user:
+        await log_event(db, user.id, EventType.PROPERTY_VIEW, {"property_id": str(property_id)})
 
     src_name, src_price = _lowest_price_source(prop.sources)
     detail = PropertyDetail.model_validate(prop)
@@ -650,6 +672,7 @@ async def trigger_analysis(
 async def get_full_analysis(
     property_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
+    user: Optional[Broker] = Depends(get_current_user_optional),
 ) -> FullAnalysisResponse:
     """
     Run a comprehensive investment analysis on-demand.
@@ -664,6 +687,9 @@ async def get_full_analysis(
     except Exception as exc:
         logger.error(f"Full analysis failed for {property_id}: {exc}", exc_info=True)
         raise HTTPException(status_code=500, detail="Analysis computation failed")
+
+    if user:
+        await log_event(db, user.id, EventType.ANALYSIS_VIEW, {"property_id": str(property_id)})
 
     fp = result.financial
     sc = result.score

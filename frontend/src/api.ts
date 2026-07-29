@@ -2,7 +2,10 @@ import axios from 'axios'
 
 export const API_BASE = import.meta.env.VITE_API_URL ?? '/api'
 
-const http = axios.create({ baseURL: API_BASE })
+// withCredentials: auth cookies (httpOnly access/refresh tokens) are
+// cross-origin in production (separate Railway subdomains for API/frontend),
+// so they must be explicitly opted into on every request.
+export const http = axios.create({ baseURL: API_BASE, withCredentials: true })
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 

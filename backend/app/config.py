@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     app_base_url: str = "http://localhost:8000"
     frontend_url: str = "http://localhost:3000"
 
+    # Admin bootstrap — creates one admin account on startup if it doesn't
+    # exist yet. Empty = skipped (no admin account is auto-created).
+    admin_bootstrap_email: str = ""
+    admin_bootstrap_password: str = ""
+
     # Email
     mail_username: str = ""
     mail_password: str = ""

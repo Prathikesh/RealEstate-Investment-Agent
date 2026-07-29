@@ -26,6 +26,8 @@ authlib==1.4.0
 httpx==0.28.1
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
+bcrypt==4.0.1            # pinned: passlib 1.7.4 can't read bcrypt>=4.1's version info (breaks password hashing)
+email-validator==2.2.0
 
 # ── Notifications ─────────────────────────────────────────────────────────────
 fastapi-mail==1.4.1

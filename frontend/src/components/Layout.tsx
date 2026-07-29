@@ -1,11 +1,13 @@
-import { NavLink, Outlet, Link } from 'react-router-dom'
+import { NavLink, Outlet, Link, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Building2, Bookmark, Settings,
-  Bell, Search, FileBarChart2, Menu, X,
+  Bell, Search, FileBarChart2, Menu, X, LogOut, ShieldCheck,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useState } from 'react'
 import { useLang } from '../context/LanguageContext'
+import { useAuth } from '../auth/AuthContext'
+import PageViewTracker from '../analytics/PageViewTracker'
 import ScrapeProgressBar from './ScrapeProgressBar'
 import CompareBar from './CompareBar'
 import { QuartisIcon } from './QuartisLogo'
@@ -40,7 +42,14 @@ function Tip({ label, children }: { label: string; children: React.ReactNode }) 
 
 export default function Layout() {
   const { lang, setLang } = useLang()
+  const { user, logout } = useAuth()
+  const navigate = useNavigate()
   const [mobileOpen, setMobileOpen] = useState(false)
+
+  async function handleLogout() {
+    await logout()
+    navigate('/login', { replace: true })
+  }
 
   return (
     <div className="flex h-screen overflow-hidden bg-surface">
@@ -94,6 +103,23 @@ export default function Layout() {
             </NavLink>
           </Tip>
 
+          {/* Admin dashboard — admins only */}
+          {user?.role === 'admin' && (
+            <Tip label="Admin Dashboard">
+              <NavLink
+                to="/admin"
+                className={({ isActive }) =>
+                  clsx(
+                    'w-10 h-10 flex items-center justify-center rounded-xl transition-all duration-150',
+                    isActive ? 'bg-accent text-white shadow-md' : 'text-muted hover:text-ink hover:bg-surface-hover',
+                  )
+                }
+              >
+                <ShieldCheck size={18} />
+              </NavLink>
+            </Tip>
+          )}
+
           {/* Settings */}
           <Tip label="Settings">
             <NavLink
@@ -107,6 +133,16 @@ export default function Layout() {
             >
               <Settings size={18} />
             </NavLink>
+          </Tip>
+
+          {/* Logout */}
+          <Tip label="Logout">
+            <button
+              onClick={handleLogout}
+              className="w-10 h-10 flex items-center justify-center rounded-xl text-muted hover:text-ink hover:bg-surface-hover transition-all duration-150"
+            >
+              <LogOut size={18} />
+            </button>
           </Tip>
 
           {/* Language toggle */}
@@ -173,6 +209,19 @@ export default function Layout() {
               >
                 <Settings size={16} /> Settings
               </NavLink>
+              {user?.role === 'admin' && (
+                <NavLink to="/admin" onClick={() => setMobileOpen(false)}
+                  className={({ isActive }) => clsx('flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all', isActive ? 'bg-accent text-white' : 'text-muted hover:text-ink hover:bg-surface-hover')}
+                >
+                  <ShieldCheck size={16} /> Admin Dashboard
+                </NavLink>
+              )}
+              <button
+                onClick={() => { setMobileOpen(false); handleLogout() }}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-muted hover:text-ink hover:bg-surface-hover transition-all"
+              >
+                <LogOut size={16} /> Logout
+              </button>
             </div>
           </div>
         </div>
@@ -180,6 +229,7 @@ export default function Layout() {
 
       {/* ── Main content ─────────────────────────────────────────────────── */}
       <main className="flex-1 overflow-y-auto min-w-0 md:pt-0 pt-14">
+        <PageViewTracker />
         <ScrapeProgressBar />
         <div className="animate-fade-in">
           <Outlet />
