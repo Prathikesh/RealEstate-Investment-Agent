@@ -1,4 +1,5 @@
 import 'leaflet/dist/leaflet.css'
+import { displayAddress } from '../lib/address'
 import { useState } from 'react'
 import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet'
 import type { MapProperty } from '../api'
@@ -124,7 +125,7 @@ export default function PropertyMapView({ properties, isLoading }: Props) {
                     <div style={{ margin: '-14px -16px 12px', overflow: 'hidden', borderRadius: '16px 16px 0 0' }}>
                       <img
                         src={p.photo}
-                        alt={p.full_address}
+                        alt={displayAddress(p)}
                         referrerPolicy="no-referrer"
                         style={{ width: '100%', height: 120, objectFit: 'cover', display: 'block' }}
                         onError={e => {
@@ -178,7 +179,7 @@ export default function PropertyMapView({ properties, isLoading }: Props) {
 
                   {/* Address */}
                   <p style={{ fontSize: 12, color: '#1E293B', fontWeight: 600, lineHeight: 1.4, marginBottom: 2 }}>
-                    {p.full_address}
+                    {displayAddress(p)}
                   </p>
                   <p style={{ fontSize: 11, color: '#94A3B8', marginBottom: 12 }}>{p.city}</p>
 

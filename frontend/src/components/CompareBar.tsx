@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom'
+import { displayAddress } from '../lib/address'
 import { X, GitCompareArrows, Building2 } from 'lucide-react'
 import { useCompare } from '../context/CompareContext'
 
@@ -35,7 +36,7 @@ export default function CompareBar() {
                   }
                 </div>
                 <div className="min-w-0 hidden sm:block">
-                  <p className="text-xs font-semibold text-ink truncate max-w-[120px]">{item.full_address}</p>
+                  <p className="text-xs font-semibold text-ink truncate max-w-[120px]">{displayAddress(item)}</p>
                   <p className="text-[10px] text-muted">{item.city}</p>
                 </div>
                 <button

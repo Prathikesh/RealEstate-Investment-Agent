@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import { displayAddress } from '../lib/address'
 import { Link } from 'react-router-dom'
 import {
   Home, Zap, TrendingUp, BarChart2, ArrowDownCircle, Activity, Globe,
@@ -251,7 +252,7 @@ export default function Dashboard() {
                   }
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm text-ink font-semibold truncate group-hover:text-accent transition-colors">{p.full_address}</p>
+                  <p className="text-sm text-ink font-semibold truncate group-hover:text-accent transition-colors">{displayAddress(p)}</p>
                   <div className="flex items-center gap-2 mt-0.5">
                     <p className="text-xs text-muted">{p.city} · {p.property_type.replace(/_/g, ' ')}</p>
                     {p.is_new && (

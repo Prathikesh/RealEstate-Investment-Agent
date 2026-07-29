@@ -1,4 +1,5 @@
 import { useState, useMemo, lazy, Suspense } from 'react'
+import { displayAddress } from '../lib/address'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -164,7 +165,7 @@ export default function PropertyPage() {
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="space-y-2">
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-lg font-bold text-ink">{prop.full_address}</h1>
+              <h1 className="text-lg font-bold text-ink">{displayAddress(prop)}</h1>
               <span className={clsx(
                 'px-2 py-0.5 rounded-lg text-xs font-semibold',
                 prop.status === 'active'        ? 'bg-score-strong/10 text-score-strong border border-score-strong/25' :
@@ -329,7 +330,7 @@ export default function PropertyPage() {
           {/* Main photo */}
           <img
             src={prop.photos[Math.min(photoIdx, prop.photos.length - 1)]}
-            alt={`${prop.full_address} — photo ${photoIdx + 1}`}
+            alt={`${displayAddress(prop)} — photo ${photoIdx + 1}`}
             className="w-full h-full object-cover transition-opacity duration-300"
             referrerPolicy="no-referrer"
             onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
@@ -2360,7 +2361,7 @@ function ComparablesTab({ prop, t }: { prop: PropertyDetail; t: (k: string) => s
                 <Link
                   to={`/properties/${c.id}`}
                   key={c.id}
-                  aria-label={`Open ${c.full_address}`}
+                  aria-label={`Open ${displayAddress(c)}`}
                   className={clsx(
                     'group block bg-white border border-surface-border rounded-2xl overflow-hidden cursor-pointer',
                     'hover:shadow-lg hover:-translate-y-1 hover:border-[#0F766E]/40 transition-all duration-250',
@@ -2372,7 +2373,7 @@ function ComparablesTab({ prop, t }: { prop: PropertyDetail; t: (k: string) => s
                     {c.photos && c.photos[0] ? (
                       <img
                         src={c.photos[0]}
-                        alt={c.full_address}
+                        alt={displayAddress(c)}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                         referrerPolicy="no-referrer"
                         onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
@@ -2408,7 +2409,7 @@ function ComparablesTab({ prop, t }: { prop: PropertyDetail; t: (k: string) => s
                   {/* Info */}
                   <div className="p-4 space-y-2">
                     <p className="text-sm font-bold text-ink leading-snug line-clamp-2 group-hover:text-[#0F766E] transition-colors">
-                      {c.full_address}
+                      {displayAddress(c)}
                     </p>
                     <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted">
                       <span className="capitalize">{c.property_type.replace(/_/g, ' ')}</span>

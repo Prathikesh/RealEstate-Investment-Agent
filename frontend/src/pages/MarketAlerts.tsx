@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { displayAddress } from '../lib/address'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -448,7 +449,7 @@ function PropertyPreviewRow({ p, prevVisited }: { p: PropertyCard; prevVisited: 
         }
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-xs font-semibold text-ink truncate group-hover:text-accent transition-colors">{p.full_address}</p>
+        <p className="text-xs font-semibold text-ink truncate group-hover:text-accent transition-colors">{displayAddress(p)}</p>
         <p className="text-[10px] text-muted">{p.city} · {timeAgo(p.first_seen_at)}</p>
       </div>
       <div className="text-right shrink-0 flex items-center gap-2">

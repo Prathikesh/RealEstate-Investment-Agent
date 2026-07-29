@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { displayAddress } from '../lib/address'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -99,7 +100,7 @@ export default function AnalysisPage() {
       <div className="card space-y-3">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
-            <h1 className="text-lg font-bold text-ink">{data.full_address}</h1>
+            <h1 className="text-lg font-bold text-ink">{displayAddress(data)}</h1>
             <p className="text-xs text-muted mt-1">
               Computed {new Date(data.computed_at).toLocaleString('en-CA')} · Results are not cached
             </p>

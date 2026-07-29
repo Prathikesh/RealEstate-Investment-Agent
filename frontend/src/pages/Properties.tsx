@@ -1,4 +1,5 @@
 import { useState, lazy, Suspense } from 'react'
+import { displayAddress } from '../lib/address'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
@@ -539,7 +540,7 @@ function ListView({
                     </td>
                     <td className="px-5 py-3 max-w-xs">
                       <Link to={`/properties/${p.id}`} className="text-ink hover:text-accent hover:underline font-medium">
-                        {p.full_address}
+                        {displayAddress(p)}
                       </Link>
                       <p className="text-xs text-muted">{p.city}</p>
                     </td>

@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { displayAddress } from '../lib/address'
 import { Building2, ArrowRight, GitCompareArrows, Camera, Bed, Bath, TrendingUp, TrendingDown, Minus, Hammer } from 'lucide-react'
 import clsx from 'clsx'
 import ScoreBadge from './ScoreBadge'
@@ -81,7 +82,7 @@ export default function PropertyCardGrid({ property: p, className }: Props) {
         {photos.length > 0 ? (
           <img
             src={photos[0]}
-            alt={p.full_address}
+            alt={displayAddress(p)}
             className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
             referrerPolicy="no-referrer"
             onError={e => {
@@ -179,7 +180,7 @@ export default function PropertyCardGrid({ property: p, className }: Props) {
 
         {/* Address */}
         <p className="text-sm text-ink font-medium leading-snug line-clamp-2 group-hover:text-accent transition-colors duration-200">
-          {p.full_address}
+          {displayAddress(p)}
         </p>
 
         {/* Specs row */}

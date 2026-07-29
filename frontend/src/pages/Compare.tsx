@@ -1,4 +1,5 @@
 import { useQueries } from '@tanstack/react-query'
+import { displayAddress } from '../lib/address'
 import { Link } from 'react-router-dom'
 import { X, Building2, ExternalLink, GitCompareArrows, ArrowLeft } from 'lucide-react'
 import clsx from 'clsx'
@@ -174,7 +175,7 @@ export default function Compare() {
                         </div>
                         {/* Address */}
                         <div>
-                          <p className="text-sm font-bold text-ink leading-tight line-clamp-2">{item.full_address}</p>
+                          <p className="text-sm font-bold text-ink leading-tight line-clamp-2">{displayAddress(item)}</p>
                           <p className="text-xs text-muted mt-0.5">{item.city}</p>
                         </div>
                         {/* Quick links */}

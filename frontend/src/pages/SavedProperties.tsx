@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { displayAddress } from '../lib/address'
 import { Link } from 'react-router-dom'
 import { Bookmark, Trash2, Building2, MapPin } from 'lucide-react'
 import clsx from 'clsx'
@@ -107,7 +108,7 @@ export default function SavedProperties() {
                   {p.photos?.[0] ? (
                     <img
                       src={p.photos[0]}
-                      alt={p.full_address}
+                      alt={displayAddress(p)}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                       referrerPolicy="no-referrer"
                       onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
@@ -141,7 +142,7 @@ export default function SavedProperties() {
                 <div>
                   <p className="text-xs text-muted capitalize">{p.property_type.replace(/_/g, ' ')}</p>
                   <Link to={`/properties/${p.id}`} className="text-sm font-bold text-ink hover:text-accent line-clamp-1 mt-0.5">
-                    {p.full_address}
+                    {displayAddress(p)}
                   </Link>
                   <div className="flex items-center gap-1 mt-0.5 text-xs text-muted">
                     <MapPin size={10} />
