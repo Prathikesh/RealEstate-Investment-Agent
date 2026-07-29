@@ -49,6 +49,10 @@ class Settings(BaseSettings):
 
     # Scraping
     scrape_interval_hours: int = 6
+    # Only ingest listings in these cities (comma-separated, deaccented lowercase).
+    # Keeps scraping aligned with our zoning coverage so every saved listing is
+    # zonable. Empty string = no restriction (keep everything).
+    target_cities: str = "montreal,laval"
 
     # Environment
     environment: str = "development"

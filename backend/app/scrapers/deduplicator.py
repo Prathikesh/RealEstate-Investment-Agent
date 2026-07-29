@@ -31,9 +31,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.property import Property, PropertyStatus, PropertyType
 from app.models.snapshot import PropertySnapshot, ScraperSource
 from app.models.source import PropertySource
+from app.config import settings
 from app.scrapers.base import RawProperty
+from app.services.quebec_address import deaccent
 
 logger = logging.getLogger(__name__)
+
+
+def in_target_cities(city: Optional[str]) -> bool:
+    """True if a listing's city is in the configured scrape scope (target_cities).
+    Keeps ingestion aligned with our zoning coverage so every saved listing is
+    zonable. Empty target_cities = keep everything."""
+    targets = {c.strip() for c in (settings.target_cities or "").split(",") if c.strip()}
+    if not targets:
+        return True
+    norm = deaccent((city or "").split("(")[0]).strip().lower()
+    return norm in targets
 
 PROPERTY_TYPE_MAP: dict[str, PropertyType] = {
     "duplex":          PropertyType.DUPLEX,
@@ -53,8 +66,15 @@ class PropertyDeduplicator:
     async def process(self, raw: RawProperty) -> tuple[Property, bool]:
         """
         Upsert one RawProperty into the database.
-        Returns (property, is_new).
+        Returns (property, is_new). Out-of-scope cities are skipped -> (None, False).
         """
+        # Only ingest listings we can fully serve (zoning coverage). A bbox can't
+        # exclude on-island suburbs, so we filter by city here — the single choke
+        # point every scrape path goes through.
+        if not in_target_cities(raw.city):
+            logger.debug(f"skip out-of-scope city: {raw.city}")
+            return None, False
+
         now = datetime.now(timezone.utc)
         changes: dict = {}
 
