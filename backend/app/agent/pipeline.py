@@ -33,6 +33,8 @@ from app.agent.buildable import estimate_max_units
 from app.models.property import AnalysisConfidence, Property, ScoreCategory
 from app.models.zoning import ZoningZone
 from app.services.calc_client import analyze as calc_engine_analyze
+from app.services.address_index import geocode_address
+from geoalchemy2.elements import WKTElement
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +65,17 @@ class InvestmentPipeline:
         Does NOT commit — caller is responsible.
         """
         logger.info(f"Pipeline starting: {prop.mls_number} — {prop.full_address}")
+
+        # Stage 0 — geocode from official address points when the source gave no
+        # coordinates (Realtor.ca ships them; Centris/ReMax don't). Without a
+        # point the zoning stage can't match a zone — this makes every scraped
+        # property zonable, not just Realtor's.
+        if prop.location is None and prop.full_address:
+            coords = geocode_address(prop.full_address)
+            if coords:
+                lat, lng = coords
+                prop.location = WKTElement(f"POINT({lng} {lat})", srid=4326)
+                logger.info(f"  Geocoded from address index → ({lat:.5f}, {lng:.5f})")
 
         # Stage 1 — comparables
         comp_set = await self.comp_finder.find(prop)
