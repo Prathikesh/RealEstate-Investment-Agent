@@ -1,8 +1,8 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { AppIcon } from '../components/QuartisLogo'
 import { useAuth } from './AuthContext'
 import { authErrorMessage } from './api'
+import AuthLayout, { Field, SubmitButton } from './AuthLayout'
 
 export default function Register() {
   const { register } = useAuth()
@@ -35,72 +35,43 @@ export default function Register() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-surface px-4">
-      <div className="w-full max-w-sm bg-white rounded-2xl shadow-card p-8">
-        <div className="flex flex-col items-center mb-6">
-          <div className="w-12 h-12 rounded-xl bg-accent flex items-center justify-center shadow-md mb-3">
-            <AppIcon size={22} className="text-white" />
-          </div>
-          <h1 className="text-xl font-black text-ink">Create your account</h1>
-          <p className="text-sm text-muted mt-1">Start tracking Quebec investment properties</p>
-        </div>
-
-        {error && (
-          <div className="mb-4 px-3 py-2 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">
-            {error}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-xs font-semibold text-muted mb-1">Name</label>
-            <input
-              type="text"
-              autoComplete="name"
-              value={name}
-              onChange={e => setName(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-surface-border text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent"
-              placeholder="Jane Doe"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-muted mb-1">Email</label>
-            <input
-              type="email"
-              required
-              autoComplete="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-surface-border text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent"
-              placeholder="you@example.com"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-muted mb-1">Password</label>
-            <input
-              type="password"
-              required
-              autoComplete="new-password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-surface-border text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent"
-              placeholder="At least 8 characters"
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={submitting}
-            className="w-full py-2.5 rounded-lg bg-accent text-white text-sm font-semibold hover:bg-accent-hover transition-colors disabled:opacity-60"
-          >
-            {submitting ? 'Creating account…' : 'Create account'}
-          </button>
-        </form>
-
-        <p className="text-center text-sm text-muted mt-6">
-          Already have an account?{' '}
+    <AuthLayout
+      eyebrow="Get started free"
+      title="Create your account"
+      subtitle="Start finding undervalued Quebec investment properties today."
+      footer={
+        <>Already have an account?{' '}
           <Link to="/login" className="text-accent font-semibold hover:underline">Sign in</Link>
-        </p>
-      </div>
-    </div>
+        </>
+      }
+    >
+      {error && (
+        <div className="mb-4 px-3.5 py-2.5 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <Field
+          label="Name" type="text" autoComplete="name"
+          value={name} onChange={e => setName(e.target.value)} placeholder="Jane Doe"
+        />
+        <Field
+          label="Email" type="email" required autoComplete="email"
+          value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com"
+        />
+        <Field
+          label="Password" type="password" required autoComplete="new-password"
+          value={password} onChange={e => setPassword(e.target.value)} placeholder="At least 8 characters"
+        />
+        <SubmitButton type="submit" disabled={submitting}>
+          {submitting ? 'Creating account…' : 'Create free account'}
+        </SubmitButton>
+      </form>
+
+      <p className="mt-4 text-center text-xs text-muted/70">
+        No credit card required · Cancel anytime
+      </p>
+    </AuthLayout>
   )
 }

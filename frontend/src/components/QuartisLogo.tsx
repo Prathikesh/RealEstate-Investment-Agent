@@ -1,25 +1,42 @@
-// Arpent — brand mark
-// "arpent" = the traditional French-Canadian land measurement unit,
-// still referenced in Quebec property records. Our ascending-bar mark
-// represents both city skylines (real estate) and analytics (bar chart).
+// Arpent — brand mark.
+// "arpent" = the traditional French-Canadian unit of land measurement, still
+// referenced in Quebec property records. The mark is a house (property) whose
+// interior rises as three ascending bars (investment analytics) — property +
+// intelligence in one glyph. Reads cleanly at 16px and on any background.
 
 interface IconProps { size?: number; className?: string }
 
 export function AppIcon({ size = 24, className = '' }: IconProps) {
-  const s = size
   return (
-    <svg width={s} height={s} viewBox="0 0 32 32" fill="none" className={className}>
-      {/* bar 1 – shortest  */}
-      <rect x="1"  y="21" width="6" height="10" rx="1.5" fill="currentColor" opacity="0.38" />
-      {/* bar 2 – medium    */}
-      <rect x="9"  y="14" width="6" height="17" rx="1.5" fill="currentColor" opacity="0.62" />
-      {/* bar 3 – tallest (centre of gravity) */}
-      <rect x="17" y="5"  width="6" height="26" rx="1.5" fill="currentColor" />
-      {/* bar 4 – medium-tall */}
-      <rect x="25" y="11" width="6" height="20" rx="1.5" fill="currentColor" opacity="0.80" />
+    <svg width={size} height={size} viewBox="0 0 32 32" fill="none" className={className} aria-hidden="true">
+      {/* roof */}
+      <path
+        d="M4.6 14.8 L16 4.8 L27.4 14.8"
+        stroke="currentColor" strokeWidth="2.9" strokeLinecap="round" strokeLinejoin="round"
+      />
+      {/* walls */}
+      <path
+        d="M7.4 13.2 V26.6 H24.6 V13.2"
+        stroke="currentColor" strokeWidth="2.9" strokeLinecap="round" strokeLinejoin="round"
+      />
+      {/* ascending bars (investment) */}
+      <path
+        d="M12 22.4 V19.6 M16 22.4 V16.4 M20 22.4 V18.2"
+        stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"
+      />
     </svg>
   )
 }
 
-// Keep old export alias so nothing breaks
+// Full wordmark lockup (icon + "Arpent").
+export function AppWordmark({ className = '', iconSize = 26 }: { className?: string; iconSize?: number }) {
+  return (
+    <span className={`inline-flex items-center gap-2 ${className}`}>
+      <AppIcon size={iconSize} />
+      <span className="font-extrabold tracking-tight" style={{ fontSize: iconSize * 0.72 }}>Arpent</span>
+    </span>
+  )
+}
+
+// Back-compat alias — existing imports use QuartisIcon.
 export const QuartisIcon = AppIcon

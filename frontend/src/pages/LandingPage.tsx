@@ -1,831 +1,410 @@
-import { useState, useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
-import './LandingPage.css'
+import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
+import {
+  ArrowRight, Sparkles, Building2, Bell, Globe, ShieldCheck, LineChart,
+  MapPin, Check, X, Layers, Search, Menu, X as Close,
+} from 'lucide-react'
+import { AppIcon } from '../components/QuartisLogo'
 
-// ─── ICONS ────────────────────────────────────────────────────────────────────
-const TrendingUp  = (p: any) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
-const Zap         = (p: any) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-const Globe       = (p: any) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-const Brain       = (p: any) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4"/></svg>
-const BarChart    = (p: any) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>
-const Bell        = (p: any) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-const DollarSign  = (p: any) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-const Search      = (p: any) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-const CheckCircle = (p: any) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-const XCircle     = (p: any) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
-const ArrowRight  = (p: any) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-const MapPin      = (p: any) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-const Star        = (p: any) => <svg {...p} viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-const Menu        = (p: any) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-const Close       = (p: any) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-const ChevDown    = (p: any) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-const Quote       = (p: any) => <svg {...p} viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V20c0 1 0 1 1 1z"/><path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3c0 1 0 1 1 1z"/></svg>
-const Shield      = (p: any) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-const Sun         = (p: any) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-const Moon        = (p: any) => <svg {...p} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+// Deep-navy brand gradient shared with the auth panel for a coherent identity.
+const NAVY = 'radial-gradient(120% 130% at 12% -10%, #1E3A5F 0%, #131b2e 45%, #0b1120 100%)'
 
-// ─── HOOKS ────────────────────────────────────────────────────────────────────
-function useInView(threshold = 0.12) {
-  const ref = useRef<HTMLElement>(null)
-  const [seen, setSeen] = useState(false)
-  useEffect(() => {
-    const obs = new IntersectionObserver(
-      ([e]) => { if (e.isIntersecting) { setSeen(true); obs.disconnect() } },
-      { threshold }
-    )
-    if (ref.current) obs.observe(ref.current)
-    return () => obs.disconnect()
-  }, [threshold])
-  return [ref, seen] as const
-}
-
-function useCountUp(end: number, duration = 2000, started = false) {
-  const [val, setVal] = useState(0)
-  useEffect(() => {
-    if (!started || end === 0) return
-    const t0 = performance.now()
-    const step = (now: number) => {
-      const p = Math.min((now - t0) / duration, 1)
-      const eased = 1 - Math.pow(2, -10 * p)
-      setVal(Math.round(eased * end))
-      if (p < 1) requestAnimationFrame(step)
-    }
-    requestAnimationFrame(step)
-  }, [end, duration, started])
-  return val
-}
-
-function useTyping(text: string, speed = 18, started = false) {
-  const [idx, setIdx] = useState(0)
-  useEffect(() => {
-    if (!started) return
-    setIdx(0)
-    let i = 0
-    const t = setInterval(() => { i++; setIdx(i); if (i >= text.length) clearInterval(t) }, speed)
-    return () => clearInterval(t)
-  }, [text, speed, started])
-  return text.slice(0, idx)
-}
-
-function hexToRgb(hex: string) {
-  const r = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
-  return r ? `${parseInt(r[1],16)},${parseInt(r[2],16)},${parseInt(r[3],16)}` : '0,0,0'
-}
-
-// ─── NAVBAR ───────────────────────────────────────────────────────────────────
-function Navbar({ theme, onToggle }: { theme: 'dark' | 'light', onToggle: () => void }) {
-  const navigate = useNavigate()
+export default function LandingPage() {
   const [scrolled, setScrolled] = useState(false)
-  const [open, setOpen] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+
   useEffect(() => {
-    const fn = () => setScrolled(window.scrollY > 40)
-    window.addEventListener('scroll', fn)
-    return () => window.removeEventListener('scroll', fn)
+    const onScroll = () => setScrolled(window.scrollY > 8)
+    onScroll()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
   }, [])
-  useEffect(() => {
-    document.body.style.overflow = open ? 'hidden' : ''
-    return () => { document.body.style.overflow = '' }
-  }, [open])
 
   return (
-    <nav className={`nav ${scrolled ? 'nav--scrolled' : ''}`}>
-      <div className="nav__inner">
-        <a href="#" className="nav__logo">
-          <span className="nav__logo-box"><TrendingUp width="18" height="18" /></span>
-          <span className="nav__logo-text">
-            <span className="nav__logo-name">QUÉBEC RE</span>
-            <span className="nav__logo-tag">Investment Intelligence</span>
-          </span>
-        </a>
-
-        <div className={`nav__links ${open ? 'nav__links--open' : ''}`}>
-          {['Features', 'How It Works', 'Demo', 'Testimonials', 'FAQ'].map(l => (
-            <a key={l} href={`#${l.toLowerCase().replace(/\s+/g,'-')}`} onClick={() => setOpen(false)}>{l}</a>
-          ))}
-        </div>
-
-        <div className="nav__actions">
-          <button className="theme-toggle" onClick={onToggle} title="Toggle theme">
-            {theme === 'dark' ? <Sun width="16" height="16" /> : <Moon width="16" height="16" />}
-          </button>
-          <button className="btn-ghost-sm" onClick={() => navigate('/dashboard')}>Sign In</button>
-          <button className="btn-accent" onClick={() => navigate('/dashboard')}>Start Free Trial</button>
-        </div>
-
-        <button className="nav__burger" onClick={() => setOpen(x => !x)}>
-          {open ? <Close width="22" height="22" /> : <Menu width="22" height="22" />}
-        </button>
-      </div>
-    </nav>
-  )
-}
-
-// ─── MINI PROPERTY CARD (HERO DASHBOARD) ─────────────────────────────────────
-function PropCard({ price, addr, score, label, cap, cf, img, delay }: any) {
-  const C: any = {
-    'Strong Opportunity':  { bg:'rgba(5,150,105,.14)',  br:'rgba(5,150,105,.4)',  tx:'#34D399', sc:'#059669' },
-    'Worth Investigating': { bg:'rgba(37,99,235,.14)',  br:'rgba(37,99,235,.4)',  tx:'#60A5FA', sc:'#2563EB' },
-    'Market Price':        { bg:'rgba(217,119,6,.14)',  br:'rgba(217,119,6,.4)',  tx:'#FBBF24', sc:'#D97706' },
-  }
-  const c = C[label] || C['Worth Investigating']
-  return (
-    <div className="prop-card" style={{ animationDelay: `${delay}s` }}>
-      <div className="prop-card__img" style={{ backgroundImage: `url(${img})` }}>
-        <span className="prop-card__score" style={{ background: c.sc }}>{score}</span>
-      </div>
-      <div className="prop-card__body">
-        <p className="prop-card__price">{price}</p>
-        <p className="prop-card__addr">{addr}</p>
-        <span className="prop-card__label" style={{ background: c.bg, borderColor: c.br, color: c.tx }}>{label}</span>
-        <div className="prop-card__row">
-          <div><span className="pk">Cap</span><span className="pv">{cap}</span></div>
-          <div><span className="pk">CF/mo</span><span className="pv green">{cf}</span></div>
-        </div>
-        <div className="prop-card__ai"><span className="pulse-dot" />AI verdict ready</div>
-      </div>
+    <div className="min-h-screen bg-surface text-ink antialiased" style={{ scrollBehavior: 'smooth' }}>
+      <Nav scrolled={scrolled} menuOpen={menuOpen} setMenuOpen={setMenuOpen} />
+      <Hero />
+      <SourceBar />
+      <ProblemSolution />
+      <Features />
+      <ZoningSpotlight />
+      <HowItWorks />
+      <FinalCTA />
+      <Footer />
     </div>
   )
 }
 
-// ─── HERO ─────────────────────────────────────────────────────────────────────
-function Hero() {
-  const navigate = useNavigate()
+// ── Nav ─────────────────────────────────────────────────────────────────────
+function Nav({ scrolled, menuOpen, setMenuOpen }: { scrolled: boolean; menuOpen: boolean; setMenuOpen: (v: boolean) => void }) {
+  const links = [
+    { label: 'Features', href: '#features' },
+    { label: 'How it works', href: '#how' },
+    { label: 'Coverage', href: '#coverage' },
+  ]
   return (
-    <section className="hero" id="hero">
-      <div className="hero__glow hero__glow--1" />
-      <div className="hero__glow hero__glow--2" />
-      <div className="hero__grid" />
+    <header className={`sticky top-0 z-50 transition-all duration-300 ${scrolled ? 'bg-white/85 backdrop-blur-md border-b border-surface-border shadow-sm' : 'bg-transparent'}`}>
+      <nav className="max-w-7xl mx-auto px-5 sm:px-8 h-16 flex items-center justify-between">
+        <Link to="/" className="flex items-center gap-2.5">
+          <span className="w-9 h-9 rounded-xl bg-accent flex items-center justify-center shadow-md">
+            <AppIcon size={19} className="text-white" />
+          </span>
+          <span className={`text-lg font-extrabold tracking-tight ${scrolled ? 'text-ink' : 'text-ink'}`}>Arpent</span>
+        </Link>
 
-      <div className="hero__inner">
-        <div className="hero__copy">
-          <div className="chip chip--glow">
-            <Zap width="12" height="12" />
-            AI-Powered · Updated every 6 hours
+        <div className="hidden md:flex items-center gap-8">
+          {links.map(l => (
+            <a key={l.href} href={l.href} className="text-sm font-medium text-muted hover:text-ink transition-colors">{l.label}</a>
+          ))}
+        </div>
+
+        <div className="hidden md:flex items-center gap-2">
+          <Link to="/login" className="px-4 py-2 text-sm font-semibold text-ink hover:text-accent transition-colors">Sign in</Link>
+          <Link to="/register" className="group inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-accent text-white text-sm font-bold shadow-sm hover:bg-accent-hover hover:shadow-md transition-all">
+            Get started <ArrowRight size={15} className="group-hover:translate-x-0.5 transition-transform" />
+          </Link>
+        </div>
+
+        <button className="md:hidden p-2 -mr-2 text-ink" onClick={() => setMenuOpen(!menuOpen)} aria-label="Menu">
+          {menuOpen ? <Close size={22} /> : <Menu size={22} />}
+        </button>
+      </nav>
+
+      {menuOpen && (
+        <div className="md:hidden bg-white border-b border-surface-border px-5 py-4 space-y-3 animate-slide-up">
+          {links.map(l => (
+            <a key={l.href} href={l.href} onClick={() => setMenuOpen(false)} className="block text-sm font-medium text-muted">{l.label}</a>
+          ))}
+          <div className="flex gap-2 pt-2">
+            <Link to="/login" className="flex-1 text-center px-4 py-2 rounded-xl border border-surface-border text-sm font-semibold">Sign in</Link>
+            <Link to="/register" className="flex-1 text-center px-4 py-2 rounded-xl bg-accent text-white text-sm font-bold">Get started</Link>
           </div>
+        </div>
+      )}
+    </header>
+  )
+}
 
-          <h1 className="hero__h1">
-            Stop Browsing<br />
-            <span className="grad">Listings.</span><br />
-            Start Finding Deals.
+// ── Hero ────────────────────────────────────────────────────────────────────
+function Hero() {
+  return (
+    <section className="relative overflow-hidden -mt-16 pt-16 text-white" style={{ background: NAVY }}>
+      <div aria-hidden className="absolute inset-0 opacity-40"
+           style={{ background: 'radial-gradient(45% 45% at 82% 8%, rgba(37,99,235,0.55) 0%, transparent 70%)' }} />
+      <div aria-hidden className="absolute inset-0"
+           style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.05) 1px, transparent 1px)', backgroundSize: '48px 48px', maskImage: 'radial-gradient(80% 60% at 50% 20%, #000 40%, transparent 100%)' }} />
+
+      <div className="relative max-w-7xl mx-auto px-5 sm:px-8 pt-16 pb-20 lg:pt-24 lg:pb-28 grid lg:grid-cols-[1.05fr_0.95fr] gap-12 lg:gap-8 items-center">
+        <div>
+          <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 ring-1 ring-white/15 text-xs font-semibold text-blue-100">
+            <span className="w-1.5 h-1.5 rounded-full bg-score-strong animate-pulse" />
+            Quebec real-estate investment intelligence
+          </span>
+
+          <h1 className="mt-5 text-[2.6rem] sm:text-6xl font-extrabold tracking-tight leading-[1.05] text-balance">
+            Spot the undervalued Quebec property <span className="text-blue-300">before anyone else.</span>
           </h1>
 
-          <p className="hero__sub">
-            Our AI scans every property on Centris, Realtor.ca, and ReMax across Quebec —
-            scoring investment potential with cap rates, cash flow projections, and bilingual AI
-            verdicts before you make a single call.
+          <p className="mt-6 text-lg text-slate-300/90 max-w-xl leading-relaxed">
+            Arpent scans Centris, Realtor.ca and Remax every few hours, scores every deal with AI,
+            reveals hidden <span className="text-white font-semibold">development potential</span> from official
+            zoning data, and alerts you the moment an opportunity appears.
           </p>
 
-          <div className="hero__ctas">
-            <button className="btn-accent btn-accent--lg btn-glow" onClick={() => navigate('/dashboard')}>
-              Analyze Properties Free
-              <ArrowRight width="17" height="17" />
-            </button>
-            <button className="btn-outline-lg">Watch 90-second Demo</button>
+          <div className="mt-8 flex flex-wrap items-center gap-3">
+            <Link to="/register" className="group inline-flex items-center gap-2 px-6 py-3.5 rounded-xl bg-accent text-white font-bold shadow-lg shadow-accent/25 hover:bg-accent-hover hover:-translate-y-0.5 transition-all">
+              Start free <ArrowRight size={18} className="group-hover:translate-x-0.5 transition-transform" />
+            </Link>
+            <a href="#how" className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl bg-white/10 ring-1 ring-white/15 text-white font-semibold hover:bg-white/15 transition-colors">
+              See how it works
+            </a>
           </div>
 
-          <div className="hero__proof">
-            <div className="avatars">
-              {[['JL','#2563EB'],['MR','#059669'],['AP','#7C3AED'],['SC','#D97706'],['NK','#EC4899']].map(([i,bg],k) => (
-                <span key={k} className="av" style={{ background: bg, marginLeft: k ? '-9px' : 0 }}>{i}</span>
-              ))}
-            </div>
-            <div>
-              <div className="stars">{[1,2,3,4,5].map(i => <Star key={i} width="13" height="13" />)}</div>
-              <span className="hero__proof-label">Trusted by 500+ Quebec investors</span>
-            </div>
+          <div className="mt-9 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-slate-400">
+            <span className="inline-flex items-center gap-1.5"><Check size={15} className="text-score-strong" /> 2,000+ listings analyzed</span>
+            <span className="inline-flex items-center gap-1.5"><Check size={15} className="text-score-strong" /> 3 sources, one view</span>
+            <span className="inline-flex items-center gap-1.5"><Check size={15} className="text-score-strong" /> Official government data</span>
           </div>
         </div>
 
-        <div className="hero__visual">
-          <div className="dash">
-            <div className="dash__chrome">
-              <span className="dot r" /><span className="dot y" /><span className="dot g" />
-              <div className="dash__url">québec-re.app/dashboard</div>
-              <div className="dash__live"><span className="blink-dot" />Live</div>
-            </div>
-
-            <div className="dash__metrics">
-              {[['847','Listings',null],['23','Strong Buys','#34D399'],['12','Price Drops','#FBBF24']].map(([v,l,c])=>(
-                <div key={l} className="dash__m">
-                  <span className="dash__mv" style={c ? {color:c} : {}}>{v}</span>
-                  <span className="dash__ml">{l}</span>
-                </div>
-              ))}
-            </div>
-
-            <div className="dash__cards">
-              <PropCard price="$485,000" addr="1234 Rue Sherbrooke, Mtl" score={87} label="Strong Opportunity"
-                cap="6.8%" cf="+$1,240" delay={0.1}
-                img="https://images.unsplash.com/photo-1568605114967-8130f3a36994?w=320&q=80" />
-              <PropCard price="$329,000" addr="456 Blvd René-Lévesque, QC" score={62} label="Worth Investigating"
-                cap="4.2%" cf="+$520" delay={0.22}
-                img="https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=320&q=80" />
-              <PropCard price="$275,000" addr="89 Rue Saint-Denis, Laval" score={44} label="Market Price"
-                cap="3.1%" cf="+$180" delay={0.34}
-                img="https://images.unsplash.com/photo-1580587771525-78b9dba3b914?w=320&q=80" />
-            </div>
-          </div>
-
-          <div className="float-card float-card--verdict">
-            <span className="blink-dot blink-dot--green" />
-            <div>
-              <p className="float-card__label">AI Verdict · Score 87</p>
-              <p className="float-card__text">"Exceptional 6.8% cap rate, 47% above Montreal avg…"</p>
-            </div>
-            <span className="float-card__badge">STRONG</span>
-          </div>
-
-          <div className="float-card float-card--alert">
-            <Bell width="13" height="13" style={{ color:'#FBBF24', flexShrink:0 }} />
-            <span>Price drop — 221 Rue Bishop · $18k below comps</span>
-          </div>
+        {/* Product mockup */}
+        <div className="relative">
+          <div aria-hidden className="absolute -inset-6 rounded-[28px] bg-accent/20 blur-3xl" />
+          <DashboardMock />
         </div>
       </div>
     </section>
   )
 }
 
-// ─── MARQUEE ─────────────────────────────────────────────────────────────────
-function Marquee() {
-  const items = [
-    '✦ Centris.ca', '✦ Realtor.ca', '✦ ReMax Québec',
-    '✦ 847 Active Listings', '✦ AI-Powered Analysis', '✦ Bilingual EN/FR',
-    '✦ 6-Hour Refresh Cycle', '✦ No Manual Research',
-    '✦ Centris.ca', '✦ Realtor.ca', '✦ ReMax Québec',
-    '✦ 847 Active Listings', '✦ AI-Powered Analysis', '✦ Bilingual EN/FR',
-    '✦ 6-Hour Refresh Cycle', '✦ No Manual Research',
+// A self-contained preview of the actual product — reliable and on-brand.
+function DashboardMock() {
+  const stats = [
+    { label: 'Analyzed', value: '2,054' },
+    { label: 'Strong buys', value: '38', tone: 'text-score-strong' },
+    { label: 'New today', value: '12', tone: 'text-accent' },
+  ]
+  const deals = [
+    { addr: '1195 Rue Saint-Hubert', city: 'Ville-Marie · Triplex', price: '$1,039,000', score: 82, cat: 'Strong buy', tone: 'strong' },
+    { addr: '5343 3e Avenue', city: 'Rosemont · Duplex', price: '$729,000', score: 71, cat: 'Worth checking', tone: 'worth' },
   ]
   return (
-    <div className="marquee-wrap">
-      <div className="marquee-track">
-        {items.map((t, i) => <span key={i} className="marquee-item">{t}</span>)}
+    <div className="relative rounded-2xl bg-white shadow-2xl ring-1 ring-black/5 overflow-hidden rotate-[0.6deg]">
+      {/* window chrome */}
+      <div className="h-9 bg-surface border-b border-surface-border flex items-center gap-1.5 px-3.5">
+        <span className="w-2.5 h-2.5 rounded-full bg-[#FF5F57]" />
+        <span className="w-2.5 h-2.5 rounded-full bg-[#FEBC2E]" />
+        <span className="w-2.5 h-2.5 rounded-full bg-[#28C840]" />
+        <span className="ml-3 text-[11px] text-muted font-medium">arpent.app/dashboard</span>
+      </div>
+      <div className="p-4 bg-surface">
+        <div className="grid grid-cols-3 gap-2.5 mb-3">
+          {stats.map(s => (
+            <div key={s.label} className="rounded-xl bg-white border border-surface-border p-3">
+              <p className={`text-xl font-extrabold tabular-nums ${s.tone ?? 'text-ink'}`}>{s.value}</p>
+              <p className="text-[10px] text-muted mt-0.5">{s.label}</p>
+            </div>
+          ))}
+        </div>
+        <div className="space-y-2.5">
+          {deals.map(d => (
+            <div key={d.addr} className="rounded-xl bg-white border border-surface-border p-3 flex items-center gap-3">
+              <div className="w-14 h-14 rounded-lg shrink-0" style={{ background: 'linear-gradient(135deg,#c7d2fe,#93c5fd)' }} />
+              <div className="min-w-0 flex-1">
+                <p className="text-[13px] font-bold text-ink truncate">{d.addr}</p>
+                <p className="text-[11px] text-muted">{d.city}</p>
+                <p className="text-[13px] font-extrabold text-ink mt-0.5 tabular-nums">{d.price}</p>
+              </div>
+              <div className="text-center shrink-0">
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-extrabold ${d.tone === 'strong' ? 'bg-score-strong' : 'bg-accent'}`}>{d.score}</div>
+                <p className={`text-[9px] font-bold mt-1 ${d.tone === 'strong' ? 'text-score-strong' : 'text-accent'}`}>{d.cat}</p>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   )
 }
 
-// ─── STATS ────────────────────────────────────────────────────────────────────
-function StatNum({ end, suffix = '', started }: any) {
-  const val = useCountUp(end, 2200, started)
-  return <span className="stat__val">{val}{suffix}</span>
-}
-
-function Stats() {
-  const [ref, seen] = useInView(0.3)
-  const items = [
-    { end: 500, suffix: '+', label: 'Properties Analyzed Daily' },
-    { end: 95,  suffix: '%', label: 'Investor Satisfaction Score' },
-    { end: 3,   suffix: '',  label: 'Major Platforms Unified' },
-    { end: 6,   suffix: 'h', label: 'Data Refresh Cycle' },
-  ]
+// ── Source / trust bar ──────────────────────────────────────────────────────
+function SourceBar() {
+  const sources = ['Centris', 'Realtor.ca', 'Remax Québec', 'Rôle d’évaluation foncière', 'Plan d’urbanisme']
   return (
-    <div className="stats" ref={ref as any}>
-      {items.map(({ end, suffix, label }, i) => (
-        <div key={i} className={`stat ${seen ? 'stat--visible' : ''}`} style={{ transitionDelay: `${i * 0.1}s` }}>
-          <StatNum end={end} suffix={suffix} started={seen} />
-          <span className="stat__label">{label}</span>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-// ─── PROBLEM ─────────────────────────────────────────────────────────────────
-function Problem() {
-  const [ref, seen] = useInView()
-  const before = [
-    'Manually browse 3+ websites for hours',
-    'Guess at cap rates with a spreadsheet',
-    'Miss deals while you are still researching',
-    'No way to compare properties side-by-side',
-    'English-only tools miss Quebec nuances',
-    'Overpay because you lack comparable data',
-  ]
-  const after = [
-    'AI scans 500+ listings while you sleep',
-    'Instant cap rate, NOI & cash flow calculations',
-    'Real-time alerts the moment a deal appears',
-    'Side-by-side comparison dashboard',
-    'Full bilingual analysis (English + French)',
-    'Comparable sales validation on every listing',
-  ]
-  return (
-    <section className="section problem-section" ref={ref as any}>
-      <div className="container">
-        <div className="section-head">
-          <div className="chip">The Problem</div>
-          <h2 className="section-h2">Most investors are flying blind</h2>
-          <p className="section-sub">By the time you analyze a listing manually, the best deals are already gone.</p>
-        </div>
-
-        <div className="problem-grid">
-          <div className={`problem-col problem-col--before ${seen ? 'visible' : ''}`}>
-            <div className="problem-col__head">
-              <span className="problem-icon problem-icon--before">✕</span>
-              <h3>The Old Way</h3>
-            </div>
-            {before.map((item, i) => (
-              <div key={i} className="problem-row problem-row--before" style={{ transitionDelay: `${i * 0.06}s` }}>
-                <XCircle width="16" height="16" style={{ color: '#EF4444', flexShrink: 0 }} />
-                <span>{item}</span>
-              </div>
-            ))}
-          </div>
-
-          <div className="problem-divider">
-            <div className="problem-divider__line" />
-            <div className="problem-divider__badge">VS</div>
-            <div className="problem-divider__line" />
-          </div>
-
-          <div className={`problem-col problem-col--after ${seen ? 'visible' : ''}`} style={{ transitionDelay: '0.1s' }}>
-            <div className="problem-col__head">
-              <span className="problem-icon problem-icon--after">✓</span>
-              <h3>With Québec RE</h3>
-            </div>
-            {after.map((item, i) => (
-              <div key={i} className="problem-row problem-row--after" style={{ transitionDelay: `${i * 0.06 + 0.1}s` }}>
-                <CheckCircle width="16" height="16" style={{ color: '#34D399', flexShrink: 0 }} />
-                <span>{item}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    </section>
-  )
-}
-
-// ─── FEATURES ────────────────────────────────────────────────────────────────
-const FEATURES = [
-  { icon: Globe,      color: '#2563EB', title: 'Multi-Source Aggregation',
-    desc: 'Scrapes Centris.ca, Realtor.ca, and ReMax Québec every 6 hours. Smart deduplication across MLS numbers and agent fingerprints delivers one clean, unified feed.' },
-  { icon: Brain,      color: '#7C3AED', title: 'AI Investment Scoring',
-    desc: 'Every listing receives a 0–100 score across cap rate, cash flow, location demand, comparable sales, and market momentum — evaluated simultaneously by our proprietary AI engine.' },
-  { icon: DollarSign, color: '#059669', title: 'Instant Financial Calculator',
-    desc: 'NOI, cap rate, monthly cash flow, mortgage estimate, welcome tax (droits de mutation), and total ROI — all precomputed. No spreadsheet required.' },
-  { icon: Search,     color: '#D97706', title: 'Comparable Finder',
-    desc: 'Automatically surfaces recently sold similar properties nearby, validating the asking price and flagging undervalued listings before they disappear from the market.' },
-  { icon: Bell,       color: '#EC4899', title: 'Real-Time Market Alerts',
-    desc: 'Instant notifications when strong opportunities appear, prices drop on watched properties, or new listings match your saved search criteria. Never miss a deal.' },
-  { icon: BarChart,   color: '#06B6D4', title: 'Bilingual AI Verdicts',
-    desc: 'Our AI generates a clear 2–3 sentence investment brief in both English and French for every property. Instant clarity without wading through raw numbers.' },
-]
-
-function Features() {
-  const [ref, seen] = useInView()
-  return (
-    <section className="section" id="features" ref={ref as any}>
-      <div className="container">
-        <div className="section-head">
-          <div className="chip">Features</div>
-          <h2 className="section-h2">Stop doing what a computer can do better</h2>
-          <p className="section-sub">Six capabilities working together — so you can spend your time on what only you can do: making the call.</p>
-        </div>
-        <div className="feat-grid">
-          {FEATURES.map(({ icon: Icon, color, title, desc }, i) => (
-            <div key={i} className={`feat-card ${seen ? 'feat-card--visible' : ''}`} style={{ transitionDelay: `${i * 0.07}s` }}>
-              <div className="feat-card__icon" style={{
-                background: `rgba(${hexToRgb(color)},.1)`,
-                borderColor: `rgba(${hexToRgb(color)},.22)`,
-                color,
-              }}>
-                <Icon width="22" height="22" />
-              </div>
-              <h3 className="feat-card__title">{title}</h3>
-              <p className="feat-card__desc">{desc}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  )
-}
-
-// ─── HOW IT WORKS ─────────────────────────────────────────────────────────────
-function HowItWorks() {
-  const [ref, seen] = useInView()
-  const steps = [
-    { num:'01', icon: Globe,      color:'#2563EB',
-      title:'We Scrape. You Relax.',
-      desc: 'Our system crawls Centris, Realtor.ca, and ReMax Québec on a 6-hour cycle using anti-bot infrastructure. Cross-source deduplication produces one clean dataset of every active listing.' },
-    { num:'02', icon: Brain,      color:'#7C3AED',
-      title:'AI Analyzes Every Property',
-      desc: 'Each listing runs through a 4-stage AI pipeline: Comparable Finder → Financial Calculator → Opportunity Scorer → Bilingual Brief Generator. Automated. Every single run.' },
-    { num:'03', icon: TrendingUp, color:'#059669',
-      title:'You Invest with Confidence',
-      desc: 'Browse ranked properties with scores, AI verdicts, and financial metrics. Filter by cap rate, city, price, or score. Make data-backed decisions in minutes instead of days.' },
-  ]
-  return (
-    <section className="section hiw" id="how-it-works" ref={ref as any}>
-      <div className="container">
-        <div className="section-head">
-          <div className="chip">How It Works</div>
-          <h2 className="section-h2">From listing to verdict in under a minute</h2>
-          <p className="section-sub">A 24/7 automated pipeline that keeps you ahead of the market — without you lifting a finger.</p>
-        </div>
-
-        <div className="hiw__steps">
-          {steps.map(({ num, icon: Icon, color, title, desc }, i) => (
-            <div key={i} className={`hiw__step ${seen ? 'hiw__step--visible' : ''}`} style={{ transitionDelay: `${i * 0.14}s` }}>
-              <div className="hiw__step-num" style={{ color }}>{num}</div>
-              <div className="hiw__step-icon" style={{ background: `rgba(${hexToRgb(color)},.1)`, color }}>
-                <Icon width="30" height="30" />
-              </div>
-              <h3 className="hiw__step-title">{title}</h3>
-              <p className="hiw__step-desc">{desc}</p>
-              {i < steps.length - 1 && <div className="hiw__connector" />}
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  )
-}
-
-// ─── AI DEMO ──────────────────────────────────────────────────────────────────
-const VERDICT_EN = `This triplex in Plateau-Mont-Royal delivers a 6.8% cap rate — 47% above the Montreal market average of 4.2%. Consistent rental demand in this neighborhood and the below-comp asking price create immediate positive cash flow of $1,240/month with standard 20% down financing.`
-const VERDICT_FR = `Ce triplex au Plateau-Mont-Royal offre un taux de capitalisation de 6,8%, supérieur de 47% à la moyenne montréalaise de 4,2%. La forte demande locative et le prix sous les comparables génèrent un flux de trésorerie positif de 1 240$/mois dès le départ.`
-
-function AIDemo() {
-  const [ref, seen] = useInView(0.25)
-  const en = useTyping(VERDICT_EN, 15, seen)
-  const fr = useTyping(VERDICT_FR, 18, seen)
-
-  return (
-    <section className="section demo-section" id="demo" ref={ref as any}>
-      <div className="container">
-        <div className="demo-grid">
-          <div className={`demo-copy ${seen ? 'demo-copy--visible' : ''}`}>
-            <div className="chip">AI Analysis</div>
-            <h2 className="section-h2 section-h2--left">Verdict in seconds. Not in hours.</h2>
-            <p className="section-sub section-sub--left">
-              Our AI analyzes each property across 12+ dimensions and surfaces a clear verdict — so you know
-              what you're looking at before you make a single call.
-            </p>
-            <ul className="checklist">
-              {['Cap rate & NOI calculation','Welcome tax (droits de mutation)','Comparable sales validation','Neighborhood trend assessment','Bilingual verdict — EN + FR','Investment score 0 – 100'].map((t,i)=>(
-                <li key={i}><CheckCircle width="16" height="16" style={{ color:'#34D399' }} />{t}</li>
-              ))}
-            </ul>
-          </div>
-
-          <div className={`demo-card ${seen ? 'demo-card--visible' : ''}`}>
-            <div className="dc-header">
-              <img src="https://images.unsplash.com/photo-1568605114967-8130f3a36994?w=80&q=80" className="dc-img" alt="property" />
-              <div className="dc-info">
-                <p className="dc-price">$485,000</p>
-                <p className="dc-addr">1234 Rue Sherbrooke, Montréal</p>
-                <span className="dc-badge dc-badge--strong">Strong Opportunity</span>
-              </div>
-              <div className="dc-score dc-score--strong">87</div>
-            </div>
-
-            <div className="dc-metrics">
-              {[['Cap Rate','6.8%',false],['Annual NOI','$32,980',false],['Cash Flow / mo','+$1,240',true],['Welcome Tax','$6,750',false]].map(([k,v,g])=>(
-                <div key={k as string} className="dcm"><span className="dcm-k">{k}</span><span className={`dcm-v ${g?'dcm-v--pos':''}`}>{v}</span></div>
-              ))}
-            </div>
-
-            <div className="dc-verdict dc-verdict--en">
-              <div className="dc-verdict__label"><span className="pulse-dot pulse-dot--blue" />AI Verdict · English</div>
-              <p className="dc-verdict__text">{en || '…'}<span className="cursor">|</span></p>
-            </div>
-
-            <div className="dc-verdict dc-verdict--fr">
-              <div className="dc-verdict__label"><span className="pulse-dot pulse-dot--purple" />Verdict IA · Français</div>
-              <p className="dc-verdict__text">{fr || '…'}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-  )
-}
-
-// ─── TESTIMONIALS ─────────────────────────────────────────────────────────────
-const TESTIMONIALS = [
-  {
-    name: 'Jean-Luc Bouchard',
-    role: 'Real Estate Investor · Montréal',
-    avatar: '#2563EB',
-    initials: 'JB',
-    stars: 5,
-    quote: 'I found a triplex in Laval with a 7.2% cap rate that I never would have noticed scrolling Centris manually. The AI verdict flagged it immediately. I closed 3 weeks later. This tool has already paid for itself 10x over.',
-  },
-  {
-    name: 'Marie-Claire Tremblay',
-    role: 'Portfolio Manager · Québec City',
-    avatar: '#059669',
-    initials: 'MT',
-    stars: 5,
-    quote: 'The bilingual verdicts are a genuine game changer. The French analysis captures nuances of the Quebec market — local terminology, tax implications, neighborhood dynamics — that English-only tools completely miss.',
-  },
-  {
-    name: 'Priya Mehta',
-    role: 'Investor · 12 properties across QC',
-    avatar: '#7C3AED',
-    initials: 'PM',
-    stars: 5,
-    quote: 'I used to spend every Sunday doing market research across 3 platforms. Now it takes 20 minutes. The comparable finder alone saves me hours of cross-referencing. The ROI on this subscription is, frankly, absurd.',
-  },
-]
-
-function Testimonials() {
-  const [ref, seen] = useInView()
-  return (
-    <section className="section" id="testimonials" ref={ref as any}>
-      <div className="container">
-        <div className="section-head">
-          <div className="chip">Testimonials</div>
-          <h2 className="section-h2">Investors who found their edge</h2>
-          <p className="section-sub">Real results from Quebec investors who stopped guessing and started winning deals.</p>
-        </div>
-
-        <div className="testi-grid">
-          {TESTIMONIALS.map(({ name, role, avatar, initials, quote }, i) => (
-            <div key={i} className={`testi-card ${seen ? 'testi-card--visible' : ''}`} style={{ transitionDelay: `${i * 0.1}s` }}>
-              <div className="testi-card__top">
-                <Quote width="28" height="28" className="testi-quote-icon" />
-              </div>
-              <p className="testi-card__quote">"{quote}"</p>
-              <div className="testi-card__author">
-                <span className="testi-av" style={{ background: avatar }}>{initials}</span>
-                <div>
-                  <p className="testi-name">{name}</p>
-                  <p className="testi-role">{role}</p>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  )
-}
-
-// ─── COVERAGE ────────────────────────────────────────────────────────────────
-const CITIES = [
-  'Montréal', 'Québec City', 'Laval', 'Longueuil', 'Gatineau',
-  'Sherbrooke', 'Saguenay', 'Trois-Rivières', 'Terrebonne', 'Brossard',
-  'Saint-Jean-sur-Richelieu', 'Repentigny',
-]
-
-function Coverage() {
-  const [ref, seen] = useInView()
-  return (
-    <section className="section coverage-section" ref={ref as any}>
-      <div className="container">
-        <div className="cov-grid">
-          <div className={`cov-copy ${seen ? 'cov-copy--visible' : ''}`}>
-            <div className="chip">Coverage</div>
-            <h2 className="section-h2 section-h2--left">All of Quebec. Covered.</h2>
-            <p className="section-sub section-sub--left">
-              12 cities. 3 platforms. Every active listing — aggregated, deduplicated, and scored
-              in one dashboard updated every 6 hours.
-            </p>
-            <div className="city-tags">
-              {CITIES.map((c, i) => (
-                <span key={i} className="city-tag"><MapPin width="9" height="9" />{c}</span>
-              ))}
-            </div>
-            <div className="source-row">
-              {['Centris.ca', 'Realtor.ca', 'ReMax QC'].map(s => (
-                <span key={s} className="source-chip"><Shield width="11" height="11" />{s}</span>
-              ))}
-            </div>
-          </div>
-
-          <div className={`cov-visual ${seen ? 'cov-visual--visible' : ''}`}>
-            <div className="cov-img-wrap">
-              <img
-                src="https://images.unsplash.com/photo-1499856871958-5b9627545d1a?w=700&q=85"
-                alt="Montréal cityscape at dusk"
-                className="cov-img"
-              />
-              <div className="cov-img-overlay">
-                {[['12+','Cities'],['3','Platforms'],['6h','Refresh']].map(([v,l]) => (
-                  <div key={l} className="cov-stat"><span className="cov-stat__val">{v}</span><span className="cov-stat__lbl">{l}</span></div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-  )
-}
-
-// ─── FAQ ─────────────────────────────────────────────────────────────────────
-const FAQS = [
-  { q: 'How often are listings updated?',
-    a: 'Our system automatically crawls Centris.ca, Realtor.ca, and ReMax Québec every 6 hours using anti-bot infrastructure. This means your dashboard is refreshed 4 times per day — so you see price drops, new listings, and status changes as soon as they happen.' },
-  { q: 'How is the investment score calculated?',
-    a: 'Each property is scored 0–100 by our proprietary AI pipeline across 12 dimensions: cap rate, net operating income, cash flow, price-to-comparable ratio, neighborhood rental demand, listing days-on-market, price trend, welcome tax burden, mortgage serviceability, and more.' },
-  { q: 'What property types are supported?',
-    a: 'We support multi-family (triplexes, fourplexes, apartment buildings), single-family homes, condos, and small commercial properties across Quebec. The financial calculator is specifically calibrated for Quebec real estate regulations and welcome tax brackets.' },
-  { q: 'Is there a free trial? Do I need a credit card?',
-    a: 'Yes — you get a full 14-day free trial with access to all features, all listings, and unlimited AI verdicts. No credit card is required to start. You only enter payment details if you decide to continue after the trial.' },
-  { q: 'What makes this different from just using Centris or Realtor.ca?',
-    a: "Those platforms show you listings — we show you investments. We unify all three platforms, eliminate duplicates, calculate financial metrics, find comparable sales, and generate AI investment verdicts for every property. Instead of browsing, you're reviewing ranked opportunities." },
-  { q: 'Can I cancel anytime?',
-    a: 'Absolutely. No contracts, no cancellation fees, no questions asked. You can cancel directly from your account settings in under 30 seconds. If you cancel mid-cycle, you retain access for the remainder of your billing period.' },
-]
-
-function FAQ() {
-  const [open, setOpen] = useState<number | null>(null)
-  const [ref, seen] = useInView()
-  const toggle = (i: number) => setOpen(x => x === i ? null : i)
-
-  return (
-    <section className="section" id="faq" ref={ref as any}>
-      <div className="container">
-        <div className="section-head">
-          <div className="chip">FAQ</div>
-          <h2 className="section-h2">Questions we get asked a lot</h2>
-          <p className="section-sub">Everything you need to know before you start. Still have questions? Reach us at hello@quebec-re.app</p>
-        </div>
-
-        <div className="faq-list">
-          {FAQS.map(({ q, a }, i) => (
-            <div
-              key={i}
-              className={`faq-item ${open === i ? 'faq-item--open' : ''} ${seen ? 'faq-item--visible' : ''}`}
-              style={{ transitionDelay: `${i * 0.06}s` }}
-            >
-              <button className="faq-item__q" onClick={() => toggle(i)}>
-                <span>{q}</span>
-                <ChevDown width="18" height="18" className="faq-item__arrow" />
-              </button>
-              <div className="faq-item__body">
-                <p className="faq-item__a">{a}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  )
-}
-
-// ─── CTA ─────────────────────────────────────────────────────────────────────
-function CTA() {
-  const navigate = useNavigate()
-  return (
-    <section className="cta-section">
-      <div className="cta-section__glow" />
-      <div className="cta-section__inner">
-        <div className="cta-section__eyebrow">
-          <Zap width="13" height="13" />
-          No credit card · 14-day free trial · Cancel anytime
-        </div>
-        <h2 className="cta-section__h2">
-          Your next deal is already listed.<br />
-          <span className="grad">Will you find it first?</span>
-        </h2>
-        <p className="cta-section__p">
-          Every hour you wait, investors with better tools are reviewing the same listings. Start your
-          free trial now and let AI do the scouting.
+    <section className="border-b border-surface-border bg-white">
+      <div className="max-w-7xl mx-auto px-5 sm:px-8 py-6">
+        <p className="text-center text-xs font-bold uppercase tracking-widest text-muted/70 mb-4">
+          Powered by multi-source &amp; official government data
         </p>
-        <button className="btn-accent btn-accent--lg btn-glow cta-section__btn" onClick={() => navigate('/dashboard')}>
-          Start Analyzing Free — No CC Required
-          <ArrowRight width="18" height="18" />
-        </button>
-        <div className="cta-section__trust">
-          <span><CheckCircle width="14" height="14" /> Instant setup</span>
-          <span><CheckCircle width="14" height="14" /> Full feature access</span>
-          <span><CheckCircle width="14" height="14" /> Cancel in 30 seconds</span>
+        <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-3">
+          {sources.map(s => (
+            <span key={s} className="text-sm font-semibold text-muted/80">{s}</span>
+          ))}
         </div>
       </div>
     </section>
   )
 }
 
-// ─── FOOTER ──────────────────────────────────────────────────────────────────
+// ── Problem / Solution ──────────────────────────────────────────────────────
+function ProblemSolution() {
+  const without = ['Refresh Centris for hours, hoping to catch a deal first', 'Guess at value with no comparable analysis', 'Never know if the lot can be developed further', 'Miss price drops until the property is gone']
+  const withArpent = ['New deals scored and delivered to you automatically', 'AI value gap vs. comparable sales, instantly', 'Development potential from official zoning + lot data', 'Alerted the moment a matching property or price drop appears']
+  return (
+    <Section className="bg-surface">
+      <Heading eyebrow="The problem" title="Investing on gut feel leaves money on the table" />
+      <div className="grid md:grid-cols-2 gap-5 mt-12 max-w-4xl mx-auto">
+        <div className="rounded-2xl bg-white border border-surface-border p-7">
+          <h3 className="font-bold text-ink flex items-center gap-2 mb-4"><span className="w-7 h-7 rounded-lg bg-score-notrecommended/10 flex items-center justify-center"><X size={16} className="text-score-notrecommended" /></span> Without Arpent</h3>
+          <ul className="space-y-3">
+            {without.map(t => (
+              <li key={t} className="flex items-start gap-2.5 text-sm text-muted"><X size={16} className="text-score-notrecommended/70 mt-0.5 shrink-0" />{t}</li>
+            ))}
+          </ul>
+        </div>
+        <div className="rounded-2xl bg-white border-2 border-accent/25 p-7 shadow-lg shadow-accent/5">
+          <h3 className="font-bold text-ink flex items-center gap-2 mb-4"><span className="w-7 h-7 rounded-lg bg-score-strong/10 flex items-center justify-center"><Check size={16} className="text-score-strong" /></span> With Arpent</h3>
+          <ul className="space-y-3">
+            {withArpent.map(t => (
+              <li key={t} className="flex items-start gap-2.5 text-sm text-ink"><Check size={16} className="text-score-strong mt-0.5 shrink-0" />{t}</li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </Section>
+  )
+}
+
+// ── Features (bento) ────────────────────────────────────────────────────────
+function Features() {
+  return (
+    <Section id="features" className="bg-white">
+      <Heading eyebrow="Features" title="Everything you need to move faster than the market" subtitle="One dashboard that replaces hours of manual research across every Quebec listing site." />
+      <div className="grid md:grid-cols-3 gap-5 mt-12">
+        <FeatureCard Icon={LineChart} title="AI deal score, 0–100" desc="Every listing scored on cap rate, cash flow, discount vs. comparable sales, and risk — so you know in seconds if it's worth your time." />
+        <FeatureCard Icon={Building2} title="Development potential" desc="See what could be built on any lot using official zoning + assessment-roll data. The upside most investors never check." highlight />
+        <FeatureCard Icon={Globe} title="Cross-site price check" desc="The same property on Centris, Realtor.ca and Remax — merged into one card, with the lowest price surfaced." />
+        <FeatureCard Icon={Bell} title="Instant deal alerts" desc="Set your criteria once. Get an email or WhatsApp the moment a matching property — or a price drop — appears." />
+        <FeatureCard Icon={ShieldCheck} title="Official, verifiable data" desc="Lot area, dwellings and zoning come straight from the rôle d'évaluation foncière and city plans — with the source linked." />
+        <FeatureCard Icon={Sparkles} title="Full financial analysis" desc="Live Quebec taxes, welcome tax, NOI, cash flow and a 5-year projection — computed for every property automatically." />
+      </div>
+    </Section>
+  )
+}
+
+function FeatureCard({ Icon, title, desc, highlight }: { Icon: any; title: string; desc: string; highlight?: boolean }) {
+  return (
+    <div className={`rounded-2xl p-7 border transition-all hover:-translate-y-1 hover:shadow-card-hover ${highlight ? 'bg-accent/[0.04] border-accent/25' : 'bg-white border-surface-border'}`}>
+      <span className={`inline-flex w-11 h-11 rounded-xl items-center justify-center mb-4 ${highlight ? 'bg-accent text-white' : 'bg-accent/10 text-accent'}`}>
+        <Icon size={20} />
+      </span>
+      <h3 className="text-lg font-bold text-ink mb-2">{title}</h3>
+      <p className="text-sm text-muted leading-relaxed">{desc}</p>
+      {highlight && <span className="inline-block mt-4 text-xs font-bold text-accent">Our edge →</span>}
+    </div>
+  )
+}
+
+// ── Zoning spotlight ────────────────────────────────────────────────────────
+function ZoningSpotlight() {
+  return (
+    <Section id="coverage" className="bg-surface">
+      <div className="grid lg:grid-cols-2 gap-12 items-center">
+        <div>
+          <span className="text-xs font-bold uppercase tracking-widest text-accent">The Arpent edge</span>
+          <h2 className="mt-3 text-3xl sm:text-4xl font-extrabold tracking-tight text-ink text-balance">Turn a single-family lot into a development opportunity</h2>
+          <p className="mt-5 text-muted leading-relaxed">
+            A property listed as a house might sit on land the city already allows you to build several units on.
+            Arpent reads the official zoning code and the government lot record, then estimates what could be built —
+            right on the listing, with the source document one click away.
+          </p>
+          <ul className="mt-6 space-y-3">
+            {['Matched by GPS to the exact zoning polygon', 'Real lot size from the assessment roll — not the listing', 'Framed honestly: a guide, always “confirm with the city”'].map(t => (
+              <li key={t} className="flex items-start gap-2.5 text-sm text-ink"><Check size={16} className="text-score-strong mt-0.5 shrink-0" />{t}</li>
+            ))}
+          </ul>
+          <div className="mt-7 inline-flex items-center gap-2 text-sm font-semibold text-muted">
+            <MapPin size={16} className="text-accent" /> Live for Montréal &amp; Laval — more cities on the way.
+          </div>
+        </div>
+
+        {/* zoning mini-visual */}
+        <div className="rounded-2xl bg-white border border-surface-border p-6 shadow-lg">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <p className="text-sm font-bold text-ink">7546 Rue Centrale</p>
+              <p className="text-xs text-muted">Le Plateau-Mont-Royal · Zone T4.4</p>
+            </div>
+            <span className="text-xs px-2.5 py-1 rounded-full bg-score-strong/10 text-score-strong font-bold">Verified</span>
+          </div>
+          <div className="rounded-xl overflow-hidden border border-surface-border h-40 relative"
+               style={{ background: 'linear-gradient(135deg,#eef2f7,#dbe4f0)' }}>
+            <div aria-hidden className="absolute inset-0" style={{ backgroundImage: 'linear-gradient(rgba(37,99,235,.12) 1px,transparent 1px),linear-gradient(90deg,rgba(37,99,235,.12) 1px,transparent 1px)', backgroundSize: '26px 26px' }} />
+            <svg className="absolute inset-0 w-full h-full" viewBox="0 0 300 160" fill="none" preserveAspectRatio="none">
+              <path d="M40 120 L60 40 L200 30 L250 60 L230 130 Z" stroke="#7c3aed" strokeWidth="2.5" fill="#7c3aed" fillOpacity="0.10" />
+            </svg>
+            <div className="absolute" style={{ left: '34%', top: '48%' }}>
+              <span className="block w-4 h-4 rounded-full bg-accent ring-4 ring-accent/25" />
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-2.5 mt-4 items-center">
+            <MockStat label="Built today" value="1" />
+            <div className="flex items-center justify-center text-muted/50 text-lg">→</div>
+            <MockStat label="Zoning potential" value="~4" tone="text-score-strong" />
+          </div>
+          <p className="mt-3 text-[11px] text-muted">Estimated from official lot area × permitted density. A guide, not a permit.</p>
+        </div>
+      </div>
+    </Section>
+  )
+}
+
+function MockStat({ label, value, tone }: { label: string; value: string; tone?: string }) {
+  return (
+    <div className="rounded-xl border border-surface-border p-3 text-center">
+      <p className={`text-2xl font-extrabold tabular-nums ${tone ?? 'text-ink'}`}>{value}</p>
+      <p className="text-[10px] text-muted mt-0.5">{label}</p>
+    </div>
+  )
+}
+
+// ── How it works ────────────────────────────────────────────────────────────
+function HowItWorks() {
+  const steps = [
+    { Icon: Search, title: 'We scan, around the clock', desc: 'Arpent scrapes Centris, Realtor.ca and Remax every few hours and merges duplicate listings into one.' },
+    { Icon: Layers, title: 'AI scores & checks zoning', desc: 'Each property gets a deal score, full financials, comparable analysis, and its development potential.' },
+    { Icon: Bell, title: 'You get the edge', desc: 'Browse the ranked dashboard, or let alerts bring the best matching deals straight to your inbox.' },
+  ]
+  return (
+    <Section id="how" className="bg-white">
+      <Heading eyebrow="How it works" title="From listing to verdict in under a minute" />
+      <div className="grid md:grid-cols-3 gap-6 mt-14">
+        {steps.map((s, i) => (
+          <div key={s.title} className="relative rounded-2xl bg-surface border border-surface-border p-7">
+            <span className="absolute -top-3 -left-3 w-9 h-9 rounded-xl bg-accent text-white text-sm font-extrabold flex items-center justify-center shadow-md">{i + 1}</span>
+            <s.Icon size={24} className="text-accent mb-4" />
+            <h3 className="text-lg font-bold text-ink mb-2">{s.title}</h3>
+            <p className="text-sm text-muted leading-relaxed">{s.desc}</p>
+          </div>
+        ))}
+      </div>
+    </Section>
+  )
+}
+
+// ── Final CTA ───────────────────────────────────────────────────────────────
+function FinalCTA() {
+  return (
+    <section className="px-5 sm:px-8 py-16">
+      <div className="relative max-w-6xl mx-auto rounded-3xl overflow-hidden text-white text-center px-6 py-16 sm:py-20" style={{ background: NAVY }}>
+        <div aria-hidden className="absolute inset-0 opacity-50" style={{ background: 'radial-gradient(50% 60% at 50% 0%, rgba(37,99,235,0.5) 0%, transparent 70%)' }} />
+        <div className="relative">
+          <h2 className="text-3xl sm:text-5xl font-extrabold tracking-tight text-balance max-w-3xl mx-auto">Stop guessing. Start investing with an edge.</h2>
+          <p className="mt-5 text-lg text-slate-300/90 max-w-xl mx-auto">Join Quebec investors who find better deals in less time with Arpent.</p>
+          <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+            <Link to="/register" className="group inline-flex items-center gap-2 px-7 py-3.5 rounded-xl bg-accent text-white font-bold shadow-lg shadow-accent/25 hover:bg-accent-hover hover:-translate-y-0.5 transition-all">
+              Get started free <ArrowRight size={18} className="group-hover:translate-x-0.5 transition-transform" />
+            </Link>
+            <Link to="/login" className="px-7 py-3.5 rounded-xl bg-white/10 ring-1 ring-white/15 font-semibold hover:bg-white/15 transition-colors">Sign in</Link>
+          </div>
+          <p className="mt-5 text-xs text-slate-400">No credit card required · Cancel anytime</p>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+// ── Footer ──────────────────────────────────────────────────────────────────
 function Footer() {
   return (
-    <footer className="footer">
-      <div className="footer__inner">
-        <div className="footer__top">
-          <div className="footer__brand">
-            <a href="#" className="nav__logo" style={{ marginBottom: 14, display:'inline-flex' }}>
-              <span className="nav__logo-box"><TrendingUp width="16" height="16" /></span>
-              <span className="nav__logo-text">
-                <span className="nav__logo-name">QUÉBEC RE</span>
-                <span className="nav__logo-tag">Investment Intelligence</span>
-              </span>
-            </a>
-            <p className="footer__brand-desc">
-              AI-powered real estate investment analysis purpose-built for the Quebec market. Find the best
-              deals before everyone else.
-            </p>
-            <div className="footer__badges">
-              <span>AI-Powered</span>
-              <span>SOC 2 Ready</span>
-            </div>
-          </div>
-
-          <div className="footer__cols">
-            {[
-              { h: 'Product',  links: ['Features','How It Works','Live Demo','Pricing','Changelog'] },
-              { h: 'Company',  links: ['About','Blog','Careers','Contact','Press'] },
-              { h: 'Legal',    links: ['Privacy Policy','Terms of Service','Cookie Policy','GDPR'] },
-            ].map(({ h, links }) => (
-              <div key={h} className="footer__col">
-                <h4>{h}</h4>
-                {links.map(l => <a key={l} href="#">{l}</a>)}
-              </div>
-            ))}
-          </div>
+    <footer className="border-t border-surface-border bg-white">
+      <div className="max-w-7xl mx-auto px-5 sm:px-8 py-10 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className="flex items-center gap-2.5">
+          <span className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center"><AppIcon size={17} className="text-white" /></span>
+          <span className="font-extrabold tracking-tight">Arpent</span>
+          <span className="text-sm text-muted ml-2 hidden sm:inline">Quebec real-estate intelligence</span>
         </div>
-
-        <div className="footer__bottom">
-          <span>© 2026 Québec RE Inc. All rights reserved.</span>
-          <span>Crafted with precision for Quebec investors</span>
-        </div>
+        <p className="text-xs text-muted/70 text-center">© {new Date().getFullYear()} Arpent · Indicative analysis only — confirm with a professional before investing.</p>
       </div>
     </footer>
   )
 }
 
-// ─── APP ─────────────────────────────────────────────────────────────────────
-// ─── PROTOTYPE NOTICE ────────────────────────────────────────────────────────
-function PrototypeNotice() {
-  const [open, setOpen] = useState(() => sessionStorage.getItem('proto-notice-seen') !== '1')
-
-  useEffect(() => {
-    if (!open) return
-    document.body.style.overflow = 'hidden'
-    return () => { document.body.style.overflow = '' }
-  }, [open])
-
-  const dismiss = () => {
-    sessionStorage.setItem('proto-notice-seen', '1')
-    setOpen(false)
-  }
-
-  if (!open) return null
+// ── Shared building blocks ──────────────────────────────────────────────────
+function Section({ id, className = '', children }: { id?: string; className?: string; children: React.ReactNode }) {
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="proto-notice-title"
-      style={{
-        position: 'fixed', inset: 0, zIndex: 9999,
-        background: 'rgba(2,8,16,0.78)', backdropFilter: 'blur(6px)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px',
-      }}
-    >
-      <div style={{
-        maxWidth: '480px', width: '100%',
-        background: 'var(--bg1)', border: '1px solid var(--b)', borderRadius: '16px',
-        padding: '32px', textAlign: 'center',
-        boxShadow: '0 24px 80px rgba(0,0,0,0.5)',
-      }}>
-        <div style={{
-          display: 'inline-flex', alignItems: 'center', gap: '6px',
-          padding: '5px 12px', borderRadius: '999px',
-          background: 'var(--blue-lt)', color: 'var(--blue-tx)',
-          fontSize: '12px', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase',
-          marginBottom: '18px',
-        }}>
-          <Zap width="12" height="12" /> Prototype
-        </div>
-        <h2 id="proto-notice-title" style={{ color: 'var(--tx0, #fff)', fontSize: '22px', fontWeight: 700, marginBottom: '12px' }}>
-          You're previewing an early version
-        </h2>
-        <p style={{ color: 'var(--tx1, rgba(255,255,255,0.72))', fontSize: '14.5px', lineHeight: 1.65, marginBottom: '24px' }}>
-          This is a prototype released for testing purposes, loaded with around
-          <strong> 400 sample properties</strong>. The production release will be a single
-          platform covering <strong>every listing across Québec</strong>, refreshed continuously.
-        </p>
-        <button className="btn-accent btn-accent--lg" style={{ width: '100%', justifyContent: 'center' }} onClick={dismiss}>
-          OK, continue to the site
-        </button>
-      </div>
-    </div>
+    <section id={id} className={`px-5 sm:px-8 py-20 sm:py-24 ${className}`}>
+      <div className="max-w-7xl mx-auto">{children}</div>
+    </section>
   )
 }
 
-export default function LandingPage() {
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark')
-  const toggleTheme = () => setTheme(t => t === 'dark' ? 'light' : 'dark')
+function Heading({ eyebrow, title, subtitle }: { eyebrow: string; title: string; subtitle?: string }) {
   return (
-    <div className={`app app--${theme}`}>
-      <PrototypeNotice />
-      <Navbar theme={theme} onToggle={toggleTheme} />
-      <Hero />
-      <Marquee />
-      <Stats />
-      <Problem />
-      <Features />
-      <HowItWorks />
-      <AIDemo />
-      <Testimonials />
-      <Coverage />
-      <FAQ />
-      <CTA />
-      <Footer />
+    <div className="max-w-2xl mx-auto text-center">
+      <span className="text-xs font-bold uppercase tracking-widest text-accent">{eyebrow}</span>
+      <h2 className="mt-3 text-3xl sm:text-4xl font-extrabold tracking-tight text-ink text-balance">{title}</h2>
+      {subtitle && <p className="mt-4 text-muted leading-relaxed">{subtitle}</p>}
     </div>
   )
 }
