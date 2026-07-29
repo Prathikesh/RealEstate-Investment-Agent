@@ -76,3 +76,4 @@ frontend/tsconfig.tsbuildinfo
 .cache/
 *.tmp
 backend/data/montreal/assessment_roll.jsonl
+backend/data/montreal/address_points.jsonl
