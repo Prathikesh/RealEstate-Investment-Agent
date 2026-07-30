@@ -36,7 +36,7 @@ export default function Login() {
   return (
     <AuthLayout
       eyebrow="Welcome back"
-      title="Sign in to Arpent"
+      title="Sign in to Plexa"
       subtitle="Pick up where you left off on your Quebec deal pipeline."
       footer={
         <>Don&apos;t have an account?{' '}

@@ -49,7 +49,7 @@ function Nav({ scrolled, menuOpen, setMenuOpen }: { scrolled: boolean; menuOpen:
           <span className="w-9 h-9 rounded-xl bg-accent flex items-center justify-center shadow-md">
             <AppIcon size={19} className="text-white" />
           </span>
-          <span className={`text-lg font-extrabold tracking-tight ${scrolled ? 'text-ink' : 'text-ink'}`}>Arpent</span>
+          <span className={`text-lg font-extrabold tracking-tight ${scrolled ? 'text-ink' : 'text-ink'}`}>Plexa</span>
         </Link>
 
         <div className="hidden md:flex items-center gap-8">
@@ -106,7 +106,7 @@ function Hero() {
           </h1>
 
           <p className="mt-6 text-lg text-slate-300/90 max-w-xl leading-relaxed">
-            Arpent scans Centris, Realtor.ca and Remax every few hours, scores every deal with AI,
+            Plexa scans Centris, Realtor.ca and Remax every few hours, scores every deal with AI,
             reveals hidden <span className="text-white font-semibold">development potential</span> from official
             zoning data, and alerts you the moment an opportunity appears.
           </p>
@@ -127,13 +127,45 @@ function Hero() {
           </div>
         </div>
 
-        {/* Product mockup */}
+        {/* Hero visual — real property photo with a product-style overlay */}
         <div className="relative">
           <div aria-hidden className="absolute -inset-6 rounded-[28px] bg-accent/20 blur-3xl" />
-          <DashboardMock />
+          <HeroVisual />
         </div>
       </div>
     </section>
+  )
+}
+
+// Real Quebec property photo (verified reachable). Falls back to the built-in
+// product mockup if the image ever fails to load, so the hero can't break.
+const HERO_PHOTO = 'https://images.unsplash.com/photo-1493809842364-78817add7ffb?auto=format&fit=crop&w=1200&q=80'
+
+function HeroVisual() {
+  const [failed, setFailed] = useState(false)
+  if (failed) return <DashboardMock />
+  return (
+    <div className="relative rounded-2xl overflow-hidden shadow-2xl ring-1 ring-white/10 rotate-[0.6deg]">
+      <img
+        src={HERO_PHOTO}
+        alt="Montréal multi-unit investment property at dusk"
+        loading="eager"
+        onError={() => setFailed(true)}
+        className="w-full h-[300px] sm:h-[430px] object-cover"
+      />
+      <div aria-hidden className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
+      {/* floating deal chip — hints at the product on top of the real photo */}
+      <div className="absolute bottom-4 left-4 right-4 flex items-end justify-between gap-3">
+        <div className="text-white">
+          <p className="text-[13px] font-bold leading-tight">1195 Rue Saint-Hubert</p>
+          <p className="text-[11px] text-white/80">Ville-Marie · Triplex · $1,039,000</p>
+        </div>
+        <div className="flex flex-col items-center rounded-xl bg-white/95 backdrop-blur px-3 py-2 shadow-lg shrink-0">
+          <span className="text-lg font-extrabold text-score-strong leading-none tabular-nums">82</span>
+          <span className="text-[9px] font-bold text-score-strong uppercase tracking-wide mt-0.5">Strong buy</span>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -155,7 +187,7 @@ function DashboardMock() {
         <span className="w-2.5 h-2.5 rounded-full bg-[#FF5F57]" />
         <span className="w-2.5 h-2.5 rounded-full bg-[#FEBC2E]" />
         <span className="w-2.5 h-2.5 rounded-full bg-[#28C840]" />
-        <span className="ml-3 text-[11px] text-muted font-medium">arpent.app/dashboard</span>
+        <span className="ml-3 text-[11px] text-muted font-medium">plexa.app/dashboard</span>
       </div>
       <div className="p-4 bg-surface">
         <div className="grid grid-cols-3 gap-2.5 mb-3">
@@ -209,13 +241,13 @@ function SourceBar() {
 // ── Problem / Solution ──────────────────────────────────────────────────────
 function ProblemSolution() {
   const without = ['Refresh Centris for hours, hoping to catch a deal first', 'Guess at value with no comparable analysis', 'Never know if the lot can be developed further', 'Miss price drops until the property is gone']
-  const withArpent = ['New deals scored and delivered to you automatically', 'AI value gap vs. comparable sales, instantly', 'Development potential from official zoning + lot data', 'Alerted the moment a matching property or price drop appears']
+  const withPlexa = ['New deals scored and delivered to you automatically', 'AI value gap vs. comparable sales, instantly', 'Development potential from official zoning + lot data', 'Alerted the moment a matching property or price drop appears']
   return (
     <Section className="bg-surface">
       <Heading eyebrow="The problem" title="Investing on gut feel leaves money on the table" />
       <div className="grid md:grid-cols-2 gap-5 mt-12 max-w-4xl mx-auto">
         <div className="rounded-2xl bg-white border border-surface-border p-7">
-          <h3 className="font-bold text-ink flex items-center gap-2 mb-4"><span className="w-7 h-7 rounded-lg bg-score-notrecommended/10 flex items-center justify-center"><X size={16} className="text-score-notrecommended" /></span> Without Arpent</h3>
+          <h3 className="font-bold text-ink flex items-center gap-2 mb-4"><span className="w-7 h-7 rounded-lg bg-score-notrecommended/10 flex items-center justify-center"><X size={16} className="text-score-notrecommended" /></span> Without Plexa</h3>
           <ul className="space-y-3">
             {without.map(t => (
               <li key={t} className="flex items-start gap-2.5 text-sm text-muted"><X size={16} className="text-score-notrecommended/70 mt-0.5 shrink-0" />{t}</li>
@@ -223,9 +255,9 @@ function ProblemSolution() {
           </ul>
         </div>
         <div className="rounded-2xl bg-white border-2 border-accent/25 p-7 shadow-lg shadow-accent/5">
-          <h3 className="font-bold text-ink flex items-center gap-2 mb-4"><span className="w-7 h-7 rounded-lg bg-score-strong/10 flex items-center justify-center"><Check size={16} className="text-score-strong" /></span> With Arpent</h3>
+          <h3 className="font-bold text-ink flex items-center gap-2 mb-4"><span className="w-7 h-7 rounded-lg bg-score-strong/10 flex items-center justify-center"><Check size={16} className="text-score-strong" /></span> With Plexa</h3>
           <ul className="space-y-3">
-            {withArpent.map(t => (
+            {withPlexa.map(t => (
               <li key={t} className="flex items-start gap-2.5 text-sm text-ink"><Check size={16} className="text-score-strong mt-0.5 shrink-0" />{t}</li>
             ))}
           </ul>
@@ -271,11 +303,11 @@ function ZoningSpotlight() {
     <Section id="coverage" className="bg-surface">
       <div className="grid lg:grid-cols-2 gap-12 items-center">
         <div>
-          <span className="text-xs font-bold uppercase tracking-widest text-accent">The Arpent edge</span>
+          <span className="text-xs font-bold uppercase tracking-widest text-accent">The Plexa edge</span>
           <h2 className="mt-3 text-3xl sm:text-4xl font-extrabold tracking-tight text-ink text-balance">Turn a single-family lot into a development opportunity</h2>
           <p className="mt-5 text-muted leading-relaxed">
             A property listed as a house might sit on land the city already allows you to build several units on.
-            Arpent reads the official zoning code and the government lot record, then estimates what could be built —
+            Plexa reads the official zoning code and the government lot record, then estimates what could be built —
             right on the listing, with the source document one click away.
           </p>
           <ul className="mt-6 space-y-3">
@@ -331,7 +363,7 @@ function MockStat({ label, value, tone }: { label: string; value: string; tone?:
 // ── How it works ────────────────────────────────────────────────────────────
 function HowItWorks() {
   const steps = [
-    { Icon: Search, title: 'We scan, around the clock', desc: 'Arpent scrapes Centris, Realtor.ca and Remax every few hours and merges duplicate listings into one.' },
+    { Icon: Search, title: 'We scan, around the clock', desc: 'Plexa scrapes Centris, Realtor.ca and Remax every few hours and merges duplicate listings into one.' },
     { Icon: Layers, title: 'AI scores & checks zoning', desc: 'Each property gets a deal score, full financials, comparable analysis, and its development potential.' },
     { Icon: Bell, title: 'You get the edge', desc: 'Browse the ranked dashboard, or let alerts bring the best matching deals straight to your inbox.' },
   ]
@@ -360,7 +392,7 @@ function FinalCTA() {
         <div aria-hidden className="absolute inset-0 opacity-50" style={{ background: 'radial-gradient(50% 60% at 50% 0%, rgba(37,99,235,0.5) 0%, transparent 70%)' }} />
         <div className="relative">
           <h2 className="text-3xl sm:text-5xl font-extrabold tracking-tight text-balance max-w-3xl mx-auto">Stop guessing. Start investing with an edge.</h2>
-          <p className="mt-5 text-lg text-slate-300/90 max-w-xl mx-auto">Join Quebec investors who find better deals in less time with Arpent.</p>
+          <p className="mt-5 text-lg text-slate-300/90 max-w-xl mx-auto">Join Quebec investors who find better deals in less time with Plexa.</p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
             <Link to="/register" className="group inline-flex items-center gap-2 px-7 py-3.5 rounded-xl bg-accent text-white font-bold shadow-lg shadow-accent/25 hover:bg-accent-hover hover:-translate-y-0.5 transition-all">
               Get started free <ArrowRight size={18} className="group-hover:translate-x-0.5 transition-transform" />
@@ -376,15 +408,67 @@ function FinalCTA() {
 
 // ── Footer ──────────────────────────────────────────────────────────────────
 function Footer() {
+  const columns: { title: string; items: { label: string; to?: string; href?: string }[] }[] = [
+    { title: 'Product', items: [
+      { label: 'Features', href: '#features' },
+      { label: 'How it works', href: '#how' },
+      { label: 'Coverage', href: '#coverage' },
+    ] },
+    { title: 'Account', items: [
+      { label: 'Sign in', to: '/login' },
+      { label: 'Create account', to: '/register' },
+    ] },
+    { title: 'Data sources', items: [
+      { label: 'Centris' }, { label: 'Realtor.ca' }, { label: 'Remax Québec' },
+      { label: 'Rôle d’évaluation foncière' }, { label: 'Plan d’urbanisme' },
+    ] },
+  ]
   return (
-    <footer className="border-t border-surface-border bg-white">
-      <div className="max-w-7xl mx-auto px-5 sm:px-8 py-10 flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div className="flex items-center gap-2.5">
-          <span className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center"><AppIcon size={17} className="text-white" /></span>
-          <span className="font-extrabold tracking-tight">Arpent</span>
-          <span className="text-sm text-muted ml-2 hidden sm:inline">Quebec real-estate intelligence</span>
+    <footer className="bg-ink text-slate-300">
+      <div className="max-w-7xl mx-auto px-5 sm:px-8 pt-14 pb-8">
+        <div className="grid gap-10 md:grid-cols-[1.4fr_repeat(3,1fr)]">
+          {/* Brand */}
+          <div className="max-w-xs">
+            <div className="flex items-center gap-2.5">
+              <span className="w-9 h-9 rounded-xl bg-accent flex items-center justify-center"><AppIcon size={19} className="text-white" /></span>
+              <span className="text-lg font-extrabold tracking-tight text-white">Plexa</span>
+            </div>
+            <p className="mt-4 text-sm text-slate-400 leading-relaxed">
+              Quebec real-estate investment intelligence — AI-scored deals, development potential
+              from official data, and instant alerts.
+            </p>
+            <Link to="/register" className="mt-5 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-accent text-white text-sm font-bold hover:bg-accent-hover transition-colors">
+              Get started free <ArrowRight size={15} />
+            </Link>
+          </div>
+
+          {/* Link columns */}
+          {columns.map(col => (
+            <div key={col.title}>
+              <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-4">{col.title}</p>
+              <ul className="space-y-2.5">
+                {col.items.map(item => (
+                  <li key={item.label}>
+                    {item.to ? (
+                      <Link to={item.to} className="text-sm text-slate-300 hover:text-white transition-colors">{item.label}</Link>
+                    ) : item.href ? (
+                      <a href={item.href} className="text-sm text-slate-300 hover:text-white transition-colors">{item.label}</a>
+                    ) : (
+                      <span className="text-sm text-slate-400">{item.label}</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
         </div>
-        <p className="text-xs text-muted/70 text-center">© {new Date().getFullYear()} Arpent · Indicative analysis only — confirm with a professional before investing.</p>
+
+        <div className="mt-12 pt-6 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-3">
+          <p className="text-xs text-slate-500">© {new Date().getFullYear()} Plexa. All rights reserved.</p>
+          <p className="text-xs text-slate-500 text-center sm:text-right">
+            Indicative analysis only — confirm with a licensed professional before investing.
+          </p>
+        </div>
       </div>
     </footer>
   )

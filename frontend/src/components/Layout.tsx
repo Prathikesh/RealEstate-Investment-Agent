@@ -58,7 +58,7 @@ export default function Layout() {
       <aside className="hidden md:flex w-[64px] shrink-0 bg-white border-r border-surface-border flex-col items-center py-4 gap-1 z-30 shadow-sm">
 
         {/* Quartis logo mark */}
-        <Link to="/" className="mb-5 group/logo" title="Arpent">
+        <Link to="/" className="mb-5 group/logo" title="Plexa">
           <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center shadow-md
                           group-hover/logo:shadow-lg group-hover/logo:scale-105 transition-all duration-200">
             <QuartisIcon size={18} className="text-white" />
@@ -168,7 +168,7 @@ export default function Layout() {
         <div className="w-8 h-8 rounded-xl bg-accent flex items-center justify-center shadow-md">
           <QuartisIcon size={14} className="text-white" />
         </div>
-        <span className="font-black text-sm text-ink tracking-wide flex-1">Arpent</span>
+        <span className="font-black text-sm text-ink tracking-wide flex-1">Plexa</span>
         <div className="flex items-center gap-1 p-0.5 bg-surface rounded-lg border border-surface-border">
           {(['fr', 'en'] as const).map(l => (
             <button key={l} onClick={() => setLang(l)}

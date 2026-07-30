@@ -127,7 +127,7 @@ function sortUsers(users: UserSummary[], sortBy: SortKey): UserSummary[] {
 }
 
 function exportUsersCsv(users: UserSummary[]) {
-  downloadCsv('arpent-users.csv', users.map(u => ({
+  downloadCsv('plexa-users.csv', users.map(u => ({
     name: u.name || '',
     email: u.email,
     role: u.role,
@@ -144,7 +144,7 @@ function exportUsersCsv(users: UserSummary[]) {
 
 function exportUserActivityCsv(user: UserSummary, activity: ActivityEntry[]) {
   const stem = (user.name || user.email).replace(/[^a-z0-9]+/gi, '-').toLowerCase()
-  downloadCsv(`arpent-activity-${stem}.csv`, activity.map(e => ({
+  downloadCsv(`plexa-activity-${stem}.csv`, activity.map(e => ({
     when: e.created_at,
     action: describeEvent(e),
     type: e.event_type,
@@ -195,7 +195,7 @@ export default function AdminDashboard() {
       <div>
         <h1 className="text-2xl font-black text-ink">Admin Dashboard</h1>
         <p className="text-sm text-muted mt-1 max-w-2xl">
-          A plain-English look at who&apos;s using Arpent: who&apos;s active right now, what they spend the
+          A plain-English look at who&apos;s using Plexa: who&apos;s active right now, what they spend the
           most time on, which properties get looked at, and which ones people actually run the numbers on.
         </p>
       </div>
