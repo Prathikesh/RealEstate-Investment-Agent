@@ -3,7 +3,7 @@ import { ArrowLeft, ShieldCheck, Sparkles, Building2, Bell } from 'lucide-react'
 import { AppIcon } from '../components/QuartisLogo'
 
 const VALUE_PROPS = [
-  { Icon: Sparkles,   text: 'AI-scored deals across Centris, Realtor.ca & Remax' },
+  { Icon: Sparkles,   text: 'AI-scored deals across the entire Quebec market' },
   { Icon: Building2,  text: 'Development potential from official Quebec zoning data' },
   { Icon: Bell,       text: 'Instant alerts the moment an undervalued property appears' },
 ]

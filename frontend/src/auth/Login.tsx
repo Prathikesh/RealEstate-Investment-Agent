@@ -37,7 +37,7 @@ export default function Login() {
     <AuthLayout
       eyebrow="Welcome back"
       title="Sign in to Plexa"
-      subtitle="Pick up where you left off on your Quebec deal pipeline."
+      subtitle="Your Quebec deal pipeline is one click away."
       footer={
         <>Don&apos;t have an account?{' '}
           <Link to="/register" className="text-accent font-semibold hover:underline">Create one free</Link>

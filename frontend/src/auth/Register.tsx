@@ -36,9 +36,9 @@ export default function Register() {
 
   return (
     <AuthLayout
-      eyebrow="Get started free"
-      title="Create your account"
-      subtitle="Start finding undervalued Quebec investment properties today."
+      eyebrow="Get started — free"
+      title="Create your Plexa account"
+      subtitle="Find undervalued Quebec properties — scored, analyzed and alerted for you, in minutes."
       footer={
         <>Already have an account?{' '}
           <Link to="/login" className="text-accent font-semibold hover:underline">Sign in</Link>
