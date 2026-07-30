@@ -30,7 +30,7 @@ from app.auth.security import (
     verify_password,
 )
 from app.config import settings
-from app.models.broker import Broker, UserRole
+from app.models.broker import Broker, UserRole, InvestmentStrategy, Language
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -65,10 +65,34 @@ class UserResponse(BaseModel):
     name: Optional[str]
     role: str
 
-    @field_validator("role", mode="before")
+    # ── Investment / alert preferences (Settings page) ──
+    location_city:        Optional[str]       = None
+    location_radius_km:   Optional[int]       = None
+    price_min:            Optional[float]     = None
+    price_max:            Optional[float]     = None
+    property_types:       Optional[list[str]] = None
+    investment_strategy:  Optional[str]       = None
+    min_score_for_alert:  Optional[int]       = None
+    email_alerts_enabled: Optional[bool]      = None
+    language:             Optional[str]       = None
+
+    @field_validator("role", "investment_strategy", "language", mode="before")
     @classmethod
-    def role_to_value(cls, v):
+    def enum_to_value(cls, v):
         return v.value if hasattr(v, "value") else v
+
+
+class PreferencesUpdate(BaseModel):
+    """Partial update of the current user's investment/alert preferences."""
+    location_city:        Optional[str]       = None
+    location_radius_km:   Optional[int]       = None
+    price_min:            Optional[float]     = None
+    price_max:            Optional[float]     = None
+    property_types:       Optional[list[str]] = None
+    investment_strategy:  Optional[str]       = None
+    min_score_for_alert:  Optional[int]       = None
+    email_alerts_enabled: Optional[bool]      = None
+    language:             Optional[str]       = None
 
 
 # ── Cookie helpers ────────────────────────────────────────────────────────────
@@ -172,4 +196,35 @@ async def logout(
 
 @router.get("/me", response_model=UserResponse)
 async def me(user: Broker = Depends(get_current_user)) -> Broker:
+    return user
+
+
+@router.patch("/me", response_model=UserResponse)
+async def update_me(
+    payload: PreferencesUpdate,
+    user: Broker = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> Broker:
+    """Persist the current user's investment/alert preferences (Settings page)."""
+    data = payload.model_dump(exclude_unset=True)
+
+    if data.get("investment_strategy") is not None:
+        try:
+            data["investment_strategy"] = InvestmentStrategy(data["investment_strategy"])
+        except ValueError:
+            data.pop("investment_strategy")
+    if data.get("language") is not None:
+        try:
+            data["language"] = Language(data["language"])
+        except ValueError:
+            data.pop("language")
+    if data.get("min_score_for_alert") is not None:
+        data["min_score_for_alert"] = max(0, min(100, int(data["min_score_for_alert"])))
+    if data.get("location_radius_km") is not None:
+        data["location_radius_km"] = max(1, min(200, int(data["location_radius_km"])))
+
+    for key, value in data.items():
+        setattr(user, key, value)
+    await db.commit()
+    await db.refresh(user)
     return user

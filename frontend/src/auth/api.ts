@@ -6,6 +6,34 @@ export interface User {
   email: string
   name: string | null
   role: 'user' | 'admin'
+
+  // Investment / alert preferences (Settings page)
+  location_city?: string | null
+  location_radius_km?: number | null
+  price_min?: number | null
+  price_max?: number | null
+  property_types?: string[] | null
+  investment_strategy?: 'buy_and_hold' | 'buy_fix_sell' | 'both' | null
+  min_score_for_alert?: number | null
+  email_alerts_enabled?: boolean | null
+  language?: 'en' | 'fr' | null
+}
+
+export interface PreferencesPayload {
+  location_city?: string | null
+  location_radius_km?: number
+  price_min?: number | null
+  price_max?: number | null
+  property_types?: string[]
+  investment_strategy?: 'buy_and_hold' | 'buy_fix_sell' | 'both'
+  min_score_for_alert?: number
+  email_alerts_enabled?: boolean
+  language?: 'en' | 'fr'
+}
+
+export async function updatePreferences(payload: PreferencesPayload): Promise<User> {
+  const { data } = await http.patch<User>('/auth/me', payload)
+  return data
 }
 
 export interface LoginPayload {

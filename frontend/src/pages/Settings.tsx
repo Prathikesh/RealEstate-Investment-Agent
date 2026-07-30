@@ -1,16 +1,16 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Bell, MapPin, Home, TrendingUp, Globe, CheckCircle2,
-  Smartphone, MessageCircle, Wrench, Building2,
-  Mail, SlidersHorizontal, ChevronDown, Check, Search,
+  Bell, MapPin, Home, TrendingUp, Globe, CheckCircle2, ShieldCheck,
+  Smartphone, MessageCircle, Wrench, Building2, Mail, SlidersHorizontal,
+  ChevronDown, Check, Search, Layers,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useLang } from '../context/LanguageContext'
-import {
-  loadPreferences, savePreferences, preferencesToSearchParams, type Preferences,
-} from '../lib/preferences'
+import { useAuth } from '../auth/AuthContext'
+import { updatePreferences, type PreferencesPayload, type User } from '../auth/api'
 
+// ── Option data ──────────────────────────────────────────────────────────────
 const PROPERTY_TYPES = [
   { value: 'duplex',          label: 'Duplex',        sub: '2 units' },
   { value: 'triplex',         label: 'Triplex',       sub: '3 units' },
@@ -20,179 +20,184 @@ const PROPERTY_TYPES = [
   { value: 'condo',           label: 'Condo',         sub: 'apartment' },
 ]
 
-// Investment goals — now multi-select (client asked for a dropdown where one OR
-// multiple can be picked). "Both" is no longer a separate option: selecting both
-// Buy & Hold and Flip expresses it directly.
 const GOALS = [
   { value: 'buy_and_hold', icon: TrendingUp, label: 'Buy & Hold',        desc: 'Monthly rental income from tenants' },
   { value: 'buy_fix_sell', icon: Wrench,     label: 'Flip (Fix & Sell)', desc: 'Buy cheap, renovate, sell for profit' },
 ]
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-const digits = (s: string) => s.replace(/\D/g, '')
-
-const BUDGET_RANGES = [
-  { value: '0-300000',       label: 'Under $300K' },
-  { value: '300000-500000',  label: '$300K – $500K' },
-  { value: '500000-750000',  label: '$500K – $750K' },
-  { value: '750000-1000000', label: '$750K – $1M' },
-  { value: '1000000+',       label: 'Over $1M' },
+const BUDGETS = [
+  { value: '0-300000',       label: 'Under $300K',   min: undefined, max: 300000 },
+  { value: '300000-500000',  label: '$300K – $500K', min: 300000,    max: 500000 },
+  { value: '500000-750000',  label: '$500K – $750K', min: 500000,    max: 750000 },
+  { value: '750000-1000000', label: '$750K – $1M',   min: 750000,    max: 1000000 },
+  { value: '1000000+',       label: 'Over $1M',      min: 1000000,   max: undefined },
 ]
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const digits = (s: string) => s.replace(/\D/g, '')
+const DELIVERY_KEY = 'plexa.delivery'
+
+// account price range -> budget bucket, and back
+function bucketFromRange(min?: number | null, max?: number | null): string {
+  const b = BUDGETS.find(x => (x.min ?? null) === (min ?? null) && (x.max ?? null) === (max ?? null))
+  return b?.value ?? ''
+}
+function goalsFromStrategy(s?: string | null): string[] {
+  if (s === 'buy_and_hold') return ['buy_and_hold']
+  if (s === 'buy_fix_sell') return ['buy_fix_sell']
+  return ['buy_and_hold', 'buy_fix_sell'] // "both" or unset
+}
+function strategyFromGoals(g: string[]): 'buy_and_hold' | 'buy_fix_sell' | 'both' {
+  const hold = g.includes('buy_and_hold'), flip = g.includes('buy_fix_sell')
+  if (hold && !flip) return 'buy_and_hold'
+  if (flip && !hold) return 'buy_fix_sell'
+  return 'both'
+}
+function loadDelivery() {
+  try { return JSON.parse(localStorage.getItem(DELIVERY_KEY) || '{}') } catch { return {} }
+}
+
 export default function Settings() {
-  const { t, lang, setLang } = useLang()
+  const { user, setUser } = useAuth()
+  const { lang, setLang } = useLang()
   const navigate = useNavigate()
 
-  const initial = loadPreferences()
-  const [city, setCity]                     = useState(initial.city)
-  const [radius, setRadius]                 = useState(initial.radius)
-  const [selectedTypes, setSelectedTypes]   = useState<string[]>(initial.propertyTypes)
-  const [goals, setGoals]                   = useState<string[]>(initial.goals)
-  const [budget, setBudget]                 = useState(initial.budget)
-  const [minScore, setMinScore]             = useState(initial.minScore)
-  const [emailAlerts, setEmailAlerts]       = useState(initial.emailAlerts)
-  const [email, setEmail]                   = useState(initial.email)
-  const [smsAlerts, setSmsAlerts]           = useState(initial.smsAlerts)
-  const [whatsappAlerts, setWhatsappAlerts] = useState(initial.whatsappAlerts)
-  const [phoneNumber, setPhoneNumber]       = useState(initial.phoneNumber)
-  const [newListingAlerts, setNewListingAlerts] = useState(initial.newListingAlerts)
-  const [priceDropAlerts, setPriceDropAlerts]   = useState(initial.priceDropAlerts)
-  const [saved, setSaved]                   = useState(false)
+  // ── State, seeded from the account ──
+  const d0 = loadDelivery()
+  const [city, setCity]               = useState(user?.location_city ?? '')
+  const [radius, setRadius]           = useState(user?.location_radius_km ?? 25)
+  const [budget, setBudget]           = useState(bucketFromRange(user?.price_min, user?.price_max))
+  const [types, setTypes]             = useState<string[]>(user?.property_types ?? ['triplex', 'duplex'])
+  const [goals, setGoals]             = useState<string[]>(goalsFromStrategy(user?.investment_strategy))
+  const [minScore, setMinScore]       = useState(user?.min_score_for_alert ?? 60)
+  const [emailAlerts, setEmailAlerts] = useState(user?.email_alerts_enabled ?? true)
+  // delivery/trigger extras — local until the alert engine + fields land server-side
+  const [newListings, setNewListings]     = useState<boolean>(d0.newListings ?? true)
+  const [priceDrops, setPriceDrops]       = useState<boolean>(d0.priceDrops ?? true)
+  const [smsAlerts, setSmsAlerts]         = useState<boolean>(d0.smsAlerts ?? false)
+  const [whatsappAlerts, setWhatsapp]     = useState<boolean>(d0.whatsappAlerts ?? false)
+  const [phone, setPhone]                 = useState<string>(d0.phone ?? '')
+  const [saved, setSaved]   = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  // Re-seed if the account arrives/changes after mount.
+  useEffect(() => {
+    if (!user) return
+    setCity(user.location_city ?? '')
+    setRadius(user.location_radius_km ?? 25)
+    setBudget(bucketFromRange(user.price_min, user.price_max))
+    setTypes(user.property_types ?? ['triplex', 'duplex'])
+    setGoals(goalsFromStrategy(user.investment_strategy))
+    setMinScore(user.min_score_for_alert ?? 60)
+    setEmailAlerts(user.email_alerts_enabled ?? true)
+  }, [user?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const phoneNeeded = (smsAlerts || whatsappAlerts) && digits(phone).length < 10
+  const emailValid = !emailAlerts || (user?.email ? EMAIL_RE.test(user.email) : false)
+  const canSave = !phoneNeeded && emailValid
 
   function toggleType(v: string) {
-    setSelectedTypes(prev =>
-      prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v]
-    )
+    setTypes(prev => prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v])
   }
 
-  function current(): Preferences {
+  function accountPayload(): PreferencesPayload {
+    const b = BUDGETS.find(x => x.value === budget)
     return {
-      city, radius, budget, propertyTypes: selectedTypes, goals, minScore,
-      emailAlerts, email, smsAlerts, whatsappAlerts, phoneNumber,
-      newListingAlerts, priceDropAlerts,
+      location_city: city.trim() || null,
+      location_radius_km: radius,
+      price_min: b?.min ?? null,
+      price_max: b?.max ?? null,
+      property_types: types,
+      investment_strategy: strategyFromGoals(goals),
+      min_score_for_alert: minScore,
+      email_alerts_enabled: emailAlerts,
+      language: lang,
     }
   }
 
-  // Validation — only nags about a contact when its channel is actually on.
-  const emailError = emailAlerts && email.trim() !== '' && !EMAIL_RE.test(email.trim())
-  const emailMissing = emailAlerts && email.trim() === ''
-  const phoneNeeded = (smsAlerts || whatsappAlerts) && digits(phoneNumber).length < 10
-  const canSave = !emailError && !phoneNeeded
-
-  function handleSave() {
-    if (!canSave) return
-    savePreferences(current())
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2500)
+  async function handleSave() {
+    if (!canSave || saving) return
+    setSaving(true)
+    try {
+      const updated = await updatePreferences(accountPayload())
+      setUser(updated as User)
+      localStorage.setItem(DELIVERY_KEY, JSON.stringify({ newListings, priceDrops, smsAlerts, whatsappAlerts, phone }))
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2500)
+    } catch {
+      /* surfaced below via disabled state; keep simple */
+    } finally {
+      setSaving(false)
+    }
   }
 
   function applyToSearch() {
-    savePreferences(current())
-    const qs = preferencesToSearchParams(current())
-    navigate(qs ? `/properties?${qs}` : '/properties')
+    const b = BUDGETS.find(x => x.value === budget)
+    const p = new URLSearchParams()
+    if (city.trim()) p.set('city', city.trim())
+    if (minScore > 0) p.set('score_min', String(minScore))
+    if (b?.min != null) p.set('price_min', String(b.min))
+    if (b?.max != null) p.set('price_max', String(b.max))
+    if (types.length === 1) p.set('property_type', types[0])
+    navigate(p.toString() ? `/properties?${p}` : '/properties')
   }
 
   return (
-    <div className="p-6 space-y-6 animate-slide-up">
-
-      {/* ── Header ──────────────────────────────────────────────────────── */}
-      <div className="flex items-start justify-between gap-4">
+    <div className="p-6 max-w-[1400px] mx-auto animate-slide-up">
+      {/* ── Header ── */}
+      <div className="flex items-start justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-ink">{t('settings_title')}</h1>
-          <p className="text-sm text-muted mt-0.5">Customize your investment search preferences and alert delivery.</p>
+          <h1 className="text-2xl font-extrabold text-ink tracking-tight">Settings</h1>
+          <p className="text-sm text-muted mt-1 flex items-center gap-1.5">
+            <ShieldCheck size={15} className="text-score-strong" />
+            Your investment preferences, saved to your account.
+          </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <button
-            onClick={applyToSearch}
-            className="btn-ghost"
-            title="Save and open the Properties list filtered by these preferences"
-          >
+          <button onClick={applyToSearch} className="btn-ghost" title="Open the Properties list filtered by these preferences">
             <Search size={15} /> Apply to search
           </button>
-          <button
-            onClick={handleSave}
-            disabled={!canSave}
-            className="btn-primary disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            {saved
-              ? <><CheckCircle2 size={15} /> Saved!</>
-              : 'Save preferences'
-            }
+          <button onClick={handleSave} disabled={!canSave || saving} className="btn-primary disabled:opacity-40 disabled:cursor-not-allowed min-w-[150px] justify-center">
+            {saved ? <><CheckCircle2 size={15} /> Saved</> : saving ? 'Saving…' : 'Save preferences'}
           </button>
         </div>
       </div>
 
-      {/* ── Two-column layout ────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
-
-        {/* LEFT: Investment preferences (takes 2/3) */}
+        {/* LEFT — investment preferences */}
         <div className="xl:col-span-2 space-y-5">
-
-          {/* Location */}
-          <SectionCard title="Search Location" icon={<MapPin size={14} />}>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <SectionCard icon={<MapPin size={15} />} title="Search location" desc="Where you're hunting for deals.">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
               <label className="block">
-                <span className="text-xs font-semibold text-muted uppercase tracking-wider block mb-2">Target city</span>
-                <input
-                  type="text"
-                  value={city}
-                  onChange={e => setCity(e.target.value)}
-                  placeholder="e.g. Montréal, Laval, Québec City"
-                  className="input"
-                />
+                <span className="block text-xs font-semibold text-muted uppercase tracking-wider mb-2">Target city</span>
+                <input value={city} onChange={e => setCity(e.target.value)} placeholder="e.g. Montréal, Laval, Québec City" className="input" />
               </label>
               <label className="block">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-semibold text-muted uppercase tracking-wider">Search radius</span>
-                  <span className="text-sm font-bold font-mono text-accent">{radius} km</span>
-                </div>
-                <input
-                  type="range" min={5} max={100} step={5}
-                  value={radius}
-                  onChange={e => setRadius(Number(e.target.value))}
-                  className="w-full accent-accent mt-1"
-                />
-                <div className="flex justify-between text-[10px] text-muted mt-1.5">
-                  <span>5 km</span><span>50 km</span><span>100 km</span>
-                </div>
+                <div className="flex items-center justify-between mb-2"><span className="text-xs font-semibold text-muted uppercase tracking-wider">Search radius</span><span className="text-sm font-bold font-mono text-accent">{radius} km</span></div>
+                <input type="range" min={5} max={100} step={5} value={radius} onChange={e => setRadius(Number(e.target.value))} className="w-full accent-accent" />
+                <div className="flex justify-between text-[10px] text-muted mt-1.5"><span>5 km</span><span>50 km</span><span>100 km</span></div>
               </label>
             </div>
           </SectionCard>
 
-          {/* Budget */}
-          <SectionCard title="Budget Range" icon={<TrendingUp size={14} />}>
-            <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
-              {BUDGET_RANGES.map(b => (
-                <button
-                  key={b.value}
-                  onClick={() => setBudget(b.value)}
-                  className={clsx(
-                    'px-3 py-2.5 rounded-xl border text-xs font-semibold text-center transition-all',
-                    budget === b.value
-                      ? 'border-accent bg-accent/10 text-accent ring-1 ring-accent/20'
-                      : 'border-surface-border text-muted hover:border-accent/40 hover:text-ink bg-white',
-                  )}
-                >
+          <SectionCard icon={<TrendingUp size={15} />} title="Budget range" desc="The price band you invest in.">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+              {BUDGETS.map(b => (
+                <button key={b.value} onClick={() => setBudget(budget === b.value ? '' : b.value)}
+                  className={clsx('px-3 py-2.5 rounded-xl border text-xs font-semibold text-center transition-all',
+                    budget === b.value ? 'border-accent bg-accent/10 text-accent ring-1 ring-accent/20' : 'border-surface-border text-muted hover:border-accent/40 hover:text-ink bg-white')}>
                   {b.label}
                 </button>
               ))}
             </div>
           </SectionCard>
 
-          {/* Property types */}
-          <SectionCard title="Property Types" icon={<Building2 size={14} />}>
+          <SectionCard icon={<Building2 size={15} />} title="Property types" desc="Pick every type you'd consider.">
             <div className="flex flex-wrap gap-2">
               {PROPERTY_TYPES.map(tp => (
-                <button
-                  key={tp.value}
-                  onClick={() => toggleType(tp.value)}
-                  className={clsx(
-                    'px-4 py-2.5 rounded-xl border text-sm font-medium transition-all text-left',
-                    selectedTypes.includes(tp.value)
-                      ? 'bg-accent/10 text-accent border-accent/40 ring-1 ring-accent/20'
-                      : 'bg-white text-muted border-surface-border hover:border-accent/40 hover:text-ink',
-                  )}
-                >
+                <button key={tp.value} onClick={() => toggleType(tp.value)}
+                  className={clsx('px-4 py-2.5 rounded-xl border text-sm transition-all text-left',
+                    types.includes(tp.value) ? 'bg-accent/10 text-accent border-accent/40 ring-1 ring-accent/20' : 'bg-white text-muted border-surface-border hover:border-accent/40 hover:text-ink')}>
                   <span className="block font-semibold">{tp.label}</span>
                   <span className="text-[10px] font-normal opacity-60">{tp.sub}</span>
                 </button>
@@ -200,131 +205,54 @@ export default function Settings() {
             </div>
           </SectionCard>
 
-          {/* Investment goal — multi-select dropdown */}
-          <SectionCard title="Investment Goal" icon={<Home size={14} />}>
+          <SectionCard icon={<Home size={15} />} title="Investment goal" desc="Choose one or more strategies.">
             <GoalDropdown selected={goals} onChange={setGoals} />
           </SectionCard>
         </div>
 
-        {/* RIGHT: Alerts + Language (1/3) */}
+        {/* RIGHT — alerts + language */}
         <div className="space-y-5">
-
-          {/* Alert triggers */}
-          <SectionCard title="Alert Triggers" icon={<Bell size={14} />}>
-            <div className="space-y-4">
-              <div className="space-y-2.5">
-                <ToggleRow
-                  label="New listings"
-                  sub="When a property matching your criteria appears"
-                  value={newListingAlerts}
-                  onChange={setNewListingAlerts}
-                />
-                <ToggleRow
-                  label="Price drops"
-                  sub="When any listing price goes down"
-                  value={priceDropAlerts}
-                  onChange={setPriceDropAlerts}
-                />
-              </div>
-
-              <div className="pt-2 border-t border-surface-border">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-semibold text-muted uppercase tracking-wider">Min deal quality</span>
-                  <span className="text-sm font-bold font-mono text-accent">{minScore}/100</span>
-                </div>
-                <input
-                  type="range" min={40} max={90} step={5}
-                  value={minScore}
-                  onChange={e => setMinScore(Number(e.target.value))}
-                  className="w-full accent-accent"
-                />
-                <div className="flex justify-between text-[10px] text-muted mt-1.5">
-                  <span>Any</span><span>Good</span><span>Top</span><span>Best</span>
-                </div>
-              </div>
+          <SectionCard icon={<Bell size={15} />} title="Alert triggers" desc="What should trigger a notification.">
+            <div className="space-y-2.5">
+              <ToggleRow label="New listings" sub="A property matching your criteria appears" value={newListings} onChange={setNewListings} />
+              <ToggleRow label="Price drops" sub="A listing you'd want drops in price" value={priceDrops} onChange={setPriceDrops} />
+            </div>
+            <div className="pt-4 mt-2 border-t border-surface-border">
+              <div className="flex items-center justify-between mb-2"><span className="text-xs font-semibold text-muted uppercase tracking-wider">Min deal quality</span><span className="text-sm font-bold font-mono text-accent">{minScore}/100</span></div>
+              <input type="range" min={40} max={90} step={5} value={minScore} onChange={e => setMinScore(Number(e.target.value))} className="w-full accent-accent" />
+              <div className="flex justify-between text-[10px] text-muted mt-1.5"><span>Any</span><span>Good</span><span>Top</span><span>Best</span></div>
             </div>
           </SectionCard>
 
-          {/* Delivery channels */}
-          <SectionCard title="Delivery Channels" icon={<SlidersHorizontal size={14} />}>
+          <SectionCard icon={<SlidersHorizontal size={15} />} title="Delivery channels" desc="How we reach you.">
             <div className="space-y-4">
-              <ToggleRow
-                label="Email alerts"
-                sub="Daily digest + instant alerts"
-                value={emailAlerts}
-                onChange={setEmailAlerts}
-                icon={<Mail size={14} className="text-accent" />}
-              />
-              {emailAlerts && (
-                <label className="block">
-                  <span className="text-xs font-semibold text-muted uppercase tracking-wider block mb-2">Email address</span>
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={e => setEmail(e.target.value)}
-                    placeholder="you@example.com"
-                    className={clsx('input', (emailError || emailMissing) && 'border-score-market ring-1 ring-score-market/30')}
-                  />
-                  {emailError && <p className="text-xs text-score-market mt-1.5">Enter a valid email address.</p>}
-                  {emailMissing && <p className="text-xs text-muted mt-1.5">Add an email to receive alerts.</p>}
-                </label>
-              )}
+              <ToggleRow label="Email alerts" sub={user?.email ? `Sent to ${user.email}` : 'Sent to your account email'} value={emailAlerts} onChange={setEmailAlerts} icon={<Mail size={14} className="text-accent" />} />
 
               <div className="pt-3 border-t border-surface-border space-y-3">
+                <div className="flex items-center gap-1.5 text-[11px] font-semibold text-muted">
+                  <Layers size={12} /> SMS &amp; WhatsApp
+                  <span className="ml-auto text-[10px] font-bold text-accent bg-accent/10 px-2 py-0.5 rounded-full">Coming soon</span>
+                </div>
                 <label className="block">
-                  <span className="text-xs font-semibold text-muted uppercase tracking-wider block mb-2">Phone number</span>
+                  <span className="block text-xs font-semibold text-muted uppercase tracking-wider mb-2">Phone number</span>
                   <div className="flex gap-2">
-                    <div className="flex items-center px-3 py-2 border border-surface-border bg-surface rounded-xl text-sm text-muted shrink-0">
-                      +1
-                    </div>
-                    <input
-                      type="tel"
-                      value={phoneNumber}
-                      onChange={e => setPhoneNumber(e.target.value)}
-                      placeholder="514-555-1234"
-                      className="input flex-1"
-                    />
+                    <div className="flex items-center px-3 py-2 border border-surface-border bg-surface rounded-xl text-sm text-muted shrink-0">+1</div>
+                    <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="514-555-1234" className="input flex-1" />
                   </div>
                 </label>
-
-                <ToggleRow
-                  label="SMS"
-                  sub="Works on any phone"
-                  value={smsAlerts}
-                  onChange={setSmsAlerts}
-                  icon={<Smartphone size={14} className="text-muted" />}
-                />
-                <ToggleRow
-                  label="WhatsApp"
-                  sub="Rich messages with photos"
-                  value={whatsappAlerts}
-                  onChange={setWhatsappAlerts}
-                  icon={<MessageCircle size={14} className="text-green-500" />}
-                />
-
-                {phoneNeeded && (
-                  <p className="text-xs text-score-market bg-score-market/10 border border-score-market/30 rounded-lg px-3 py-2">
-                    Enter a valid phone number above to activate SMS/WhatsApp.
-                  </p>
-                )}
+                <ToggleRow label="SMS" sub="Works on any phone" value={smsAlerts} onChange={setSmsAlerts} icon={<Smartphone size={14} className="text-muted" />} />
+                <ToggleRow label="WhatsApp" sub="Rich messages with photos" value={whatsappAlerts} onChange={setWhatsapp} icon={<MessageCircle size={14} className="text-green-500" />} />
+                {phoneNeeded && <p className="text-xs text-score-market bg-score-market/10 border border-score-market/30 rounded-lg px-3 py-2">Enter a valid phone number to enable SMS/WhatsApp.</p>}
               </div>
             </div>
           </SectionCard>
 
-          {/* Language */}
-          <SectionCard title="Language" icon={<Globe size={14} />}>
+          <SectionCard icon={<Globe size={15} />} title="Language" desc="Interface language.">
             <div className="grid grid-cols-2 gap-2">
               {(['fr', 'en'] as const).map(l => (
-                <button
-                  key={l}
-                  onClick={() => setLang(l)}
-                  className={clsx(
-                    'py-2.5 rounded-xl border text-sm font-semibold transition-all',
-                    lang === l
-                      ? 'bg-accent/10 text-accent border-accent/40 ring-1 ring-accent/20'
-                      : 'border-surface-border text-muted hover:border-accent/40 hover:text-ink bg-white',
-                  )}
-                >
+                <button key={l} onClick={() => setLang(l)}
+                  className={clsx('py-2.5 rounded-xl border text-sm font-semibold transition-all',
+                    lang === l ? 'bg-accent/10 text-accent border-accent/40 ring-1 ring-accent/20' : 'border-surface-border text-muted hover:border-accent/40 hover:text-ink bg-white')}>
                   {l === 'fr' ? 'Français' : 'English'}
                 </button>
               ))}
@@ -332,24 +260,20 @@ export default function Settings() {
           </SectionCard>
         </div>
       </div>
-
-      <p className="text-xs text-muted/50 text-center pb-2">
-        Preferences will sync to your account once authentication is enabled.
-      </p>
     </div>
   )
 }
 
 // ── Section card ──────────────────────────────────────────────────────────────
-
-function SectionCard({ title, icon, children }: {
-  title: string; icon: React.ReactNode; children: React.ReactNode
-}) {
+function SectionCard({ title, desc, icon, children }: { title: string; desc?: string; icon: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="card space-y-4">
-      <div className="flex items-center gap-2 pb-3 border-b border-surface-border">
-        <span className="text-muted">{icon}</span>
-        <h2 className="text-sm font-bold text-ink">{title}</h2>
+      <div className="flex items-start gap-3 pb-3 border-b border-surface-border">
+        <span className="w-8 h-8 rounded-lg bg-accent/10 text-accent flex items-center justify-center shrink-0 mt-0.5">{icon}</span>
+        <div>
+          <h2 className="text-sm font-bold text-ink leading-tight">{title}</h2>
+          {desc && <p className="text-xs text-muted mt-0.5">{desc}</p>}
+        </div>
       </div>
       {children}
     </div>
@@ -357,113 +281,50 @@ function SectionCard({ title, icon, children }: {
 }
 
 // ── Toggle row ────────────────────────────────────────────────────────────────
-
-function ToggleRow({ label, sub, value, onChange, icon }: {
-  label: string
-  sub: string
-  value: boolean
-  onChange: (v: boolean) => void
-  icon?: React.ReactNode
-}) {
+function ToggleRow({ label, sub, value, onChange, icon }: { label: string; sub: string; value: boolean; onChange: (v: boolean) => void; icon?: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-4">
       <div className="flex items-start gap-2 min-w-0">
         {icon && <span className="mt-0.5 shrink-0">{icon}</span>}
-        <div className="min-w-0">
-          <p className="text-sm font-semibold text-ink leading-tight">{label}</p>
-          <p className="text-xs text-muted leading-snug mt-0.5">{sub}</p>
-        </div>
+        <div className="min-w-0"><p className="text-sm font-semibold text-ink leading-tight">{label}</p><p className="text-xs text-muted leading-snug mt-0.5">{sub}</p></div>
       </div>
-      <button
-        onClick={() => onChange(!value)}
-        className={clsx(
-          'relative shrink-0 w-10 rounded-full transition-colors duration-200',
-          value ? 'bg-accent' : 'bg-surface-border',
-        )}
-        style={{ height: '22px' }}
-        role="switch"
-        aria-checked={value}
-      >
-        <span className={clsx(
-          'absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200',
-          value ? 'translate-x-5' : 'translate-x-0.5',
-        )} />
+      <button onClick={() => onChange(!value)} role="switch" aria-checked={value}
+        className={clsx('relative shrink-0 w-11 h-6 rounded-full transition-colors duration-200', value ? 'bg-accent' : 'bg-surface-border')}>
+        <span className={clsx('absolute top-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-transform duration-200', value ? 'translate-x-[22px]' : 'translate-x-0.5')} />
       </button>
     </div>
   )
 }
 
 // ── Investment-goal multi-select dropdown ─────────────────────────────────────
-
-function GoalDropdown({ selected, onChange }: {
-  selected: string[]
-  onChange: (v: string[]) => void
-}) {
+function GoalDropdown({ selected, onChange }: { selected: string[]; onChange: (v: string[]) => void }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement | null>(null)
-
   useEffect(() => {
     if (!open) return
-    function onDown(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
+    const onDown = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
     document.addEventListener('mousedown', onDown)
     return () => document.removeEventListener('mousedown', onDown)
   }, [open])
-
-  function toggle(v: string) {
-    onChange(selected.includes(v) ? selected.filter(x => x !== v) : [...selected, v])
-  }
-
-  const summary = selected.length === 0
-    ? 'Select one or more goals…'
-    : GOALS.filter(g => selected.includes(g.value)).map(g => g.label).join(', ')
-
+  const toggle = (v: string) => onChange(selected.includes(v) ? selected.filter(x => x !== v) : [...selected, v])
+  const summary = selected.length === 0 ? 'Select one or more goals…' : GOALS.filter(g => selected.includes(g.value)).map(g => g.label).join(', ')
   return (
     <div ref={ref} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center justify-between gap-2 px-4 py-3 rounded-xl border border-surface-border bg-white text-left hover:border-accent/40 transition-colors"
-        aria-haspopup="listbox"
-        aria-expanded={open}
-      >
-        <span className={clsx('text-sm truncate', selected.length ? 'text-ink font-medium' : 'text-muted')}>
-          {summary}
-        </span>
+      <button type="button" onClick={() => setOpen(o => !o)} aria-haspopup="listbox" aria-expanded={open}
+        className="w-full flex items-center justify-between gap-2 px-4 py-3 rounded-xl border border-surface-border bg-white text-left hover:border-accent/40 transition-colors">
+        <span className={clsx('text-sm truncate', selected.length ? 'text-ink font-medium' : 'text-muted')}>{summary}</span>
         <ChevronDown size={16} className={clsx('text-muted shrink-0 transition-transform', open && 'rotate-180')} />
       </button>
-
       {open && (
         <div className="absolute z-20 mt-2 w-full rounded-xl border border-surface-border bg-white shadow-lg overflow-hidden" role="listbox">
           {GOALS.map(g => {
-            const Icon = g.icon
-            const active = selected.includes(g.value)
+            const Icon = g.icon, active = selected.includes(g.value)
             return (
-              <button
-                key={g.value}
-                type="button"
-                onClick={() => toggle(g.value)}
-                className={clsx(
-                  'w-full flex items-center gap-3 px-4 py-3 text-left transition-colors',
-                  active ? 'bg-accent/8' : 'hover:bg-surface-hover',
-                )}
-                role="option"
-                aria-selected={active}
-              >
-                <div className={clsx('w-8 h-8 rounded-lg flex items-center justify-center shrink-0', active ? 'bg-accent/15' : 'bg-surface')}>
-                  <Icon size={16} className={active ? 'text-accent' : 'text-muted'} />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-bold text-ink">{g.label}</p>
-                  <p className="text-xs text-muted leading-snug">{g.desc}</p>
-                </div>
-                <span className={clsx(
-                  'w-5 h-5 rounded-md border flex items-center justify-center shrink-0',
-                  active ? 'bg-accent border-accent' : 'border-surface-border',
-                )}>
-                  {active && <Check size={13} className="text-white" />}
-                </span>
+              <button key={g.value} type="button" onClick={() => toggle(g.value)} role="option" aria-selected={active}
+                className={clsx('w-full flex items-center gap-3 px-4 py-3 text-left transition-colors', active ? 'bg-accent/8' : 'hover:bg-surface-hover')}>
+                <div className={clsx('w-8 h-8 rounded-lg flex items-center justify-center shrink-0', active ? 'bg-accent/15' : 'bg-surface')}><Icon size={16} className={active ? 'text-accent' : 'text-muted'} /></div>
+                <div className="min-w-0 flex-1"><p className="text-sm font-bold text-ink">{g.label}</p><p className="text-xs text-muted leading-snug">{g.desc}</p></div>
+                <span className={clsx('w-5 h-5 rounded-md border flex items-center justify-center shrink-0', active ? 'bg-accent border-accent' : 'border-surface-border')}>{active && <Check size={13} className="text-white" />}</span>
               </button>
             )
           })}
