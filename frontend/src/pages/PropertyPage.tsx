@@ -2076,8 +2076,10 @@ function ZoningTab({ prop }: { prop: PropertyDetail }) {
       <div className="card text-center py-10 space-y-2">
         <p className="text-sm font-semibold text-ink">No zoning data available yet</p>
         <p className="text-xs text-muted max-w-md mx-auto">
-          {prop.city} isn't covered by our municipal zoning import yet. Coverage
-          currently includes Laval and Quebec City, expanding city by city.
+          {prop.city?.split('(')[0].trim() || 'This city'} isn't covered by our zoning
+          data yet. Coverage currently includes <span className="font-semibold text-ink">Montréal</span> and{' '}
+          <span className="font-semibold text-ink">Laval</span>, expanding city by city. Everything else on this
+          property — score, financials and alerts — still works.
         </p>
       </div>
     )
