@@ -2,10 +2,18 @@ import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
 import { authErrorMessage } from './api'
+import { useLang } from '../context/LanguageContext'
 import AuthLayout, { Field, SubmitButton } from './AuthLayout'
+
+const COPY = {
+  en: { eyebrow: 'Get started — free', title: 'Create your Plexa account', subtitle: 'Find undervalued Quebec properties — scored, analyzed and alerted for you, in minutes.', name: 'Name', email: 'Email', password: 'Password', pwph: 'At least 8 characters', submit: 'Create free account', submitting: 'Creating account…', have: 'Already have an account?', signin: 'Sign in', note: 'No credit card required · Cancel anytime', pwErr: 'Password must be at least 8 characters', err: 'Could not create your account' },
+  fr: { eyebrow: 'Commencez — gratuit', title: 'Créez votre compte Plexa', subtitle: 'Trouvez des propriétés québécoises sous-évaluées — notées, analysées et signalées pour vous, en quelques minutes.', name: 'Nom', email: 'Courriel', password: 'Mot de passe', pwph: 'Au moins 8 caractères', submit: 'Créer un compte gratuit', submitting: 'Création du compte…', have: 'Vous avez déjà un compte ?', signin: 'Se connecter', note: 'Aucune carte de crédit requise · Annulez en tout temps', pwErr: 'Le mot de passe doit contenir au moins 8 caractères', err: 'Impossible de créer votre compte' },
+}
 
 export default function Register() {
   const { register } = useAuth()
+  const { lang } = useLang()
+  const c = COPY[lang] ?? COPY.en
   const navigate = useNavigate()
 
   const [name, setName] = useState('')
@@ -17,61 +25,29 @@ export default function Register() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setError(null)
-
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters')
-      return
-    }
-
+    if (password.length < 8) { setError(c.pwErr); return }
     setSubmitting(true)
     try {
       await register({ email, password, name: name || undefined })
       navigate('/dashboard', { replace: true })
     } catch (err) {
-      setError(authErrorMessage(err, 'Could not create your account'))
-    } finally {
-      setSubmitting(false)
-    }
+      setError(authErrorMessage(err, c.err))
+    } finally { setSubmitting(false) }
   }
 
   return (
     <AuthLayout
-      eyebrow="Get started — free"
-      title="Create your Plexa account"
-      subtitle="Find undervalued Quebec properties — scored, analyzed and alerted for you, in minutes."
-      footer={
-        <>Already have an account?{' '}
-          <Link to="/login" className="text-accent font-semibold hover:underline">Sign in</Link>
-        </>
-      }
+      eyebrow={c.eyebrow} title={c.title} subtitle={c.subtitle}
+      footer={<>{c.have}{' '}<Link to="/login" className="text-accent font-semibold hover:underline">{c.signin}</Link></>}
     >
-      {error && (
-        <div className="mb-4 px-3.5 py-2.5 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700">
-          {error}
-        </div>
-      )}
-
+      {error && <div className="mb-4 px-3.5 py-2.5 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700">{error}</div>}
       <form onSubmit={handleSubmit} className="space-y-4">
-        <Field
-          label="Name" type="text" autoComplete="name"
-          value={name} onChange={e => setName(e.target.value)} placeholder="Jane Doe"
-        />
-        <Field
-          label="Email" type="email" required autoComplete="email"
-          value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com"
-        />
-        <Field
-          label="Password" type="password" required autoComplete="new-password"
-          value={password} onChange={e => setPassword(e.target.value)} placeholder="At least 8 characters"
-        />
-        <SubmitButton type="submit" disabled={submitting}>
-          {submitting ? 'Creating account…' : 'Create free account'}
-        </SubmitButton>
+        <Field label={c.name} type="text" autoComplete="name" value={name} onChange={e => setName(e.target.value)} placeholder="Jane Doe" />
+        <Field label={c.email} type="email" required autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" />
+        <Field label={c.password} type="password" required autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} placeholder={c.pwph} />
+        <SubmitButton type="submit" disabled={submitting}>{submitting ? c.submitting : c.submit}</SubmitButton>
       </form>
-
-      <p className="mt-4 text-center text-xs text-muted/70">
-        No credit card required · Cancel anytime
-      </p>
+      <p className="mt-4 text-center text-xs text-muted/70">{c.note}</p>
     </AuthLayout>
   )
 }
