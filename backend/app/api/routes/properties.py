@@ -171,7 +171,15 @@ async def list_properties(
 
     # Filters
     if city:
-        stmt = stmt.where(func.lower(Property.city).contains(city.lower()))
+        # Accent-insensitive: listings store "Montréal"/"Québec" but users type
+        # "montreal"/"quebec". Fold the column's French accents via translate()
+        # (no DB extension needed) and de-accent the query in Python.
+        from app.services.quebec_address import deaccent
+        folded_city = func.translate(
+            func.lower(Property.city),
+            "àâäéèêëîïôöûüùç", "aaaeeeeiioouuuc",
+        )
+        stmt = stmt.where(folded_city.contains(deaccent(city).lower()))
     if mls_number:
         stmt = stmt.where(func.lower(Property.mls_number).contains(mls_number.lower()))
     if property_type:

@@ -132,10 +132,11 @@ export default function Settings() {
   }
 
   function applyToSearch() {
+    // Browse filter = location + budget + type. Min deal quality is an ALERT
+    // threshold (not a browse filter), so it's intentionally left out here.
     const b = BUDGETS.find(x => x.value === budget)
     const p = new URLSearchParams()
     if (city.trim()) p.set('city', city.trim())
-    if (minScore > 0) p.set('score_min', String(minScore))
     if (b?.min != null) p.set('price_min', String(b.min))
     if (b?.max != null) p.set('price_max', String(b.max))
     if (types.length === 1) p.set('property_type', types[0])
