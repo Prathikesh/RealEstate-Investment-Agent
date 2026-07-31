@@ -10,7 +10,9 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
+from authlib.integrations.starlette_client import OAuthError
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,6 +22,7 @@ from app.analytics.service import log_event
 from app.api.deps import get_db
 from app.auth.deps import ACCESS_COOKIE_NAME, get_current_user
 from app.auth.models import RefreshToken
+from app.auth.oauth import oauth
 from app.auth.security import (
     ACCESS_TOKEN_TTL,
     REFRESH_TOKEN_TTL,
@@ -228,3 +231,61 @@ async def update_me(
     await db.commit()
     await db.refresh(user)
     return user
+
+
+# ── Google OAuth ─────────────────────────────────────────────────────────────
+# Server-side redirect flow (not a client-side token exchange) — the frontend
+# never handles a raw Google token, it just navigates the browser here and
+# back. authlib stores the CSRF state/nonce in the session cookie set up by
+# SessionMiddleware (app/main.py) between these two requests.
+
+@router.get("/google/login")
+async def google_login(request: Request):
+    if not settings.google_client_id:
+        raise HTTPException(status_code=503, detail="Google sign-in is not configured")
+    redirect_uri = f"{settings.app_base_url}/api/auth/google/callback"
+    return await oauth.google.authorize_redirect(request, redirect_uri)
+
+
+@router.get("/google/callback")
+async def google_callback(request: Request, db: AsyncSession = Depends(get_db)):
+    try:
+        token = await oauth.google.authorize_access_token(request)
+    except OAuthError:
+        return RedirectResponse(f"{settings.frontend_url}/login?error=google_auth_failed")
+
+    userinfo = token.get("userinfo")
+    if not userinfo or not userinfo.get("email"):
+        return RedirectResponse(f"{settings.frontend_url}/login?error=google_auth_failed")
+
+    google_id = userinfo["sub"]
+    email = userinfo["email"]
+
+    user = await db.scalar(select(Broker).where(Broker.google_id == google_id))
+    if not user:
+        # Same email, first time signing in with Google — link to the
+        # existing (presumably password-based) account rather than
+        # creating a duplicate.
+        user = await db.scalar(select(Broker).where(Broker.email == email))
+        if user:
+            user.google_id = google_id
+            if not user.avatar_url and userinfo.get("picture"):
+                user.avatar_url = userinfo["picture"]
+        else:
+            user = Broker(
+                google_id=google_id,
+                email=email,
+                name=userinfo.get("name"),
+                avatar_url=userinfo.get("picture"),
+                role=UserRole.USER,
+                is_verified=True,  # Google already verified this email
+            )
+            db.add(user)
+            await db.flush()
+
+    if not user.is_active:
+        return RedirectResponse(f"{settings.frontend_url}/login?error=account_disabled")
+
+    response = RedirectResponse(f"{settings.frontend_url}/dashboard")
+    await _issue_session(response, db, user, request)
+    return response

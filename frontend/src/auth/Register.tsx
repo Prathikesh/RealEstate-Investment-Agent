@@ -4,10 +4,11 @@ import { useAuth } from './AuthContext'
 import { authErrorMessage } from './api'
 import { useLang } from '../context/LanguageContext'
 import AuthLayout, { Field, SubmitButton } from './AuthLayout'
+import GoogleButton from './GoogleButton'
 
 const COPY = {
-  en: { eyebrow: 'Get started — free', title: 'Create your Plexa account', subtitle: 'Find undervalued Quebec properties — scored, analyzed and alerted for you, in minutes.', name: 'Name', email: 'Email', password: 'Password', pwph: 'At least 8 characters', submit: 'Create free account', submitting: 'Creating account…', have: 'Already have an account?', signin: 'Sign in', note: 'No credit card required · Cancel anytime', pwErr: 'Password must be at least 8 characters', err: 'Could not create your account' },
-  fr: { eyebrow: 'Commencez — gratuit', title: 'Créez votre compte Plexa', subtitle: 'Trouvez des propriétés québécoises sous-évaluées — notées, analysées et signalées pour vous, en quelques minutes.', name: 'Nom', email: 'Courriel', password: 'Mot de passe', pwph: 'Au moins 8 caractères', submit: 'Créer un compte gratuit', submitting: 'Création du compte…', have: 'Vous avez déjà un compte ?', signin: 'Se connecter', note: 'Aucune carte de crédit requise · Annulez en tout temps', pwErr: 'Le mot de passe doit contenir au moins 8 caractères', err: 'Impossible de créer votre compte' },
+  en: { eyebrow: 'Get started — free', title: 'Create your Plexa account', subtitle: 'Find undervalued Quebec properties — scored, analyzed and alerted for you, in minutes.', name: 'Name', email: 'Email', password: 'Password', pwph: 'At least 8 characters', submit: 'Create free account', submitting: 'Creating account…', have: 'Already have an account?', signin: 'Sign in', note: 'No credit card required · Cancel anytime', pwErr: 'Password must be at least 8 characters', err: 'Could not create your account', or: 'or', google: 'Sign up with Google' },
+  fr: { eyebrow: 'Commencez — gratuit', title: 'Créez votre compte Plexa', subtitle: 'Trouvez des propriétés québécoises sous-évaluées — notées, analysées et signalées pour vous, en quelques minutes.', name: 'Nom', email: 'Courriel', password: 'Mot de passe', pwph: 'Au moins 8 caractères', submit: 'Créer un compte gratuit', submitting: 'Création du compte…', have: 'Vous avez déjà un compte ?', signin: 'Se connecter', note: 'Aucune carte de crédit requise · Annulez en tout temps', pwErr: 'Le mot de passe doit contenir au moins 8 caractères', err: 'Impossible de créer votre compte', or: 'ou', google: 'S’inscrire avec Google' },
 }
 
 export default function Register() {
@@ -48,6 +49,14 @@ export default function Register() {
         <SubmitButton type="submit" disabled={submitting}>{submitting ? c.submitting : c.submit}</SubmitButton>
       </form>
       <p className="mt-4 text-center text-xs text-muted/70">{c.note}</p>
+
+      <div className="flex items-center gap-3 my-5">
+        <div className="flex-1 h-px bg-surface-border" />
+        <span className="text-xs text-muted">{c.or}</span>
+        <div className="flex-1 h-px bg-surface-border" />
+      </div>
+
+      <GoogleButton label={c.google} />
     </AuthLayout>
   )
 }

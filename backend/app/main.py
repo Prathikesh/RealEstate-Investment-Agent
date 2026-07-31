@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
+from starlette.middleware.sessions import SessionMiddleware
 
 from app.config import settings
 from app.api.routes.properties import router as properties_router
@@ -69,6 +70,15 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+# Holds the Google OAuth state/nonce between /auth/google/login and
+# /auth/google/callback (authlib's CSRF protection for the redirect flow).
+# Not used for anything else — app auth itself is the JWT cookies above.
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.app_secret_key,
+    same_site="lax",
+    https_only=settings.is_production,
 )
 
 app.include_router(auth_router)
