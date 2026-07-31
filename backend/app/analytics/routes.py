@@ -30,6 +30,16 @@ from app.analytics.service import log_event
 from app.models.broker import Broker
 from app.models.property import Property
 
+# Budget buckets — mirrors the Settings page's BUDGETS list, so "what people
+# want" (here) and "what people set in Settings" always agree.
+_BUDGET_BANDS: list[tuple[str, Optional[float], Optional[float]]] = [
+    ("Under $300K",   None,      300_000),
+    ("$300K – $500K", 300_000,   500_000),
+    ("$500K – $750K", 500_000,   750_000),
+    ("$750K – $1M",   750_000,   1_000_000),
+    ("Over $1M",      1_000_000, None),
+]
+
 # last_active_at within this window counts as "online now"
 ONLINE_THRESHOLD = timedelta(minutes=5)
 # Per-user detail view shows more than a global top-10 — it's the "click in
@@ -69,6 +79,7 @@ class UserSummary(BaseModel):
     email: str
     name: Optional[str]
     role: str
+    is_active: bool
     created_at: datetime
     last_login_at: Optional[datetime]
     last_active_at: Optional[datetime]
@@ -131,14 +142,44 @@ class ActiveUserSummary(BaseModel):
     event_count: int
 
 
+class RankedLabel(BaseModel):
+    label: str
+    count: int
+
+
+class EngagementBreakdown(BaseModel):
+    hot_lead: int
+    warm: int
+    exploring: int
+    cold: int
+
+
+class SignupTrendPoint(BaseModel):
+    date: str  # YYYY-MM-DD
+    count: int
+
+
+class PreferenceInsights(BaseModel):
+    """What people actually want, aggregated from Settings — not from usage."""
+    top_cities: list[RankedLabel]
+    budget_bands: list[RankedLabel]
+    property_types: list[RankedLabel]
+
+
 class OverviewResponse(BaseModel):
     total_users: int
     online_now: int
     signups_this_week: int
+    signups_last_week: int
     most_active_users: list[ActiveUserSummary]
     most_viewed_properties: list[PropertyViewSummary]
     most_analyzed_properties: list[PropertyViewSummary]
     top_pages: list[PageViewSummary]
+    engagement: EngagementBreakdown
+    preferences: PreferenceInsights
+    top_search_cities: list[RankedLabel]
+    top_search_types: list[RankedLabel]
+    signup_trend: list[SignupTrendPoint]
 
 
 # ── Shared aggregation helpers ──────────────────────────────────────────────────
@@ -259,6 +300,130 @@ async def _recent_events(
     return entries
 
 
+def _budget_band(price_min: Optional[float], price_max: Optional[float]) -> Optional[str]:
+    """Match a broker's saved price range to a Settings budget bucket. Only an
+    exact match counts — a custom/partial range isn't one of the six presets."""
+    for label, lo, hi in _BUDGET_BANDS:
+        if (lo or None) == (price_min or None) and (hi or None) == (price_max or None):
+            return label
+    return None
+
+
+def _ranked(counter: dict[str, int], limit: int = 6) -> list[RankedLabel]:
+    return [
+        RankedLabel(label=label, count=count)
+        for label, count in sorted(counter.items(), key=lambda kv: kv[1], reverse=True)[:limit]
+    ]
+
+
+def _tally_label(bucket: dict[str, list], raw: str) -> None:
+    """Case-insensitive tally that still displays a nicely-cased label — so
+    "montreal" and "Montreal" count as the SAME city instead of splitting the
+    tally (free-text city fields aren't case-normalized at the source). Keeps
+    the first capitalized-looking variant seen as the display label."""
+    key = raw.strip()
+    if not key:
+        return
+    lower = key.lower()
+    if lower not in bucket:
+        bucket[lower] = [key, 0]
+    elif key[:1].isupper() and not bucket[lower][0][:1].isupper():
+        bucket[lower][0] = key
+    bucket[lower][1] += 1
+
+
+def _ranked_labels(bucket: dict[str, list], limit: int = 6) -> list[RankedLabel]:
+    return [
+        RankedLabel(label=label, count=count)
+        for label, count in sorted(bucket.values(), key=lambda v: v[1], reverse=True)[:limit]
+    ]
+
+
+async def _preference_insights(db: AsyncSession) -> PreferenceInsights:
+    """What people actually want, straight from their saved Settings — the
+    stated-preference counterpart to the behavioural (search/view) stats."""
+    brokers = (await db.execute(
+        select(Broker.location_city, Broker.price_min, Broker.price_max, Broker.property_types)
+    )).all()
+
+    cities: dict[str, list] = {}
+    budgets: dict[str, int] = {}
+    types: dict[str, int] = {}
+    for city, price_min, price_max, property_types in brokers:
+        if city:
+            _tally_label(cities, city)
+        band = _budget_band(price_min, price_max)
+        if band:
+            budgets[band] = budgets.get(band, 0) + 1
+        for t in (property_types or []):
+            label = str(t).replace("_", " ").title()
+            types[label] = types.get(label, 0) + 1
+
+    return PreferenceInsights(
+        top_cities=_ranked_labels(cities), budget_bands=_ranked(budgets), property_types=_ranked(types),
+    )
+
+
+async def _top_search_terms(db: AsyncSession, *, limit: int = 300) -> tuple[list[RankedLabel], list[RankedLabel]]:
+    """Top searched cities / property types, tallied from the most recent
+    search events (actual behaviour — may disagree with stated preferences)."""
+    rows = (await db.execute(
+        select(UserEvent.payload)
+        .where(UserEvent.event_type == EventType.SEARCH)
+        .order_by(UserEvent.created_at.desc())
+        .limit(limit)
+    )).all()
+
+    cities: dict[str, list] = {}
+    types: dict[str, int] = {}
+    for (payload,) in rows:
+        payload = payload or {}
+        city = payload.get("city")
+        if city:
+            _tally_label(cities, str(city))
+        ptype = payload.get("property_type")
+        if ptype:
+            label = str(ptype).replace("_", " ").title()
+            types[label] = types.get(label, 0) + 1
+
+    return _ranked_labels(cities), _ranked(types)
+
+
+async def _signup_trend(db: AsyncSession, *, days: int = 14) -> list[SignupTrendPoint]:
+    """Daily signup counts for the trailing N days — zero-filled so the
+    sparkline never has a gap for a day with no signups."""
+    since = datetime.now(timezone.utc) - timedelta(days=days - 1)
+    rows = (await db.execute(
+        select(func.date(Broker.created_at).label("d"), func.count().label("cnt"))
+        .where(Broker.created_at >= since)
+        .group_by(column("d"))
+    )).all()
+    by_day = {str(r.d): r.cnt for r in rows}
+
+    today = datetime.now(timezone.utc).date()
+    return [
+        SignupTrendPoint(date=str(d), count=by_day.get(str(d), 0))
+        for d in (today - timedelta(days=days - 1 - i) for i in range(days))
+    ]
+
+
+async def _engagement_tiers(db: AsyncSession) -> dict[uuid.UUID, str]:
+    """Engagement tier for every user with any recent activity, keyed by id —
+    the single source both list_users (per-row badge) and the overview
+    (breakdown counts) read from. A user absent from this dict is "cold"
+    (no recent activity at all) — callers default missing keys to that."""
+    engagement_since = datetime.now(timezone.utc) - ENGAGEMENT_WINDOW
+    recent_analyses = await _event_counts_by_user(db, EventType.ANALYSIS_VIEW, since=engagement_since)
+    recent_views = await _event_counts_by_user(db, EventType.PROPERTY_VIEW, since=engagement_since)
+    recent_searches = await _event_counts_by_user(db, EventType.SEARCH, since=engagement_since)
+
+    user_ids = set(recent_analyses) | set(recent_views) | set(recent_searches)
+    return {
+        uid: _engagement_tier(recent_analyses.get(uid, 0), recent_views.get(uid, 0), recent_searches.get(uid, 0))
+        for uid in user_ids
+    }
+
+
 # ── Admin reads ──────────────────────────────────────────────────────────────────
 
 @admin_router.get("/users", response_model=list[UserSummary])
@@ -268,11 +433,7 @@ async def list_users(db: AsyncSession = Depends(get_db)) -> list[UserSummary]:
 
     view_counts = await _event_counts_by_user(db, EventType.PROPERTY_VIEW)
     analysis_counts = await _event_counts_by_user(db, EventType.ANALYSIS_VIEW)
-
-    engagement_since = datetime.now(timezone.utc) - ENGAGEMENT_WINDOW
-    recent_analyses = await _event_counts_by_user(db, EventType.ANALYSIS_VIEW, since=engagement_since)
-    recent_views = await _event_counts_by_user(db, EventType.PROPERTY_VIEW, since=engagement_since)
-    recent_searches = await _event_counts_by_user(db, EventType.SEARCH, since=engagement_since)
+    tiers = await _engagement_tiers(db)
 
     page_rows = (await db.execute(
         select(UserEvent.user_id, UserEvent.payload["path"].astext.label("path"), func.count().label("cnt"))
@@ -288,15 +449,13 @@ async def list_users(db: AsyncSession = Depends(get_db)) -> list[UserSummary]:
 
     return [
         UserSummary(
-            id=u.id, email=u.email, name=u.name, role=u.role.value,
+            id=u.id, email=u.email, name=u.name, role=u.role.value, is_active=u.is_active,
             created_at=u.created_at, last_login_at=u.last_login_at, last_active_at=u.last_active_at,
             is_online=bool(u.last_active_at and u.last_active_at >= online_cutoff),
             properties_viewed=view_counts.get(u.id, 0),
             properties_analyzed=analysis_counts.get(u.id, 0),
             top_page=top_page.get(u.id),
-            engagement=_engagement_tier(
-                recent_analyses.get(u.id, 0), recent_views.get(u.id, 0), recent_searches.get(u.id, 0),
-            ),
+            engagement=tiers.get(u.id, "cold"),
         )
         for u in users
     ]
@@ -329,11 +488,51 @@ async def get_user_detail(user_id: uuid.UUID, db: AsyncSession = Depends(get_db)
     )
 
 
+class UserStatusUpdate(BaseModel):
+    is_active: bool
+
+
+@admin_router.patch("/users/{user_id}/status", response_model=UserSummary)
+async def update_user_status(
+    user_id: uuid.UUID,
+    payload: UserStatusUpdate,
+    admin: Broker = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> Broker:
+    """Activate/deactivate an account. A disabled account can no longer log in
+    (see get_current_user's is_active check) — existing sessions still expire
+    normally via the access-token TTL, so this isn't instant revocation."""
+    if user_id == admin.id:
+        raise HTTPException(status_code=400, detail="You can't deactivate your own account")
+    user = await db.get(Broker, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user.is_active = payload.is_active
+    await db.commit()
+    await db.refresh(user)
+
+    online_cutoff = datetime.now(timezone.utc) - ONLINE_THRESHOLD
+    view_counts = await _event_counts_by_user(db, EventType.PROPERTY_VIEW)
+    analysis_counts = await _event_counts_by_user(db, EventType.ANALYSIS_VIEW)
+    tiers = await _engagement_tiers(db)
+    return UserSummary(
+        id=user.id, email=user.email, name=user.name, role=user.role.value, is_active=user.is_active,
+        created_at=user.created_at, last_login_at=user.last_login_at, last_active_at=user.last_active_at,
+        is_online=bool(user.last_active_at and user.last_active_at >= online_cutoff),
+        properties_viewed=view_counts.get(user.id, 0),
+        properties_analyzed=analysis_counts.get(user.id, 0),
+        top_page=None,
+        engagement=tiers.get(user.id, "cold"),
+    )
+
+
 @admin_router.get("/analytics/overview", response_model=OverviewResponse)
 async def get_overview(db: AsyncSession = Depends(get_db)) -> OverviewResponse:
     now = datetime.now(timezone.utc)
     online_cutoff = now - ONLINE_THRESHOLD
     week_ago = now - timedelta(days=7)
+    two_weeks_ago = now - timedelta(days=14)
 
     total_users = await db.scalar(select(func.count()).select_from(Broker)) or 0
     online_now = await db.scalar(
@@ -341,6 +540,10 @@ async def get_overview(db: AsyncSession = Depends(get_db)) -> OverviewResponse:
     ) or 0
     signups_this_week = await db.scalar(
         select(func.count()).select_from(Broker).where(Broker.created_at >= week_ago)
+    ) or 0
+    signups_last_week = await db.scalar(
+        select(func.count()).select_from(Broker)
+        .where(Broker.created_at >= two_weeks_ago, Broker.created_at < week_ago)
     ) or 0
 
     active_rows = (await db.execute(
@@ -355,10 +558,20 @@ async def get_overview(db: AsyncSession = Depends(get_db)) -> OverviewResponse:
     if active_user_ids:
         users_by_id = {u.id: u for u in (await db.execute(select(Broker).where(Broker.id.in_(active_user_ids)))).scalars().all()}
 
+    # Engagement breakdown — tally every user's tier (missing = "cold").
+    tiers = await _engagement_tiers(db)
+    all_user_ids = (await db.execute(select(Broker.id))).scalars().all()
+    tier_counts = {"hot_lead": 0, "warm": 0, "exploring": 0, "cold": 0}
+    for uid in all_user_ids:
+        tier_counts[tiers.get(uid, "cold")] += 1
+
+    top_search_cities, top_search_types = await _top_search_terms(db)
+
     return OverviewResponse(
         total_users=total_users,
         online_now=online_now,
         signups_this_week=signups_this_week,
+        signups_last_week=signups_last_week,
         most_active_users=[
             ActiveUserSummary(id=r.user_id, email=users_by_id[r.user_id].email, name=users_by_id[r.user_id].name, event_count=r.cnt)
             for r in active_rows if r.user_id in users_by_id
@@ -366,6 +579,11 @@ async def get_overview(db: AsyncSession = Depends(get_db)) -> OverviewResponse:
         most_viewed_properties=await _top_properties(db, event_type=EventType.PROPERTY_VIEW),
         most_analyzed_properties=await _top_properties(db, event_type=EventType.ANALYSIS_VIEW),
         top_pages=await _top_pages(db),
+        engagement=EngagementBreakdown(**tier_counts),
+        preferences=await _preference_insights(db),
+        top_search_cities=top_search_cities,
+        top_search_types=top_search_types,
+        signup_trend=await _signup_trend(db),
     )
 
 

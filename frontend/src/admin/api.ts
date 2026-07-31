@@ -7,6 +7,7 @@ export interface UserSummary {
   email: string
   name: string | null
   role: 'user' | 'admin'
+  is_active: boolean
   created_at: string
   last_login_at: string | null
   last_active_at: string | null
@@ -67,14 +68,43 @@ export interface ActiveUserSummary {
   event_count: number
 }
 
+export interface RankedLabel {
+  label: string
+  count: number
+}
+
+export interface EngagementBreakdown {
+  hot_lead: number
+  warm: number
+  exploring: number
+  cold: number
+}
+
+export interface SignupTrendPoint {
+  date: string
+  count: number
+}
+
+export interface PreferenceInsights {
+  top_cities: RankedLabel[]
+  budget_bands: RankedLabel[]
+  property_types: RankedLabel[]
+}
+
 export interface AdminOverview {
   total_users: number
   online_now: number
   signups_this_week: number
+  signups_last_week: number
   most_active_users: ActiveUserSummary[]
   most_viewed_properties: PropertyViewSummary[]
   most_analyzed_properties: PropertyViewSummary[]
   top_pages: PageViewSummary[]
+  engagement: EngagementBreakdown
+  preferences: PreferenceInsights
+  top_search_cities: RankedLabel[]
+  top_search_types: RankedLabel[]
+  signup_trend: SignupTrendPoint[]
 }
 
 export async function fetchAdminUsers(): Promise<UserSummary[]> {
@@ -94,5 +124,10 @@ export async function fetchAdminOverview(): Promise<AdminOverview> {
 
 export async function fetchActivityFeed(limit = 20): Promise<ActivityEntry[]> {
   const { data } = await http.get<ActivityEntry[]>('/admin/analytics/activity-feed', { params: { limit } })
+  return data
+}
+
+export async function updateUserStatus(id: string, is_active: boolean): Promise<UserSummary> {
+  const { data } = await http.patch<UserSummary>(`/admin/users/${id}/status`, { is_active })
   return data
 }
