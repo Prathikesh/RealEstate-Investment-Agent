@@ -202,6 +202,7 @@ export interface StatsResponse {
 
 export interface PropertyFilters {
   city?: string
+  address?: string
   mls_number?: string
   property_type?: string
   score_min?: number
@@ -224,6 +225,19 @@ export async function fetchProperties(filters: PropertyFilters): Promise<Propert
     Object.entries(filters).filter(([, v]) => v !== undefined && v !== '' && v !== 0)
   )
   const { data } = await http.get<PropertyListResponse>('/properties', { params })
+  return data
+}
+
+export interface PropertySuggestion {
+  id: string
+  full_address: string
+  city: string | null
+  asking_price: number | null
+  score: number | null
+}
+
+export async function fetchPropertySuggestions(q: string, limit = 8): Promise<PropertySuggestion[]> {
+  const { data } = await http.get<PropertySuggestion[]>('/properties/suggest', { params: { q, limit } })
   return data
 }
 

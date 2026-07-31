@@ -148,6 +148,7 @@ def _lowest_price_source(sources: list) -> tuple[Optional[str], Optional[float]]
 async def list_properties(
     # Filters
     city:          Optional[str] = Query(None),
+    address:       Optional[str] = Query(None),
     mls_number:    Optional[str] = Query(None),
     property_type: Optional[str] = Query(None),
     score_min:     int           = Query(0, ge=0, le=100),
@@ -180,6 +181,15 @@ async def list_properties(
             "àâäéèêëîïôöûüùç", "aaaeeeeiioouuuc",
         )
         stmt = stmt.where(folded_city.contains(deaccent(city).lower()))
+    if address:
+        # Same accent-fold as city — matches anywhere in the full address
+        # ("975 - 977, Avenue Royale, Québec" found by "avenue royale" or "975").
+        from app.services.quebec_address import deaccent
+        folded_address = func.translate(
+            func.lower(Property.full_address),
+            "àâäéèêëîïôöûüùç", "aaaeeeeiioouuuc",
+        )
+        stmt = stmt.where(folded_address.contains(deaccent(address).lower()))
     if mls_number:
         stmt = stmt.where(func.lower(Property.mls_number).contains(mls_number.lower()))
     if property_type:
@@ -409,6 +419,41 @@ async def get_map_data(
         }
         for row in rows
         if row.lat is not None and row.lng is not None
+    ]
+
+
+# ── Address typeahead (must be before /{property_id} too) ─────────────────────
+
+@router.get("/suggest")
+async def suggest_properties(
+    q: str = Query(..., min_length=2),
+    limit: int = Query(8, ge=1, le=20),
+    db: AsyncSession = Depends(get_db),
+) -> list[dict]:
+    """Address-search autocomplete — as the user types, suggest matching
+    listings so they can jump straight to one instead of scanning the list."""
+    from app.services.quebec_address import deaccent
+    folded_address = func.translate(
+        func.lower(Property.full_address),
+        "àâäéèêëîïôöûüùç", "aaaeeeeiioouuuc",
+    )
+    stmt = (
+        select(Property.id, Property.full_address, Property.city, Property.asking_price, Property.score)
+        .where(Property.asking_price.isnot(None))
+        .where(folded_address.contains(deaccent(q).lower()))
+        .order_by(Property.score.desc().nullslast())
+        .limit(limit)
+    )
+    rows = (await db.execute(stmt)).all()
+    return [
+        {
+            "id":           str(row.id),
+            "full_address": row.full_address,
+            "city":         row.city,
+            "asking_price": row.asking_price,
+            "score":        row.score,
+        }
+        for row in rows
     ]
 
 

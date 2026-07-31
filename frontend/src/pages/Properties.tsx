@@ -1,13 +1,16 @@
-import { useState, lazy, Suspense } from 'react'
+import { useState, useEffect, lazy, Suspense } from 'react'
 import { displayAddress } from '../lib/address'
 import { useQuery } from '@tanstack/react-query'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Search, LayoutGrid, List, Map, ChevronLeft, ChevronRight, SlidersHorizontal, Hash, X,
   Zap, Clock, TrendingUp, ArrowDownCircle, DollarSign, Globe,
 } from 'lucide-react'
 import clsx from 'clsx'
-import { fetchProperties, fetchStats, fetchMapProperties, type PropertyFilters } from '../api'
+import {
+  fetchProperties, fetchStats, fetchMapProperties, fetchPropertySuggestions,
+  type PropertyFilters,
+} from '../api'
 import { useLang } from '../context/LanguageContext'
 import ScoreBadge from '../components/ScoreBadge'
 import PropertyCardGrid from '../components/PropertyCardGrid'
@@ -63,12 +66,16 @@ type ViewMode = 'grid' | 'list' | 'map'
 
 export default function Properties() {
   const { lang } = useLang()
+  const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const [view, setView] = useState<ViewMode>('grid')
   const [showFilters, setShowFilters] = useState(false)
+  const [suggestOpen, setSuggestOpen] = useState(false)
+  const [debouncedAddress, setDebouncedAddress] = useState('')
 
   const filters: PropertyFilters = {
     city:          params.get('city') ?? undefined,
+    address:       params.get('address') ?? undefined,
     mls_number:    params.get('mls_number') ?? undefined,
     property_type: params.get('property_type') ?? undefined,
     sort_by:       (params.get('sort_by') as PropertyFilters['sort_by']) ?? 'score',
@@ -96,6 +103,19 @@ export default function Properties() {
     staleTime: 5 * 60 * 1000,
   })
 
+  // Debounce the address-search box before hitting the suggestion endpoint —
+  // avoids firing a request on every keystroke.
+  useEffect(() => {
+    const id = setTimeout(() => setDebouncedAddress(filters.address ?? ''), 250)
+    return () => clearTimeout(id)
+  }, [filters.address])
+
+  const { data: suggestions } = useQuery({
+    queryKey: ['property-suggest', debouncedAddress],
+    queryFn: () => fetchPropertySuggestions(debouncedAddress),
+    enabled: debouncedAddress.trim().length >= 2,
+  })
+
   function setFilter(key: string, value: string) {
     const next = new URLSearchParams(params)
     if (value) next.set(key, value)
@@ -112,7 +132,7 @@ export default function Properties() {
   }
 
   const hasActiveFilters = !!(
-    filters.city || filters.mls_number || filters.property_type ||
+    filters.city || filters.address || filters.mls_number || filters.property_type ||
     filters.score_min || filters.multi_site || filters.has_sqft ||
     filters.listed_within || filters.price_min || filters.price_max
   )
@@ -163,14 +183,39 @@ export default function Properties() {
 
       {/* ── Unified search + sort bar ─────────────────────────────────────── */}
       <div className="flex gap-2 flex-wrap items-center bg-white border border-surface-border rounded-2xl px-3 py-2 shadow-sm">
-        <Search size={15} className="text-muted shrink-0" />
-        <input
-          type="text"
-          placeholder="Search city…"
-          value={filters.city ?? ''}
-          onChange={e => setFilter('city', e.target.value)}
-          className="flex-1 min-w-[140px] text-sm text-ink placeholder:text-muted bg-transparent focus:outline-none"
-        />
+        <div className="relative flex-1 min-w-[140px] flex items-center gap-2">
+          <Search size={15} className="text-muted shrink-0" />
+          <input
+            type="text"
+            placeholder="Search address or city…"
+            value={filters.address ?? ''}
+            onChange={e => setFilter('address', e.target.value)}
+            onFocus={() => setSuggestOpen(true)}
+            onBlur={() => setTimeout(() => setSuggestOpen(false), 150)}
+            className="w-full text-sm text-ink placeholder:text-muted bg-transparent focus:outline-none"
+          />
+          {suggestOpen && debouncedAddress.trim().length >= 2 && !!suggestions?.length && (
+            <div className="absolute left-0 right-0 top-full mt-2 bg-white border border-surface-border rounded-xl shadow-lg z-30 max-h-80 overflow-y-auto">
+              {suggestions.map(s => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onMouseDown={() => { navigate(`/properties/${s.id}`); setSuggestOpen(false) }}
+                  className="w-full text-left px-3.5 py-2.5 hover:bg-surface-hover transition-colors flex items-center justify-between gap-3 border-b border-surface-border last:border-0"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm text-ink font-medium truncate">{s.full_address}</p>
+                    {s.city && <p className="text-xs text-muted truncate">{s.city}</p>}
+                  </div>
+                  <div className="text-right shrink-0">
+                    {s.asking_price != null && <p className="text-xs font-semibold text-ink">{fmtCAD(s.asking_price)}</p>}
+                    {s.score != null && <p className="text-[10px] text-muted">Score {s.score}</p>}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <div className="w-px h-5 bg-surface-border shrink-0" />
         <Hash size={13} className="text-muted shrink-0" />
         <input
