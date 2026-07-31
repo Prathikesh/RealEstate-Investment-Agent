@@ -30,7 +30,7 @@ export default function Register() {
     setSubmitting(true)
     try {
       await register({ email, password, name: name || undefined })
-      navigate('/dashboard', { replace: true })
+      navigate('/', { replace: true })
     } catch (err) {
       setError(authErrorMessage(err, c.err))
     } finally { setSubmitting(false) }

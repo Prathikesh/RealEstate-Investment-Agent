@@ -286,6 +286,6 @@ async def google_callback(request: Request, db: AsyncSession = Depends(get_db)):
     if not user.is_active:
         return RedirectResponse(f"{settings.frontend_url}/login?error=account_disabled")
 
-    response = RedirectResponse(f"{settings.frontend_url}/dashboard")
+    response = RedirectResponse(f"{settings.frontend_url}/")
     await _issue_session(response, db, user, request)
     return response

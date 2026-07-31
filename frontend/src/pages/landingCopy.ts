@@ -2,7 +2,7 @@
 // FR is Quebec French with proper real-estate vocabulary.
 
 const en = {
-  nav: { features: 'Features', how: 'How it works', faq: 'FAQ', signin: 'Sign in', getStarted: 'Get started' },
+  nav: { features: 'Features', how: 'How it works', faq: 'FAQ', signin: 'Sign in', getStarted: 'Get started', dashboard: 'Go to Dashboard' },
   hero: {
     badge: 'Quebec real-estate investment intelligence',
     h1a: 'Spot the undervalued Quebec property',
@@ -129,7 +129,7 @@ const en = {
 }
 
 const fr: typeof en = {
-  nav: { features: 'Fonctionnalités', how: 'Comment ça marche', faq: 'FAQ', signin: 'Se connecter', getStarted: 'Commencer' },
+  nav: { features: 'Fonctionnalités', how: 'Comment ça marche', faq: 'FAQ', signin: 'Se connecter', getStarted: 'Commencer', dashboard: 'Accéder au tableau de bord' },
   hero: {
     badge: 'Intelligence en investissement immobilier au Québec',
     h1a: 'Repérez la propriété québécoise sous-évaluée',

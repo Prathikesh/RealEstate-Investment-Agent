@@ -25,7 +25,9 @@ export default function Login() {
   const navigate = useNavigate()
   const location = useLocation()
   const [searchParams] = useSearchParams()
-  const from = (location.state as LocationState | null)?.from?.pathname ?? '/dashboard'
+  // If ProtectedRoute sent us here from a specific page, go back there after
+  // login; otherwise (a direct/fresh sign-in) land on the welcome page.
+  const from = (location.state as LocationState | null)?.from?.pathname ?? '/'
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')

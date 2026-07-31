@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { AppIcon } from '../components/QuartisLogo'
 import { useLang } from '../context/LanguageContext'
+import { useAuth } from '../auth/AuthContext'
 import { LANDING_COPY } from './landingCopy'
 
 const NAVY = 'radial-gradient(120% 130% at 12% -10%, #1E3A5F 0%, #131b2e 45%, #0b1120 100%)'
@@ -20,6 +21,7 @@ const STEP_ICONS = [Search, Layers, Bell]
 
 export default function LandingPage() {
   const { lang } = useLang()
+  const { user } = useAuth()
   const t = LANDING_COPY[lang] ?? LANDING_COPY.en
   const [scrolled, setScrolled] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -33,8 +35,8 @@ export default function LandingPage() {
 
   return (
     <div className="min-h-screen overflow-x-hidden bg-surface text-ink antialiased" style={{ scrollBehavior: 'smooth' }}>
-      <Nav t={t} scrolled={scrolled} menuOpen={menuOpen} setMenuOpen={setMenuOpen} />
-      <Hero t={t} />
+      <Nav t={t} scrolled={scrolled} menuOpen={menuOpen} setMenuOpen={setMenuOpen} loggedIn={!!user} />
+      <Hero t={t} loggedIn={!!user} />
       <StatsBand t={t} />
       <ProblemSolution t={t} />
       <SpotlightZoning t={t} />
@@ -43,8 +45,8 @@ export default function LandingPage() {
       <HowItWorks t={t} />
       <Testimonials t={t} />
       <FAQ t={t} />
-      <FinalCTA t={t} />
-      <Footer t={t} />
+      <FinalCTA t={t} loggedIn={!!user} />
+      <Footer t={t} loggedIn={!!user} />
     </div>
   )
 }
@@ -69,7 +71,7 @@ function Reveal({ children, className = '', delay = 0 }: { children: React.React
 }
 
 // ── Nav ─────────────────────────────────────────────────────────────────────
-function Nav({ t, scrolled, menuOpen, setMenuOpen }: { t: Copy; scrolled: boolean; menuOpen: boolean; setMenuOpen: (v: boolean) => void }) {
+function Nav({ t, scrolled, menuOpen, setMenuOpen, loggedIn }: { t: Copy; scrolled: boolean; menuOpen: boolean; setMenuOpen: (v: boolean) => void; loggedIn: boolean }) {
   const { lang, setLang } = useLang()
   const links = [{ label: t.nav.features, href: '#features' }, { label: t.nav.how, href: '#how' }, { label: t.nav.faq, href: '#faq' }]
   return (
@@ -84,8 +86,14 @@ function Nav({ t, scrolled, menuOpen, setMenuOpen }: { t: Copy; scrolled: boolea
         </div>
         <div className="hidden md:flex items-center gap-2">
           <LangToggle lang={lang} setLang={setLang} scrolled={scrolled} />
-          <Link to="/login" className={`px-4 py-2 text-sm font-semibold transition-colors ${scrolled ? 'text-ink hover:text-accent' : 'text-white/90 hover:text-white'}`}>{t.nav.signin}</Link>
-          <Link to="/register" className="group inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-accent text-white text-sm font-bold shadow-sm shadow-accent/30 hover:bg-accent-hover hover:shadow-md transition-all">{t.nav.getStarted} <ArrowRight size={15} className="group-hover:translate-x-0.5 transition-transform" /></Link>
+          {loggedIn ? (
+            <Link to="/dashboard" className="group inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-accent text-white text-sm font-bold shadow-sm shadow-accent/30 hover:bg-accent-hover hover:shadow-md transition-all">{t.nav.dashboard} <ArrowRight size={15} className="group-hover:translate-x-0.5 transition-transform" /></Link>
+          ) : (
+            <>
+              <Link to="/login" className={`px-4 py-2 text-sm font-semibold transition-colors ${scrolled ? 'text-ink hover:text-accent' : 'text-white/90 hover:text-white'}`}>{t.nav.signin}</Link>
+              <Link to="/register" className="group inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-accent text-white text-sm font-bold shadow-sm shadow-accent/30 hover:bg-accent-hover hover:shadow-md transition-all">{t.nav.getStarted} <ArrowRight size={15} className="group-hover:translate-x-0.5 transition-transform" /></Link>
+            </>
+          )}
         </div>
         <button className={`md:hidden p-2 -mr-2 ${scrolled ? 'text-ink' : 'text-white'}`} onClick={() => setMenuOpen(!menuOpen)} aria-label="Menu">{menuOpen ? <Close size={22} /> : <Menu size={22} />}</button>
       </nav>
@@ -94,8 +102,14 @@ function Nav({ t, scrolled, menuOpen, setMenuOpen }: { t: Copy; scrolled: boolea
           {links.map(l => (<a key={l.href} href={l.href} onClick={() => setMenuOpen(false)} className="block text-sm font-semibold text-muted">{l.label}</a>))}
           <div className="flex items-center gap-2 pt-1"><LangToggle lang={lang} setLang={setLang} scrolled /></div>
           <div className="flex gap-2 pt-1">
-            <Link to="/login" className="flex-1 text-center px-4 py-2 rounded-xl border border-surface-border text-sm font-semibold">{t.nav.signin}</Link>
-            <Link to="/register" className="flex-1 text-center px-4 py-2 rounded-xl bg-accent text-white text-sm font-bold">{t.nav.getStarted}</Link>
+            {loggedIn ? (
+              <Link to="/dashboard" className="flex-1 text-center px-4 py-2 rounded-xl bg-accent text-white text-sm font-bold">{t.nav.dashboard}</Link>
+            ) : (
+              <>
+                <Link to="/login" className="flex-1 text-center px-4 py-2 rounded-xl border border-surface-border text-sm font-semibold">{t.nav.signin}</Link>
+                <Link to="/register" className="flex-1 text-center px-4 py-2 rounded-xl bg-accent text-white text-sm font-bold">{t.nav.getStarted}</Link>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -117,7 +131,7 @@ function LangToggle({ lang, setLang, scrolled }: { lang: 'en' | 'fr'; setLang: (
 }
 
 // ── Hero ────────────────────────────────────────────────────────────────────
-function Hero({ t }: { t: Copy }) {
+function Hero({ t, loggedIn }: { t: Copy; loggedIn: boolean }) {
   return (
     <section className="relative overflow-hidden text-white" style={{ background: NAVY }}>
       <div aria-hidden className="absolute inset-0 opacity-40" style={{ background: 'radial-gradient(45% 45% at 82% 8%, rgba(37,99,235,0.55) 0%, transparent 70%)' }} />
@@ -132,7 +146,7 @@ function Hero({ t }: { t: Copy }) {
           </h1>
           <p className="mt-6 text-lg text-slate-300 max-w-xl leading-relaxed">{t.hero.sub}</p>
           <div className="mt-8 flex flex-wrap items-center gap-3">
-            <Link to="/register" className="group inline-flex items-center gap-2 px-6 py-3.5 rounded-xl bg-accent text-white font-bold shadow-lg shadow-accent/30 hover:bg-accent-hover hover:-translate-y-0.5 transition-all">{t.hero.cta1} <ArrowRight size={18} className="group-hover:translate-x-0.5 transition-transform" /></Link>
+            <Link to={loggedIn ? '/dashboard' : '/register'} className="group inline-flex items-center gap-2 px-6 py-3.5 rounded-xl bg-accent text-white font-bold shadow-lg shadow-accent/30 hover:bg-accent-hover hover:-translate-y-0.5 transition-all">{loggedIn ? t.nav.dashboard : t.hero.cta1} <ArrowRight size={18} className="group-hover:translate-x-0.5 transition-transform" /></Link>
             <a href="#how" className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl bg-white/10 ring-1 ring-white/15 text-white font-semibold hover:bg-white/15 transition-colors">{t.hero.cta2}</a>
           </div>
           <div className="mt-9 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-slate-400">
@@ -387,7 +401,7 @@ function FAQ({ t }: { t: Copy }) {
 }
 
 // ── Final CTA ───────────────────────────────────────────────────────────────
-function FinalCTA({ t }: { t: Copy }) {
+function FinalCTA({ t, loggedIn }: { t: Copy; loggedIn: boolean }) {
   return (
     <section className="px-5 sm:px-8 py-16 bg-surface">
       <div className="relative max-w-6xl mx-auto rounded-3xl overflow-hidden text-white text-center px-6 py-16 sm:py-20" style={{ background: NAVY }}>
@@ -397,8 +411,14 @@ function FinalCTA({ t }: { t: Copy }) {
           <h2 className="text-3xl sm:text-5xl font-extrabold tracking-tight text-balance max-w-3xl mx-auto">{t.cta.title}</h2>
           <p className="mt-5 text-lg text-slate-300 max-w-xl mx-auto">{t.cta.sub}</p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-            <Link to="/register" className="group inline-flex items-center gap-2 px-7 py-3.5 rounded-xl bg-accent text-white font-bold shadow-lg shadow-accent/30 hover:bg-accent-hover hover:-translate-y-0.5 transition-all">{t.cta.cta1} <ArrowRight size={18} className="group-hover:translate-x-0.5 transition-transform" /></Link>
-            <Link to="/login" className="px-7 py-3.5 rounded-xl bg-white/10 ring-1 ring-white/15 font-semibold hover:bg-white/15 transition-colors">{t.nav.signin}</Link>
+            {loggedIn ? (
+              <Link to="/dashboard" className="group inline-flex items-center gap-2 px-7 py-3.5 rounded-xl bg-accent text-white font-bold shadow-lg shadow-accent/30 hover:bg-accent-hover hover:-translate-y-0.5 transition-all">{t.nav.dashboard} <ArrowRight size={18} className="group-hover:translate-x-0.5 transition-transform" /></Link>
+            ) : (
+              <>
+                <Link to="/register" className="group inline-flex items-center gap-2 px-7 py-3.5 rounded-xl bg-accent text-white font-bold shadow-lg shadow-accent/30 hover:bg-accent-hover hover:-translate-y-0.5 transition-all">{t.cta.cta1} <ArrowRight size={18} className="group-hover:translate-x-0.5 transition-transform" /></Link>
+                <Link to="/login" className="px-7 py-3.5 rounded-xl bg-white/10 ring-1 ring-white/15 font-semibold hover:bg-white/15 transition-colors">{t.nav.signin}</Link>
+              </>
+            )}
           </div>
           <p className="mt-5 text-xs text-slate-400">{t.cta.note}</p>
         </div>
@@ -408,10 +428,10 @@ function FinalCTA({ t }: { t: Copy }) {
 }
 
 // ── Footer ──────────────────────────────────────────────────────────────────
-function Footer({ t }: { t: Copy }) {
+function Footer({ t, loggedIn }: { t: Copy; loggedIn: boolean }) {
   const columns = [
     { title: t.footer.product, items: [{ label: t.nav.features, href: '#features' }, { label: t.nav.how, href: '#how' }, { label: t.nav.faq, href: '#faq' }] },
-    { title: t.footer.account, items: [{ label: t.nav.signin, to: '/login' }, { label: t.footer.create, to: '/register' }] },
+    { title: t.footer.account, items: loggedIn ? [{ label: t.nav.dashboard, to: '/dashboard' }] : [{ label: t.nav.signin, to: '/login' }, { label: t.footer.create, to: '/register' }] },
     { title: t.footer.company, items: t.footer.companyItems.map(label => ({ label })) },
   ] as { title: string; items: { label: string; to?: string; href?: string }[] }[]
   return (
@@ -421,7 +441,7 @@ function Footer({ t }: { t: Copy }) {
           <div className="max-w-xs">
             <div className="flex items-center gap-2.5"><span className="w-9 h-9 rounded-xl bg-accent flex items-center justify-center"><AppIcon size={19} className="text-white" /></span><span className="text-lg font-extrabold tracking-tight text-white">Plexa</span></div>
             <p className="mt-4 text-sm text-slate-400 leading-relaxed">{t.footer.tagline}</p>
-            <Link to="/register" className="mt-5 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-accent text-white text-sm font-bold hover:bg-accent-hover transition-colors">{t.cta.cta1} <ArrowRight size={15} /></Link>
+            <Link to={loggedIn ? '/dashboard' : '/register'} className="mt-5 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-accent text-white text-sm font-bold hover:bg-accent-hover transition-colors">{loggedIn ? t.nav.dashboard : t.cta.cta1} <ArrowRight size={15} /></Link>
           </div>
           {columns.map(col => (
             <div key={col.title}>
