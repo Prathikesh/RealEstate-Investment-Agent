@@ -96,11 +96,6 @@ const ENGAGEMENT_META: Record<Engagement, { label: string; className: string }> 
   cold:      { label: 'Quiet',     className: 'bg-surface text-muted' },
 }
 
-function EngagementBadge({ engagement }: { engagement: Engagement }) {
-  const meta = ENGAGEMENT_META[engagement]
-  return <span className={clsx('px-2 py-0.5 rounded-md text-xs font-semibold whitespace-nowrap', meta.className)}>{meta.label}</span>
-}
-
 // ── Users table: search + sort + export ─────────────────────────────────────
 
 type SortKey = 'newest' | 'last_active' | 'viewed' | 'analyzed'
@@ -265,7 +260,6 @@ export default function AdminDashboard() {
               <tr className="text-left text-muted text-xs uppercase tracking-wide border-b border-surface-border">
                 <th className="px-5 py-3 font-semibold">Person</th>
                 <th className="px-5 py-3 font-semibold">Role</th>
-                <th className="px-5 py-3 font-semibold">Engagement</th>
                 <th className="px-5 py-3 font-semibold">Last seen</th>
                 <th className="px-5 py-3 font-semibold">Properties viewed</th>
                 <th className="px-5 py-3 font-semibold">Financials calculated</th>
@@ -274,11 +268,11 @@ export default function AdminDashboard() {
             </thead>
             <tbody>
               {usersLoading ? (
-                <tr><td colSpan={7} className="px-5 py-8 text-center text-muted">Loading…</td></tr>
+                <tr><td colSpan={6} className="px-5 py-8 text-center text-muted">Loading…</td></tr>
               ) : !users?.length ? (
-                <tr><td colSpan={7} className="px-5 py-8 text-center text-muted">No one has signed up yet.</td></tr>
+                <tr><td colSpan={6} className="px-5 py-8 text-center text-muted">No one has signed up yet.</td></tr>
               ) : !visibleUsers.length ? (
-                <tr><td colSpan={7} className="px-5 py-8 text-center text-muted">No one matches &quot;{query}&quot;.</td></tr>
+                <tr><td colSpan={6} className="px-5 py-8 text-center text-muted">No one matches &quot;{query}&quot;.</td></tr>
               ) : (
                 visibleUsers.map(u => (
                   <UserRow
@@ -328,7 +322,6 @@ function UserRow({ user, expanded, onToggle }: { user: UserSummary; expanded: bo
             {user.role}
           </span>
         </td>
-        <td className="px-5 py-3"><EngagementBadge engagement={user.engagement} /></td>
         <td className="px-5 py-3 text-xs whitespace-nowrap">
           {user.is_online ? <span className="text-score-strong font-semibold">Online now</span> : <span className="text-muted">{timeAgo(user.last_active_at)}</span>}
         </td>
@@ -338,7 +331,7 @@ function UserRow({ user, expanded, onToggle }: { user: UserSummary; expanded: bo
       </tr>
       {expanded && (
         <tr className="bg-surface/60">
-          <td colSpan={7} className="px-5 py-5">
+          <td colSpan={6} className="px-5 py-5">
             {isLoading ? (
               <p className="text-sm text-muted">Loading activity…</p>
             ) : !detail ? (
