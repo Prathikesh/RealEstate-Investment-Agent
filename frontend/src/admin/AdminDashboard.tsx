@@ -2,7 +2,7 @@ import { useMemo, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   Users, Wifi, UserPlus, ChevronDown, ChevronUp, Compass, Eye, Calculator, Search,
-  Activity, Download,
+  Download,
 } from 'lucide-react'
 import clsx from 'clsx'
 import {
@@ -134,15 +134,6 @@ function exportUsersCsv(users: UserSummary[]) {
     financials_calculated: u.properties_analyzed,
     most_used_page: u.top_page ? friendlyPageName(u.top_page) : '',
     signed_up: u.created_at,
-  })))
-}
-
-function exportUserActivityCsv(user: UserSummary, activity: ActivityEntry[]) {
-  const stem = (user.name || user.email).replace(/[^a-z0-9]+/gi, '-').toLowerCase()
-  downloadCsv(`plexa-activity-${stem}.csv`, activity.map(e => ({
-    when: e.created_at,
-    action: describeEvent(e),
-    type: e.event_type,
   })))
 }
 
@@ -337,50 +328,32 @@ function UserRow({ user, expanded, onToggle }: { user: UserSummary; expanded: bo
             ) : !detail ? (
               <p className="text-sm text-muted">Couldn&apos;t load activity.</p>
             ) : (
-              <div className="space-y-5">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
-                  <DetailSection icon={<Compass size={13} />} title="Pages visited most">
-                    <NumberedList
-                      items={detail.top_pages.map(p => ({ key: p.path, primary: friendlyPageName(p.path), right: `${p.view_count}×` }))}
-                      empty="Hasn't browsed anywhere yet."
-                    />
-                  </DetailSection>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
+                <DetailSection icon={<Compass size={13} />} title="Pages visited most">
+                  <NumberedList
+                    items={detail.top_pages.map(p => ({ key: p.path, primary: friendlyPageName(p.path), right: `${p.view_count}×` }))}
+                    empty="Hasn't browsed anywhere yet."
+                  />
+                </DetailSection>
 
-                  <DetailSection icon={<Eye size={13} />} title="Properties viewed">
-                    <NumberedList items={propertyListItems(detail.viewed_properties, '×')} empty="Hasn't viewed any properties yet." />
-                  </DetailSection>
+                <DetailSection icon={<Eye size={13} />} title="Properties viewed">
+                  <NumberedList items={propertyListItems(detail.viewed_properties, '×')} empty="Hasn't viewed any properties yet." />
+                </DetailSection>
 
-                  <DetailSection icon={<Calculator size={13} />} title="Financials calculated on">
-                    <NumberedList items={propertyListItems(detail.analyzed_properties, '×')} empty="Hasn't run the full financial analysis on anything yet." />
-                  </DetailSection>
+                <DetailSection icon={<Calculator size={13} />} title="Financials calculated on">
+                  <NumberedList items={propertyListItems(detail.analyzed_properties, '×')} empty="Hasn't run the full financial analysis on anything yet." />
+                </DetailSection>
 
-                  <DetailSection icon={<Search size={13} />} title="Recent searches">
-                    <NumberedList
-                      items={detail.recent_searches.map((s, i) => ({
-                        key: `${i}`,
-                        primary: friendlySearchSummary(s.filters),
-                        right: timeAgo(s.created_at),
-                      }))}
-                      empty="Hasn't searched for anything yet."
-                    />
-                  </DetailSection>
-                </div>
-
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-1.5 text-muted">
-                      <Activity size={13} />
-                      <p className="text-xs font-bold uppercase tracking-wide">Recent activity, in order</p>
-                    </div>
-                    <button
-                      onClick={() => exportUserActivityCsv(user, detail.recent_activity)}
-                      className="flex items-center gap-1 text-xs font-semibold text-muted hover:text-ink transition-colors"
-                    >
-                      <Download size={12} /> Export
-                    </button>
-                  </div>
-                  <ActivityFeed entries={detail.recent_activity} showUser={false} empty="No recent activity." />
-                </div>
+                <DetailSection icon={<Search size={13} />} title="Recent searches">
+                  <NumberedList
+                    items={detail.recent_searches.map((s, i) => ({
+                      key: `${i}`,
+                      primary: friendlySearchSummary(s.filters),
+                      right: timeAgo(s.created_at),
+                    }))}
+                    empty="Hasn't searched for anything yet."
+                  />
+                </DetailSection>
               </div>
             )}
           </td>
