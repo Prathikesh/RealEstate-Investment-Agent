@@ -65,42 +65,53 @@ async def run_pipeline(
     Processes in batches of `batch_size` (default 50).
 
     This is the same job APScheduler runs automatically — use this to
-    trigger it manually without waiting for the scheduler.
+    trigger it manually without waiting for the scheduler. Shares
+    scheduler.pipeline_running with the scheduled job so the two can never
+    run concurrently (they'd otherwise both hit the DB at once).
     """
-    start = datetime.now(timezone.utc)
-    logger.info(f"Manual pipeline trigger: batch_size={batch_size} strategy={strategy}")
+    import app.scheduler as scheduler_module
 
-    total_processed = total_errors = 0
-    batches = 0
+    if scheduler_module.pipeline_running:
+        return {"status": "skipped", "reason": "pipeline already running (scheduled or manual)"}
+    scheduler_module.pipeline_running = True
 
-    pipeline = InvestmentPipeline(db, generate_brief=True)
+    try:
+        start = datetime.now(timezone.utc)
+        logger.info(f"Manual pipeline trigger: batch_size={batch_size} strategy={strategy}")
 
-    while True:
-        stats = await pipeline.run_pending(limit=batch_size, strategy=strategy)
-        await db.commit()
+        total_processed = total_errors = 0
+        batches = 0
 
-        total_processed += stats["processed"]
-        total_errors    += stats.get("errors", 0)
-        batches         += 1
+        pipeline = InvestmentPipeline(db, generate_brief=True)
 
-        if stats["processed"] < batch_size:
-            break  # no more pending
+        while True:
+            stats = await pipeline.run_pending(limit=batch_size, strategy=strategy)
+            await db.commit()
 
-    elapsed = round((datetime.now(timezone.utc) - start).total_seconds(), 1)
-    avg_score = None
-    if stats.get("scores"):
-        valid = [s for s in stats["scores"] if s is not None]
-        if valid:
-            avg_score = round(sum(valid) / len(valid), 1)
+            total_processed += stats["processed"]
+            total_errors    += stats.get("errors", 0)
+            batches         += 1
 
-    return {
-        "status": "done",
-        "processed": total_processed,
-        "errors": total_errors,
-        "batches": batches,
-        "elapsed_seconds": elapsed,
-        "avg_score": avg_score,
-    }
+            if stats["processed"] < batch_size:
+                break  # no more pending
+
+        elapsed = round((datetime.now(timezone.utc) - start).total_seconds(), 1)
+        avg_score = None
+        if stats.get("scores"):
+            valid = [s for s in stats["scores"] if s is not None]
+            if valid:
+                avg_score = round(sum(valid) / len(valid), 1)
+
+        return {
+            "status": "done",
+            "processed": total_processed,
+            "errors": total_errors,
+            "batches": batches,
+            "elapsed_seconds": elapsed,
+            "avg_score": avg_score,
+        }
+    finally:
+        scheduler_module.pipeline_running = False
 
 
 @router.post("/scrape")

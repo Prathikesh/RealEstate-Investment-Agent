@@ -137,16 +137,39 @@ async def scrape_centris(
 
 # -- Realtor.ca ----------------------------------------------------------------
 
+# Realtor.ca's PropertyTypeGroupID param doesn't actually filter server-side
+# (confirmed: group_id=1 vs 3 return identical results) — filter client-side
+# on the property_type RawProperty already derives from Building.Type instead.
+PLEX_TYPES = {"duplex", "triplex", "quadruplex", "quintuplex_plus"}
+
+
+async def _load_known_mls_numbers() -> set[str]:
+    """MLS numbers already in the DB — skip these entirely (no re-scrape, no re-detail)."""
+    from sqlalchemy import select
+    from app.models.property import Property
+
+    async with AsyncSessionLocal() as session:
+        rows = await session.execute(
+            select(Property.mls_number).where(Property.mls_number.isnot(None))
+        )
+        return {r[0] for r in rows}
+
+
 async def scrape_realtor(
     target: int = 100,
     dry_run: bool = False,
     fetch_details: bool = True,
     city: str = "montreal",
+    plex_only: bool = False,
 ) -> dict:
     """
     Scrape Realtor.ca via API.
     Montreal bbox only for prototype; no ASP needed for the API call itself.
     Realtor.ca API results already include lat/lng and some key fields.
+
+    Always skips any MLS number already present in the DB — avoids paying for
+    detail-page credits on properties we already have. If plex_only=True, also
+    keeps only multi-family listings (duplex/triplex/quadruplex/quintuplex+).
     """
     import json as _json
     from scrapfly import ScrapeConfig
@@ -154,11 +177,15 @@ async def scrape_realtor(
 
     records_per_page = 50
     # Which city bbox(es) to scrape — defaults to Montreal, overridable via --realtor-city.
-    target_cities = [city] if city else ["montreal"]
-    cities = {k: v for k, v in QUEBEC_CITY_BBOXES.items() if k in target_cities}
-    if not cities:
-        logger.warning(f"Unknown realtor city '{city}'. Options: {list(QUEBEC_CITY_BBOXES)}. Falling back to Montreal.")
-        cities = {"montreal": QUEBEC_CITY_BBOXES["montreal"]}
+    # "all" covers every bbox in QUEBEC_CITY_BBOXES in one run.
+    if city == "all":
+        cities = dict(QUEBEC_CITY_BBOXES)
+    else:
+        target_cities = [city] if city else ["montreal"]
+        cities = {k: v for k, v in QUEBEC_CITY_BBOXES.items() if k in target_cities}
+        if not cities:
+            logger.warning(f"Unknown realtor city '{city}'. Options: all, {list(QUEBEC_CITY_BBOXES)}. Falling back to Montreal.")
+            cities = {"montreal": QUEBEC_CITY_BBOXES["montreal"]}
 
     logger.info(
         f"Realtor plan: cities={list(cities.keys())} target={target}"
@@ -168,7 +195,10 @@ async def scrape_realtor(
     if dry_run:
         return {"planned_cities": len(cities), "planned_properties": target}
 
-    stats = {"pages": 0, "scraped": 0, "new": 0, "updated": 0, "errors": 0, "details": 0}
+    stats = {"pages": 0, "scraped": 0, "new": 0, "updated": 0, "errors": 0, "details": 0, "skipped_known": 0, "skipped_type": 0}
+
+    known_mls = await _load_known_mls_numbers()
+    logger.info(f"  {len(known_mls)} MLS numbers already in DB — will be skipped")
 
     realtor_keys = [k for k in [
         settings.scrapfly_api_key,
@@ -220,7 +250,21 @@ async def scrape_realtor(
                     if not raw_results:
                         break
 
-                    raw_list = [p for p in (scraper._parse_result(r) for r in raw_results) if p]
+                    parsed = [p for p in (scraper._parse_result(r) for r in raw_results) if p]
+
+                    raw_list = []
+                    for p in parsed:
+                        if plex_only and p.property_type not in PLEX_TYPES:
+                            stats["skipped_type"] += 1
+                            continue
+                        if p.mls_number in known_mls:
+                            stats["skipped_known"] += 1
+                            continue
+                        known_mls.add(p.mls_number)
+                        raw_list.append(p)
+
+                    if not raw_list:
+                        logger.info(f"  [{city_name}] page {page}: nothing new/relevant on this page")
 
                     # -- Phase 1: save API data --------------------------------
                     async with AsyncSessionLocal() as session:
@@ -273,11 +317,23 @@ async def scrape_realtor(
     logger.info(
         f"Realtor.ca complete — {stats['scraped']} properties"
         + (f", {stats['details']} detail pages" if fetch_details else "")
+        + f" | skipped: {stats['skipped_type']} non-plex, {stats['skipped_known']} already known"
     )
     return stats
 
 
 # -- ReMax Canada -------------------------------------------------------------
+
+# scrape_listings() has no server/sitemap-side category filter (remax-quebec.com's
+# sitemap has no type metadata) — filter client-side on the parsed property_type
+# instead, same pattern as Realtor's PLEX_TYPES filter above.
+REMAX_CATEGORY_TYPES: dict[str, set[str]] = {
+    "multi_family":  {"duplex", "triplex", "quadruplex", "quintuplex_plus"},
+    "single_family": {"single_family"},
+    "condo":         {"condo"},
+}
+REMAX_MAX_PAGES = 200   # safety cap — filtering to a narrow category can exhaust the sitemap before reaching target
+
 
 async def scrape_remax(
     target: int = 100,
@@ -287,37 +343,42 @@ async def scrape_remax(
 ) -> dict:
     """
     Scrape ReMax Quebec listings from remax-quebec.com.
-    category: "multi_family" | "single_family" | "condo"
+    category: "multi_family" | "single_family" | "condo" | "all"
+    Filtered client-side on parsed property_type — see REMAX_CATEGORY_TYPES.
 
-    Uses sitemap_properties.xml to discover Montreal multi-family URLs, then
-    scrapes individual listing pages (no JS render, ~1 credit each).
+    Uses sitemap_properties.xml to discover Quebec listing URLs (all cities, all
+    types), then scrapes individual listing pages (no JS render, ~1 credit each).
     No Phase 2 detail pages needed — scrape_listings() already fetches full detail.
-    Credit budget: ~1 (sitemap) + target × 1 (listing pages) ≈ 101 credits for 100 props.
+    Credit budget: ~1 (sitemap) + pages-scanned × 1 (listing pages).
     """
     page_size = 10
-    pages_needed = -(-target // page_size)  # ceiling division
+    wanted_types = REMAX_CATEGORY_TYPES.get(category)
 
     logger.info(
-        f"ReMax plan: {pages_needed} pages × {page_size} = ~{pages_needed * page_size} properties "
-        f"from remax-quebec.com sitemap (category={category})"
+        f"ReMax plan: target={target} properties from remax-quebec.com sitemap "
+        f"(category={category or 'all'})"
     )
 
     if dry_run:
-        return {"planned_pages": pages_needed, "planned_properties": pages_needed * page_size}
+        return {"planned_properties": target}
 
     stats = {"pages": 0, "scraped": 0, "new": 0, "updated": 0, "errors": 0, "details": 0}
 
     async with RemaxScraper(api_keys=settings.scrapfly_api_key) as scraper:
-        for page in range(1, pages_needed + 1):
+        page = 1
+        while stats["scraped"] < target:
             try:
-                logger.info(f"ReMax page {page}/{pages_needed} ...")
-                raw_list = await scraper.scrape_listings(
-                    category=category, page=page, page_size=page_size
-                )
+                logger.info(f"ReMax page {page} ...")
+                fetched = await scraper.scrape_listings(page=page, page_size=page_size)
 
-                if not raw_list:
+                if not fetched:
                     logger.warning(f"  Page {page}: no results — stopping")
                     break
+
+                raw_list = (
+                    [p for p in fetched if p.property_type in wanted_types]
+                    if wanted_types else fetched
+                )
 
                 # Save listing data (already full detail — scraped individual pages)
                 async with AsyncSessionLocal() as session:
@@ -342,12 +403,16 @@ async def scrape_remax(
                     logger.info(f"ReMax target reached ({target})")
                     break
 
-                if page < pages_needed:
-                    await asyncio.sleep(2)
+                page += 1
+                if page > REMAX_MAX_PAGES:
+                    logger.warning(f"ReMax hit page cap ({REMAX_MAX_PAGES}) before reaching target ({target})")
+                    break
+                await asyncio.sleep(2)
 
             except Exception as exc:
                 logger.error(f"  Page {page} failed: {exc}")
                 stats["errors"] += 1
+                page += 1
                 await asyncio.sleep(5)
 
     logger.info(
@@ -410,6 +475,7 @@ async def main(
     centris_details: bool = True,
     realtor_details: bool = True,
     remax_details: bool = True,
+    realtor_plex_only: bool = False,
 ) -> None:
     start = time.time()
 
@@ -447,6 +513,7 @@ async def main(
             dry_run=dry_run,
             fetch_details=realtor_details,
             city=realtor_city,
+            plex_only=realtor_plex_only,
         )
         if not dry_run:
             totals["new"]     += result.get("new", 0)
@@ -496,12 +563,16 @@ if __name__ == "__main__":
                         help="City slug for Centris search (default: montreal). Pass empty for province-wide.")
     parser.add_argument("--realtor-city",    type=str, default="montreal",
                         help="City bbox for Realtor.ca: montreal | laval | longueuil | south_shore | "
-                             "quebec_city | sherbrooke | gatineau | trois_rivieres (default: montreal).")
+                             "quebec_city | sherbrooke | gatineau | trois_rivieres | all "
+                             "(default: montreal; 'all' covers every Quebec city bbox in one run).")
     parser.add_argument("--remax-category",  type=str, default="multi_family",
-                        choices=["multi_family", "single_family", "condo"],
-                        help="ReMax property category (default: multi_family)")
+                        choices=["multi_family", "single_family", "condo", "all"],
+                        help="ReMax property category, filtered client-side (default: multi_family)")
     parser.add_argument("--no-details",      action="store_true",
                         help="Skip detail page enrichment for all scrapers")
+    parser.add_argument("--realtor-plex-only", action="store_true",
+                        help="Only keep duplex/triplex/quadruplex/quintuplex+ listings from Realtor.ca "
+                             "(default: off — keeps all residential types)")
     args = parser.parse_args()
 
     any_only = args.centris_only or args.realtor_only or args.remax_only
@@ -523,4 +594,5 @@ if __name__ == "__main__":
         centris_details=not args.no_details,
         realtor_details=not args.no_details,
         remax_details=not args.no_details,
+        realtor_plex_only=args.realtor_plex_only,
     ))

@@ -15,6 +15,7 @@ Risk and neighbourhood are applied as post-modifiers AFTER the weighted base sco
   - Neighbourhood top quartile (≥75th):  +5 points
   - Neighbourhood bottom quartile (<25th): -5 points
   - High cap-rate percentile (≥80th):    +3 additional points
+  - Unverified rent (rent_is_estimated): hard cap at 59 (never worth_investigating+)
 
 Score categories:
   80-100  strong_opportunity
@@ -231,6 +232,17 @@ class OpportunityScorer:
                 neighbourhood_modifier += 3.0
         total += neighbourhood_modifier
         components["neighbourhood_modifier"] = round(neighbourhood_modifier, 1)
+
+        # ── Unverified income cap (post-processing) ─────────────────────────────
+        # cap_rate/cash_flow/grm are computed from fp.rent_is_estimated's fallback
+        # (a flat per-unit default, not real income) when the listing doesn't
+        # disclose rent. Hard-cap so a fabricated-income property can never surface
+        # as worth_investigating/strong_opportunity — those categories should only
+        # ever reflect real, disclosed income data.
+        UNVERIFIED_INCOME_CAP = 59.0
+        if fp.rent_is_estimated:
+            total = min(total, UNVERIFIED_INCOME_CAP)
+        components["unverified_income_cap"] = UNVERIFIED_INCOME_CAP if fp.rent_is_estimated else 0.0
 
         total_int = min(100, max(0, round(total)))
 

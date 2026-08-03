@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     mail_port: int = 587
 
     # Scraping
-    scrape_interval_hours: int = 6
+    scrape_interval_hours: int = 2
     # Only ingest listings in these cities (comma-separated, deaccented lowercase).
     # Keeps scraping aligned with our zoning coverage so every saved listing is
     # zonable. Empty string = no restriction (keep everything).

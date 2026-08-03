@@ -1,10 +1,29 @@
 """
 APScheduler — automated scraping + AI pipeline.
 
-Scrape targets per cycle (Quebec properties only):
-  Realtor.ca  : 50  properties  (1 page × 50 records, Montreal bbox)
-  Centris     : 25  properties  (~2 pages, plex category)
-  ReMax        : 15  properties  (1 page × 15 records, multi-family)
+Runs every settings.scrape_interval_hours (default: 2h). Each cycle, every
+source (Realtor.ca, Centris, ReMax) paginates until it finds 100 NEW
+properties (not already in the DB) or hits the MAX_PAGES_PER_SOURCE safety
+cap — whichever comes first. Every listing seen along the way, new or
+already-known, is still saved, so existing listings keep getting their
+price/status refreshed as a side effect of the pagination.
+
+Coverage — all of Quebec, all residential property types:
+  Realtor.ca : loops every bbox in QUEBEC_CITY_BBOXES (not just Montreal)
+  Centris    : loops plex/condo/house categories, city=None (province-wide)
+  ReMax      : one sitemap walk covers all Quebec cities/types already —
+               remax-quebec.com's sitemap has no per-listing type metadata,
+               so there's nothing to loop over there
+
+Non-plex properties (single_family/condo/townhouse) rarely disclose rental
+income, so their financial metrics use FinancialCalculator's fallback rent
+estimate (see calculator.py:_estimate_rent). To keep that from producing
+misleadingly high scores, OpportunityScorer hard-caps any property with
+rent_is_estimated=True at 59 (see scorer.py) — it can never show up as
+worth_investigating/strong_opportunity on a fabricated income number.
+
+scrape_job and pipeline_job run on the same interval/start time, so they
+execute concurrently rather than one waiting on the other.
 
 API key fallback:
   SCRAPFLY_API_KEY   — primary key
@@ -25,7 +44,7 @@ from scrapfly import ScrapeConfig
 from app.config import settings
 from app.database import AsyncSessionLocal
 from app.scrapers.centris import CentrisScraper
-from app.scrapers.realtor import RealtorScraper, API_URL, API_HEADERS
+from app.scrapers.realtor import RealtorScraper, API_URL, API_HEADERS, QUEBEC_CITY_BBOXES
 from app.scrapers.deduplicator import PropertyDeduplicator
 from app.agent.pipeline import InvestmentPipeline
 from app.scrape_state import scrape_progress
@@ -40,15 +59,44 @@ def _api_keys() -> list[str]:
 
 
 # ── Targets ────────────────────────────────────────────────────────────────────
+# These are NEW-property targets per cycle, not total-processed — each source
+# keeps paginating (up to MAX_PAGES_PER_SOURCE as a safety cap) until it finds
+# this many properties not already in the DB. Every listing encountered along
+# the way — new or already-known — still gets saved, so existing listings keep
+# getting their price/status refreshed as a side effect of the pagination.
 
-REALTOR_TARGET = 50
-CENTRIS_TARGET = 50
-REMAX_TARGET   = 50
+REALTOR_TARGET = 100
+CENTRIS_TARGET = 100
+REMAX_TARGET   = 100
+MAX_PAGES_PER_SOURCE = 20   # safety cap so a saturated source can't loop forever
 
-REALTOR_BBOX = {
-    "LatitudeMax": "45.7050", "LatitudeMin": "45.4100",
-    "LongitudeMax": "-73.4750", "LongitudeMin": "-73.9800",
-}
+# Stop paging early once this many consecutive pages yield 0 new properties —
+# a strong signal we've caught up to already-scraped territory. All paginated
+# sources now sort newest-first (Realtor via its API Sort=6-D, Centris via the
+# UpdateSort POST), so new listings cluster toward the front and hitting known
+# listings reliably means we're caught up. Centris keeps a larger margin because
+# its ordering still jitters through Scrapfly's rotating proxies (see
+# CentrisScraper._set_sort_newest). ReMax doesn't paginate blind — it diffs its
+# sitemap against the DB and only fetches genuinely-new URLs.
+CONSECUTIVE_EMPTY_LIMIT = 3
+CONSECUTIVE_EMPTY_LIMIT_CENTRIS = 5
+
+
+async def _known_remax_urls() -> set:
+    """Every ReMax listing URL we've already scraped (from property_sources).
+    Used to diff the ReMax sitemap so we only fetch listings new to us."""
+    from sqlalchemy import select
+    from app.models.source import PropertySource
+    from app.models.snapshot import ScraperSource
+
+    async with AsyncSessionLocal() as session:
+        rows = await session.execute(
+            select(PropertySource.source_url).where(
+                PropertySource.source == ScraperSource.REMAX,
+                PropertySource.source_url.isnot(None),
+            )
+        )
+        return {r[0] for r in rows}
 
 
 # ── Dedup helper ───────────────────────────────────────────────────────────────
@@ -68,6 +116,11 @@ async def _save(raw_list, source_key: str) -> tuple[int, int, int]:
             except Exception as exc:
                 logger.warning(f"[{source_key}] dedup error: {exc}")
                 errors += 1
+                # Postgres aborts the whole transaction on any failed statement —
+                # without this, every subsequent item in this batch (and the
+                # final commit below) would also fail with "current transaction
+                # is aborted", cascading one bad record into a lost entire batch.
+                await session.rollback()
         await session.commit()
 
     # Update global progress
@@ -83,8 +136,23 @@ async def _save(raw_list, source_key: str) -> tuple[int, int, int]:
 # ── Scrape job ─────────────────────────────────────────────────────────────────
 
 async def scrape_job() -> None:
+    if scrape_progress.running:
+        # Guards against overlap: a manual /api/admin/scrape trigger landing on
+        # top of the scheduler's own run, a restart re-firing start_date=now
+        # while a previous cycle is still going, or a cycle simply taking longer
+        # than the interval. Concurrent runs share the same DB connection pool
+        # and can cascade into transaction errors — never run two at once.
+        logger.warning("Scrape job requested but one is already running — skipping")
+        return
+
     now = datetime.now(timezone.utc)
     scrape_progress.reset()
+    # scrape_state.py's SourceProgress defaults to target=50 for every source —
+    # override with the real per-cycle targets so the progress display (and pct)
+    # stay accurate if these constants ever change.
+    scrape_progress.sources["realtor"].target = REALTOR_TARGET
+    scrape_progress.sources["centris"].target = CENTRIS_TARGET
+    scrape_progress.sources["remax"].target   = REMAX_TARGET
     scrape_progress.started_at = now.isoformat()
     logger.info("=== Scrape job started (Realtor=%d, Centris=%d, ReMax=%d) ===",
                 REALTOR_TARGET, CENTRIS_TARGET, REMAX_TARGET)
@@ -100,32 +168,62 @@ async def scrape_job() -> None:
 
     try:
         scraper = RealtorScraper(api_keys=keys)
-        body = scraper._build_body(
-            bbox=REALTOR_BBOX,
-            page=1,
-            records_per_page=REALTOR_TARGET,
-            property_type_group_id=3,   # 3=Multi-family/Revenue (duplex, triplex, plex)
-            transaction_type_id=2,
-        )
-        config = ScrapeConfig(
-            url=API_URL, method="POST", body=body,
-            headers=API_HEADERS, country="ca", asp=False, render_js=False,
-        )
-        result = await scraper.client.async_scrape(config)
+        realtor_new = 0
 
-        if result.upstream_status_code == 200:
-            data       = json.loads(result.content)
-            raw_all    = data.get("Results", [])
-            raw_list   = [p for p in (scraper._parse_result(r) for r in raw_all) if p]
-            scrape_progress.sources["realtor"].message = f"Parsing {len(raw_list)} results..."
-            logger.info(f"[realtor] {len(raw_list)} results")
-            await _save(raw_list, "realtor")
-            scrape_progress.sources["realtor"].status = "done"
-        else:
-            scrape_progress.sources["realtor"].status  = "error"
-            scrape_progress.sources["realtor"].message = f"HTTP {result.upstream_status_code}"
-            logger.error(f"[realtor] API returned {result.upstream_status_code}")
+        # Loop across every Quebec city bbox — not just Montreal — moving to the
+        # next city once the current one is exhausted or caught up.
+        for city_name, bbox in QUEBEC_CITY_BBOXES.items():
+            if realtor_new >= REALTOR_TARGET:
+                break
 
+            consecutive_empty = 0
+            page = 1
+            while (
+                realtor_new < REALTOR_TARGET
+                and page <= MAX_PAGES_PER_SOURCE
+                and consecutive_empty < CONSECUTIVE_EMPTY_LIMIT
+            ):
+                scrape_progress.sources["realtor"].message = f"{city_name} page {page}..."
+                body = scraper._build_body(
+                    bbox=bbox,
+                    page=page,
+                    records_per_page=50,
+                    property_type_group_id=1,   # not an effective server-side filter — kept as-is
+                    transaction_type_id=2,
+                )
+                config = ScrapeConfig(
+                    url=API_URL, method="POST", body=body,
+                    headers=API_HEADERS, country="ca", asp=False, render_js=False,
+                )
+                result = await scraper.client.async_scrape(config)
+
+                if result.upstream_status_code != 200:
+                    logger.error(f"[realtor] {city_name} HTTP {result.upstream_status_code}")
+                    break
+
+                data      = json.loads(result.content)
+                raw_all   = data.get("Results", [])
+                paging    = data.get("Paging", {})
+                total_pages = int(paging.get("TotalPages", 1))
+                if not raw_all:
+                    break
+
+                raw_list = [p for p in (scraper._parse_result(r) for r in raw_all) if p]
+                logger.info(f"[realtor] {city_name} page {page}/{total_pages} — {len(raw_list)} results")
+                new, _, _ = await _save(raw_list, "realtor")
+                realtor_new += new
+                consecutive_empty = 0 if new > 0 else consecutive_empty + 1
+
+                if page >= total_pages:
+                    break
+                page += 1
+                await asyncio.sleep(2)
+
+            logger.info(f"[realtor] {city_name} done — running total new={realtor_new}")
+
+        if realtor_new < REALTOR_TARGET:
+            logger.warning(f"[realtor] only found {realtor_new}/{REALTOR_TARGET} new properties across all Quebec cities (sources exhausted or caught up)")
+        scrape_progress.sources["realtor"].status = "done"
         await scraper.close()
 
     except Exception as exc:
@@ -145,28 +243,40 @@ async def scrape_job() -> None:
 
     try:
         async with CentrisScraper(api_keys=keys) as scraper:
-            centris_done = 0
-            for page in range(1, 4):
-                if centris_done >= CENTRIS_TARGET:
+            centris_new = 0
+
+            # Centris categorizes search by property type (SEARCH_URLS has no
+            # "all types" option) — loop across all three so plex/condo/house
+            # are all covered. city=None (default) already means province-wide.
+            for category in ("plex", "condo", "house"):
+                if centris_new >= CENTRIS_TARGET:
                     break
-                try:
-                    scrape_progress.sources["centris"].message = f"Page {page}..."
-                    raw_list = await scraper.scrape_listings(category="plex", page=page)
-                    if not raw_list:
+
+                consecutive_empty = 0
+                for page in range(1, MAX_PAGES_PER_SOURCE + 1):
+                    if centris_new >= CENTRIS_TARGET or consecutive_empty >= CONSECUTIVE_EMPTY_LIMIT_CENTRIS:
+                        break
+                    try:
+                        scrape_progress.sources["centris"].message = f"{category} page {page}..."
+                        raw_list = await scraper.scrape_listings(category=category, page=page)
+                        if not raw_list:
+                            break
+
+                        new, _, _ = await _save(raw_list, "centris")
+                        centris_new += new
+                        consecutive_empty = 0 if new > 0 else consecutive_empty + 1
+                        logger.info(f"[centris] {category} page {page}: {len(raw_list)} processed, {new} new → total new={centris_new}")
+                        await asyncio.sleep(3)
+
+                    except Exception as exc:
+                        logger.error(f"[centris] {category} page {page} error: {exc}")
+                        scrape_progress.total_errors += 1
                         break
 
-                    remaining = CENTRIS_TARGET - centris_done
-                    raw_list  = raw_list[:remaining]
+                logger.info(f"[centris] {category} done — running total new={centris_new}")
 
-                    await _save(raw_list, "centris")
-                    centris_done += len(raw_list)
-                    logger.info(f"[centris] page {page}: {len(raw_list)} → total={centris_done}")
-                    await asyncio.sleep(3)
-
-                except Exception as exc:
-                    logger.error(f"[centris] page {page} error: {exc}")
-                    scrape_progress.total_errors += 1
-                    break
+            if centris_new < CENTRIS_TARGET:
+                logger.warning(f"[centris] only found {centris_new}/{CENTRIS_TARGET} new properties across all categories (sources exhausted or caught up)")
 
         scrape_progress.sources["centris"].status = "done"
 
@@ -181,38 +291,39 @@ async def scrape_job() -> None:
     # ── 3. ReMax (remax-quebec.com) ───────────────────────────────────────────
     scrape_progress.current_source = "remax"
     scrape_progress.sources["remax"].status  = "running"
-    scrape_progress.sources["remax"].target  = REMAX_TARGET
     scrape_progress.sources["remax"].message = "Loading sitemap..."
     scrape_progress.message = "Scraping ReMax Québec..."
     logger.info("--- ReMax ---")
 
     try:
         from app.scrapers.remax import RemaxScraper
+
+        # Diff the ReMax sitemap against URLs we've already scraped — the walk
+        # then only fetches listings new to us (no wasted credits re-fetching
+        # known ones, no ordering/sort assumptions needed).
+        known_urls = await _known_remax_urls()
+        logger.info(f"[remax] {len(known_urls)} ReMax URLs already known — will be skipped")
+
         async with RemaxScraper(api_keys=keys) as scraper:
-            remax_done = 0
+            remax_new  = 0
             page_size  = 10   # scrape 10 listings at a time
             page       = 1
 
-            while remax_done < REMAX_TARGET:
+            while remax_new < REMAX_TARGET and page <= MAX_PAGES_PER_SOURCE:
                 scrape_progress.sources["remax"].message = f"Page {page}..."
                 try:
                     raw_list = await scraper.scrape_listings(
-                        category="multi_family",
-                        page=page,
-                        page_size=page_size,
+                        page=page, page_size=page_size, known_source_urls=known_urls
                     )
                     if not raw_list:
-                        logger.info(f"[remax] No more results at page {page}")
+                        logger.info(f"[remax] No more new listings at page {page}")
                         break
 
-                    remaining = REMAX_TARGET - remax_done
-                    raw_list  = raw_list[:remaining]
-
-                    await _save(raw_list, "remax")
-                    remax_done += len(raw_list)
-                    scrape_progress.sources["remax"].done = remax_done
-                    scrape_progress.sources["remax"].pct  = round(remax_done / REMAX_TARGET * 100)
-                    logger.info(f"[remax] page {page}: {len(raw_list)} → total={remax_done}")
+                    new, _, _ = await _save(raw_list, "remax")
+                    remax_new += new
+                    scrape_progress.sources["remax"].done = remax_new
+                    scrape_progress.sources["remax"].pct  = round(remax_new / REMAX_TARGET * 100)
+                    logger.info(f"[remax] page {page}: {len(raw_list)} fetched (all sitemap-new), {new} new properties → total new={remax_new}")
                     page += 1
                     await asyncio.sleep(2)
 
@@ -220,6 +331,9 @@ async def scrape_job() -> None:
                     logger.error(f"[remax] page {page} error: {exc}")
                     scrape_progress.total_errors += 1
                     break
+
+            if remax_new < REMAX_TARGET:
+                logger.info(f"[remax] found {remax_new} new properties (sitemap diff exhausted or page cap)")
 
         scrape_progress.sources["remax"].status = "done"
 
@@ -248,43 +362,63 @@ async def scrape_job() -> None:
 
 
 # ── Pipeline job ───────────────────────────────────────────────────────────────
+# Shared with the manual POST /api/admin/pipeline endpoint (admin.py), which
+# runs the same InvestmentPipeline loop independently — both check/set this
+# flag so a manual trigger and the scheduled run can never overlap.
+pipeline_running = False
+
 
 async def pipeline_job() -> None:
-    start = datetime.now(timezone.utc)
-    logger.info("=== Pipeline job started ===")
+    global pipeline_running
+    if pipeline_running:
+        logger.warning("Pipeline job requested but one is already running — skipping")
+        return
+    pipeline_running = True
 
-    total_processed = total_errors = 0
-    batch_size = 50
+    try:
+        start = datetime.now(timezone.utc)
+        logger.info("=== Pipeline job started ===")
 
-    while True:
-        async with AsyncSessionLocal() as session:
-            pipeline = InvestmentPipeline(session, generate_brief=True)
-            stats = await pipeline.run_pending(limit=batch_size, strategy="both")
-            await session.commit()
+        total_processed = total_errors = 0
+        batch_size = 50
 
-        total_processed += stats["processed"]
-        total_errors    += stats.get("errors", 0)
+        while True:
+            async with AsyncSessionLocal() as session:
+                pipeline = InvestmentPipeline(session, generate_brief=True)
+                stats = await pipeline.run_pending(limit=batch_size, strategy="both")
+                await session.commit()
 
-        if stats["processed"] < batch_size:
-            break
+            total_processed += stats["processed"]
+            total_errors    += stats.get("errors", 0)
 
-    elapsed = round((datetime.now(timezone.utc) - start).total_seconds(), 1)
-    logger.info(
-        "=== Pipeline job done in %ss — processed=%d errors=%d ===",
-        elapsed, total_processed, total_errors,
-    )
+            if stats["processed"] < batch_size:
+                break
+
+        elapsed = round((datetime.now(timezone.utc) - start).total_seconds(), 1)
+        logger.info(
+            "=== Pipeline job done in %ss — processed=%d errors=%d ===",
+            elapsed, total_processed, total_errors,
+        )
+    finally:
+        pipeline_running = False
 
 
 # ── Scheduler setup ────────────────────────────────────────────────────────────
 
 def create_scheduler() -> AsyncIOScheduler:
     interval_hours = settings.scrape_interval_hours
+    start = datetime.now(timezone.utc)
 
     scheduler = AsyncIOScheduler(timezone="UTC")
 
+    # Both jobs share the same interval and start reference so they run
+    # concurrently every cycle — scrape_job and pipeline_job use independent
+    # DB sessions, so there's no conflict running them in parallel. Analysis
+    # may briefly lag a few properties behind mid-scrape; that's fine, it
+    # picks them up on the next cycle.
     scheduler.add_job(
         scrape_job,
-        trigger=IntervalTrigger(hours=interval_hours),
+        trigger=IntervalTrigger(hours=interval_hours, start_date=start),
         id="scrape_job",
         name="Scrape Realtor + Centris + ReMax (Quebec)",
         replace_existing=True,
@@ -293,7 +427,7 @@ def create_scheduler() -> AsyncIOScheduler:
 
     scheduler.add_job(
         pipeline_job,
-        trigger=IntervalTrigger(hours=interval_hours, start_date=_offset_start(minutes=30)),
+        trigger=IntervalTrigger(hours=interval_hours, start_date=start),
         id="pipeline_job",
         name="AI Investment Pipeline",
         replace_existing=True,
@@ -301,8 +435,3 @@ def create_scheduler() -> AsyncIOScheduler:
     )
 
     return scheduler
-
-
-def _offset_start(minutes: int):
-    from datetime import timedelta
-    return datetime.now(timezone.utc) + timedelta(minutes=minutes)

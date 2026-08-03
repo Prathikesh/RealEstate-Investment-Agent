@@ -5,7 +5,8 @@ remax.ca has ZERO Quebec listings (national DDF pool only has Ontario/BC).
 The Quebec-specific portal is remax-quebec.com (Nuxt.js SSR, no client-side JS needed).
 
 Strategy:
-  1. Fetch sitemap_properties.xml once → filter Montreal multi-family URLs (849 listings)
+  1. Fetch sitemap_properties.xml once → every URL in it is already a Quebec
+     listing (all cities, all property types — the portal itself is Quebec-only)
   2. Scrape individual listing pages (no JS rendering — Nuxt SSR delivers full HTML)
   3. Parse data from JSON-LD RealEstateListing + presentation section + features section
 
@@ -25,11 +26,6 @@ logger = logging.getLogger(__name__)
 
 BASE_URL = "https://www.remax-quebec.com"
 SITEMAP_URL = "https://www.remax-quebec.com/sitemap_properties.xml"
-
-MULTI_FAMILY_KEYWORDS = [
-    "triplex", "duplex", "plex", "multilogement",
-    "multi-logement", "revenue", "revenus", "revenu", "multiplex",
-]
 
 PROPERTY_TYPE_MAP: dict[str, str] = {
     "duplex":           "duplex",
@@ -64,20 +60,29 @@ class RemaxScraper(BaseScraper):
 
     async def scrape_listings(
         self,
-        category: str = "multi_family",
         page: int = 1,
         page_size: int = 10,
+        known_source_urls: Optional[set] = None,
     ) -> list[RawProperty]:
         """
-        Fetch one page of Montreal multi-family listings from remax-quebec.com.
+        Fetch one page of Quebec listings (all cities, all property types) from
+        remax-quebec.com. Property type is determined per-listing from the
+        actual page content, not filtered ahead of time.
 
         Loads the sitemap once, then scrapes individual listing pages in batches.
+
+        known_source_urls: if provided (on the first call, when the sitemap is
+        loaded), URLs already in this set are dropped from the walk — so we only
+        pay to fetch listings we've never scraped from ReMax before. The sitemap
+        itself is ~1 credit and lists every current Quebec listing, so diffing it
+        against what's already in the DB is a complete, cheap "only new" filter —
+        no sort/ordering assumptions needed, unlike the paginated sources.
         """
         if not self._sitemap_urls:
-            await self._load_sitemap()
+            await self._load_sitemap(known_source_urls=known_source_urls)
 
         if not self._sitemap_urls:
-            self.logger.error("[remax] No sitemap URLs loaded — cannot scrape")
+            self.logger.info("[remax] No new listings to scrape (sitemap empty or all already known)")
             return []
 
         start = (page - 1) * page_size
@@ -114,8 +119,10 @@ class RemaxScraper(BaseScraper):
 
     # ── Sitemap loading ───────────────────────────────────────────────────────
 
-    async def _load_sitemap(self) -> None:
-        """Fetch sitemap_properties.xml and filter for Montreal multi-family URLs."""
+    async def _load_sitemap(self, known_source_urls: Optional[set] = None) -> None:
+        """Fetch sitemap_properties.xml → the full list of current Quebec listing
+        URLs. If known_source_urls is given, drop URLs we've already scraped so
+        the walk only fetches genuinely-new listings."""
         content = ""
 
         # Try multiple strategies — sitemap is XML so no JS needed, but ASP helps bypass blocks
@@ -149,17 +156,20 @@ class RemaxScraper(BaseScraper):
                 content,
             )
 
-        # Filter: Montreal + multi-family keywords
-        filtered: list[str] = []
-        for url in all_urls:
-            url_lower = url.lower()
-            if "montreal" in url_lower and any(kw in url_lower for kw in MULTI_FAMILY_KEYWORDS):
-                filtered.append(url)
-
-        self._sitemap_urls = filtered
-        self.logger.info(
-            f"[remax] Sitemap loaded: {len(all_urls)} total → {len(filtered)} Montreal multi-family"
-        )
+        # remax-quebec.com is already Quebec-only (that's the whole point of using
+        # this portal instead of remax.ca), so no further city/type filtering is
+        # needed — every URL in the sitemap is a Quebec listing. Property type is
+        # determined per-listing in _parse_presentation() from the actual page.
+        if known_source_urls:
+            new_urls = [u for u in all_urls if u not in known_source_urls]
+            self.logger.info(
+                f"[remax] Sitemap loaded: {len(all_urls)} listings → "
+                f"{len(new_urls)} new after diff against {len(known_source_urls)} known"
+            )
+            self._sitemap_urls = new_urls
+        else:
+            self._sitemap_urls = all_urls
+            self.logger.info(f"[remax] Sitemap loaded: {len(all_urls)} Quebec listings")
 
     # ── Parser ────────────────────────────────────────────────────────────────
 

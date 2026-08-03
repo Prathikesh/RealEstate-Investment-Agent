@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agent.brief import BriefGenerator
 from app.agent.calculator import FinancialCalculator
 from app.agent.comparables import ComparableFinder
+from app.agent.market_benchmark import _ELIGIBLE_TYPES as REBUILD_ELIGIBLE_TYPES
 from app.agent.market_benchmark import MarketBenchmark, MarketBenchmarkComparator
 from app.agent.neighbourhood import NeighbourhoodAnalyzer, NeighbourhoodContext
 from app.agent.rebuild_economics import RebuildEconomicsCalculator
@@ -195,7 +196,14 @@ class InvestmentPipeline:
                     lot_m2 = prop.lot_sqft / 10.7639
                 est = estimate_max_units(lot_m2, zone.rules or {})
                 target = est.get("units")
-                if target and target > current_units(prop):
+                # Rebuild-to-max only makes sense for plex/revenue properties —
+                # a condo owner doesn't own the building/land to redevelop, and
+                # the rebuild cost model isn't tuned for single-family infill.
+                # Same eligible set as market_benchmark.py's institutional comp.
+                if (
+                    target and target > current_units(prop)
+                    and prop.property_type in REBUILD_ELIGIBLE_TYPES
+                ):
                     rebuild_scenario = self.rebuild_calc.calculate(
                         prop,
                         target_units=target,

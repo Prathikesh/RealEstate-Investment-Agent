@@ -82,6 +82,40 @@ class CentrisScraper(BaseScraper):
 
     # ── Public API ────────────────────────────────────────────────────────────
 
+    async def _set_sort_newest(self) -> None:
+        """
+        Ask Centris to sort search results newest-first (by publication date,
+        descending) for this session.
+
+        Centris randomizes its DEFAULT result order per request (note the
+        `sortSeed` param on default search URLs) — an anti-scraping measure that
+        scatters newly-listed properties across every page, forcing a full
+        re-scan each cycle to be sure of catching them. Setting the sort to
+        "DateDesc" clusters new listings toward the front instead, so the
+        scheduler can stop paginating soon after it starts hitting listings it
+        already has.
+
+        Mechanism: a JSON POST to /property/UpdateSort with sort=3
+        ("Publication récente"), which sets session state honoured by
+        subsequent search-page fetches on the same Scrapfly session.
+
+        Best-effort: ordering still jitters somewhat through Scrapfly's rotating
+        proxies, so this is "mostly" newest-first, not guaranteed. Callers keep
+        a page-scan margin rather than trusting page 1 to be exhaustively newest.
+        """
+        try:
+            config = ScrapeConfig(
+                url=f"{self.BASE_URL}/property/UpdateSort",
+                method="POST",
+                data={"sort": 3, "mode": "Result"},
+                headers={"Content-Type": "application/json"},
+                asp=True, country="ca", session=self._SESSION,
+            )
+            result = await self.client.async_scrape(config)
+            self.logger.info(f"[centris] sort→newest: {(result.content or '')[:80]}")
+        except Exception as exc:
+            self.logger.warning(f"[centris] could not set newest-first sort: {exc}")
+
     async def scrape_listings(
         self,
         category: str = "plex",
@@ -92,11 +126,17 @@ class CentrisScraper(BaseScraper):
         Fetch one page of search results (~20 properties).
         Uses a named Scrapfly session so cookies are available for detail pages.
         city examples: "montreal", "laval", "longueuil"
+
+        On page 1 we (re)assert newest-first sort for the session so new
+        listings cluster toward the front — see _set_sort_newest().
         """
         base = SEARCH_URLS.get(category, SEARCH_URLS["plex"])
         if city:
             base = f"{base}~{city.lower().replace(' ', '-')}"
         url = base if page == 1 else f"{base}?view=Thumbnail&uc={page}"
+
+        if page == 1:
+            await self._set_sort_newest()
 
         config = ScrapeConfig(
             url=url, asp=True, render_js=True, country="ca",
@@ -179,6 +219,34 @@ class CentrisScraper(BaseScraper):
             self.logger.error(f"Full detail failed: {url} — {exc}")
 
         return None
+
+    async def scrape_photos(self, url: str) -> list[str]:
+        """
+        Fetch only the photo gallery for a listing — skips the tax-calculator
+        click/wait that scrape_detail() needs, since we don't touch price/tax/
+        income here. Used to backfill photos on properties scraped before
+        hi_res_photo() existed, without re-running the full (slower) detail
+        parse or touching any other field.
+        """
+        try:
+            config = ScrapeConfig(
+                url=url, asp=True, render_js=True, country="ca",
+                session=f"centris-photos-{uuid.uuid4().hex[:8]}",
+                rendering_wait=1500,
+            )
+            result = await self.client.async_scrape(config)
+            cost = result.context.get("cost", {}).get("total", 0)
+            self.logger.info(
+                f"[centris] photos: {result.upstream_status_code} "
+                f"| credits={cost} | {url[-55:]}"
+            )
+            if result.upstream_status_code != 200:
+                return []
+            soup = BeautifulSoup(result.content, "html.parser")
+            return self._extract_photos(soup)
+        except Exception as exc:
+            self.logger.error(f"Photo fetch failed: {url} — {exc}")
+            return []
 
     async def _geocode_prop(self, prop: RawProperty) -> None:
         """Populate raw_data['lat'/'lng'] via geocoder if not already extracted from page."""
