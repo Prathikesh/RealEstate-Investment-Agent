@@ -1,7 +1,7 @@
 import { useState, useMemo, lazy, Suspense } from 'react'
 import { displayAddress } from '../lib/address'
 import { useParams, Link } from 'react-router-dom'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import {
   ArrowLeft, ExternalLink, RefreshCw, MapPin, Calendar,
   Building2, Ruler, AlertCircle, TrendingUp,
@@ -119,7 +119,6 @@ export default function PropertyPage() {
   const { id } = useParams<{ id: string }>()
   const { t } = useLang()
   const [activeTab, setActiveTab] = useState<TabKey>('aiBrief')
-  const queryClient = useQueryClient()
   const { data: prop, isLoading, error } = useQuery({
     queryKey: ['property', id],
     queryFn: () => fetchProperty(id!),
@@ -128,20 +127,6 @@ export default function PropertyPage() {
 
   const { saved, toggle: toggleSaved } = useSaved(prop)
   const [photoIdx, setPhotoIdx] = useState(0)
-
-  const reanalyze = useMutation({
-    mutationFn: async () => {
-      const res = await fetch(`${API_BASE}/properties/${id}/analyze`, { method: 'POST' })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        throw new Error((err as { detail?: string }).detail ?? 'Analysis failed')
-      }
-      return res.json()
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['property', id] })
-    },
-  })
 
   if (isLoading) return <PropertySkeleton />
   if (error || !prop) return <NotFound t={t} />
@@ -300,14 +285,6 @@ export default function PropertyPage() {
             <BarChart2 size={13} />
             Deep Analysis
           </Link>
-          <button
-            onClick={() => reanalyze.mutate()}
-            disabled={reanalyze.isPending}
-            className="btn-ghost disabled:opacity-50"
-          >
-            <RefreshCw size={13} className={reanalyze.isPending ? 'animate-spin' : ''} />
-            {reanalyze.isPending ? 'Analyzing…' : reanalyze.isError ? 'Failed — Retry' : t('reanalyze')}
-          </button>
           {/* Save / Bookmark */}
           <button
             onClick={toggleSaved}
