@@ -34,19 +34,20 @@ from app.scrapers.base import BaseScraper, RawProperty
 
 def hi_res_photo(url: str) -> str:
     """Centris serves images through media.ashx with the size baked into the URL
-    (thumbnails come at w=320&h=240 — blurry). Rewrite to a larger size so we
-    store sharp photos. Non-Centris/media URLs are returned unchanged.
+    (thumbnails come at w=320&h=240 — blurry). Rewrite to full HD so we store
+    sharp photos. Non-Centris/media URLs are returned unchanged.
 
     NB: media.ashx only serves a fixed set of preset sizes — 320x240, 640x480
-    and 1024x1024 return real images, but arbitrary sizes (800x600, 1024x768…)
-    return an EMPTY body. We use 640x480: 2x the resolution of the thumbnail,
-    ~3.5x the detail, and it keeps the original 4:3 framing (1024x1024 would
-    crop to a square).
+    and 1024x1024 return real images; any other size (800x600, 1024x768…) returns
+    an EMPTY body. We use 1024x1024 — the largest Centris offers (~300KB, true
+    HD). It's square rather than 4:3, but the UI displays photos with
+    object-cover so the square source fills each container cleanly with no
+    distortion.
     """
     if not url or "media.ashx" not in url:
         return url
-    url = re.sub(r"([?&]w=)\d+", r"\g<1>640", url)
-    url = re.sub(r"([?&]h=)\d+", r"\g<1>480", url)
+    url = re.sub(r"([?&]w=)\d+", r"\g<1>1024", url)
+    url = re.sub(r"([?&]h=)\d+", r"\g<1>1024", url)
     return url
 
 

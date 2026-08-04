@@ -27,6 +27,17 @@ logger = logging.getLogger(__name__)
 BASE_URL = "https://www.remax-quebec.com"
 SITEMAP_URL = "https://www.remax-quebec.com/sitemap_properties.xml"
 
+
+def hi_res_photo(url: str) -> str:
+    """remax-quebec.com serves images under a size folder in the URL path
+    (e.g. /img/www_medium/… ~180KB, soft). Rewrite to www_full — the largest
+    variant (~850KB, true HD) which keeps the original aspect ratio (no cropping).
+    Non-media URLs are returned unchanged.
+    """
+    if not url or "media.remax-quebec.com" not in url:
+        return url
+    return re.sub(r"/img/www_[a-z]+/", "/img/www_full/", url)
+
 PROPERTY_TYPE_MAP: dict[str, str] = {
     "duplex":           "duplex",
     "triplex":          "triplex",
@@ -225,7 +236,7 @@ class RemaxScraper(BaseScraper):
                 else:
                     continue
                 if src.startswith("http"):
-                    photos.append(src)
+                    photos.append(hi_res_photo(src))
 
         # ── 8. Agent info ─────────────────────────────────────────────────────
         agent_name, agent_phone, agent_email, agency_name = self._parse_agent(ld_data)
