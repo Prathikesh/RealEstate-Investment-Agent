@@ -37,7 +37,7 @@ from app.api.schemas import (
     ScoreResultSchema, StatsResponse, FiveYearProjectionSchema, YearSnapshotSchema,
     ZoningInfo, RebuildEconomicsInfo, AssessmentInfo, ConstraintFlag,
 )
-from app.models.property import Property, PropertyStatus, PropertyType, ScoreCategory
+from app.models.property import Property, PropertyStatus, PropertyType, ScoreCategory, compute_days_on_market
 from app.models.source import PropertySource
 
 logger = logging.getLogger(__name__)
@@ -264,6 +264,7 @@ async def list_properties(
     for p in items:
         src_name, src_price = _lowest_price_source(p.sources)
         card = PropertyCard.model_validate(p)
+        card.days_on_market      = compute_days_on_market(p)
         card.multi_site_count    = len([s for s in p.sources if s.is_active])
         card.lowest_price_source = src_name
         card.lowest_price        = src_price
@@ -478,6 +479,7 @@ async def get_property(
 
     src_name, src_price = _lowest_price_source(prop.sources)
     detail = PropertyDetail.model_validate(prop)
+    detail.days_on_market       = compute_days_on_market(prop)
     detail.cross_site_prices    = _build_cross_site_prices(prop.sources)
     detail.multi_site_count     = len([s for s in prop.sources if s.is_active])
     detail.lowest_price_source  = src_name

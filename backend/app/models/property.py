@@ -252,3 +252,46 @@ class Property(Base):
 
     def __repr__(self) -> str:
         return f"<Property {self.full_address} score={self.score}>"
+
+
+def compute_days_on_market(prop: "Property") -> Optional[int]:
+    """
+    Days the listing has been on the market, computed LIVE (it grows by 1 each
+    day, so it must never be stored as a static number).
+
+    Date source, in priority order:
+      1. listed_at            — an explicit listing date if a scraper set one
+      2. price_history "listed" event date — the date shown on the property's
+         price-history timeline (this is what users cross-reference against)
+      3. first_seen_at        — when we first scraped it (always present)
+
+    NOTE on accuracy: Centris deliberately hides the true original listing date
+    from public pages, so for most Centris listings there is no source date to
+    scrape — this value is then "days since the listing first appeared in our
+    price history," which is exactly the date shown on the platform. It stays
+    consistent with the price-history timeline rather than pretending to be an
+    official Centris date that doesn't exist.
+    """
+    from datetime import datetime, timezone
+
+    listed: Optional[datetime] = prop.listed_at
+
+    if listed is None and prop.price_history:
+        for event in prop.price_history:
+            if isinstance(event, dict) and event.get("event") == "listed" and event.get("date"):
+                try:
+                    listed = datetime.fromisoformat(str(event["date"]))
+                except (ValueError, TypeError):
+                    listed = None
+                break
+
+    if listed is None:
+        listed = prop.first_seen_at
+
+    if listed is None:
+        return None
+
+    if listed.tzinfo is None:
+        listed = listed.replace(tzinfo=timezone.utc)
+
+    return max(0, (datetime.now(timezone.utc) - listed).days)

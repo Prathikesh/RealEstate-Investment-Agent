@@ -33,7 +33,7 @@ from app.agent.projector import FiveYearProjection, FiveYearProjector
 from app.agent.renovation import RenovationAnalyzer, RenovationROI
 from app.agent.risk import RiskAssessment, RiskAssessor
 from app.agent.scorer import OpportunityScorer, ScoreResult
-from app.models.property import Property
+from app.models.property import Property, compute_days_on_market
 from app.services.calc_client import analyze as calc_engine_analyze
 
 logger = logging.getLogger(__name__)
@@ -111,7 +111,7 @@ async def run_full_analysis(
     score = OpportunityScorer().score(
         fp,
         strategy="both",
-        days_on_market=prop.days_on_market,
+        days_on_market=compute_days_on_market(prop),
         risk=risk,
         neighbourhood=neighbourhood,
         price_history=prop.price_history,

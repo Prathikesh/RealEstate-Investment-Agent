@@ -31,7 +31,7 @@ from app.agent.zoning_matcher import ZoningMatcher, current_units
 from app.agent.assessment_matcher import AssessmentMatcher
 from app.agent.constraint_matcher import ConstraintMatcher
 from app.agent.buildable import estimate_max_units
-from app.models.property import AnalysisConfidence, Property, ScoreCategory
+from app.models.property import AnalysisConfidence, Property, ScoreCategory, compute_days_on_market
 from app.models.zoning import ZoningZone
 from app.services.calc_client import analyze as calc_engine_analyze
 from app.services.address_index import geocode_address
@@ -151,7 +151,7 @@ class InvestmentPipeline:
         score = self.scorer.score(
             fp,
             strategy=strategy,
-            days_on_market=prop.days_on_market,
+            days_on_market=compute_days_on_market(prop),
             risk=risk,
             neighbourhood=neighbourhood,
             price_history=prop.price_history,

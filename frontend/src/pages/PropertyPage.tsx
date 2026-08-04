@@ -779,14 +779,17 @@ function buildScoreFactors(prop: PropertyDetail) {
   const cf       = prop.monthly_cash_flow ?? 0
   const grm      = prop.grm ?? 15
   const comps    = prop.comparable_count ?? 0
-  const dom      = prop.days_on_market ?? 30
+  // real days-on-market from the API (computed from the listed date); null only if truly unknown
+  const dom      = prop.days_on_market
+  const domScore = dom != null ? norm(dom, 7, 90) : 30
+  const domValue = dom != null ? `${dom}d` : '—'
   const price    = prop.asking_price ?? 1
 
   return [
     { label: 'Price Discount', weight: 28, score: norm(discount, 0, 20),               value: `${discount.toFixed(1)}%` },
     { label: 'Cap Rate',       weight: 18, score: norm(capRate, 0, 8),                 value: `${capRate.toFixed(2)}%` },
     { label: 'Cash Flow',      weight: 17, score: norm((cf / price) * 100, -0.5, 1.0), value: `${fmtCAD(cf)}/mo` },
-    { label: 'Days Listed',    weight: 13, score: norm(dom, 7, 90),                    value: `${dom}d` },
+    { label: 'Days Listed',    weight: 13, score: domScore,                            value: domValue },
     { label: 'Confidence',     weight: 10, score: norm(comps, 0, 10),                  value: `${comps} comps` },
     { label: 'GRM',            weight:  7, score: norm(-(grm), -18, -10),              value: `${grm.toFixed(1)}x` },
     { label: 'Price Trend',    weight:  7, score: 50,                                   value: '—' },
