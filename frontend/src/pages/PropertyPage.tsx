@@ -17,8 +17,11 @@ import {
 import clsx from 'clsx'
 import { API_BASE, fetchProperty, type PropertyDetail } from '../api'
 import ScoreBadge from '../components/ScoreBadge'
+import VerdictCompare from '../components/VerdictCompare'
 import { useLang } from '../context/LanguageContext'
 import FinancingWorkbench from '../components/FinancingWorkbench'
+import { STRATEGY_WEIGHTS } from '../lib/verdict'
+import { buildFactorRows } from '../lib/propertyVerdict'
 
 // Code-split: MapLibre (~210KB gzip) loads only when the Zoning tab renders.
 const ZoningMap = lazy(() => import('../components/ZoningMap'))
@@ -747,30 +750,12 @@ function buildPieData(prop: PropertyDetail) {
   return slices.filter(s => s.value > 0)
 }
 
+// Score Breakdown rows — now backed by the real per-factor component scores and
+// weights the backend actually used (see lib/propertyVerdict). Falls back to an
+// approximation for properties analyzed before score_components was stored.
 function buildScoreFactors(prop: PropertyDetail) {
-  const norm = (val: number, bad: number, good: number) =>
-    Math.round(Math.min(100, Math.max(0, ((val - bad) / (good - bad)) * 100)))
-
-  const discount = prop.discount_pct ?? 0
-  const capRate  = prop.cap_rate ?? 0
-  const cf       = prop.monthly_cash_flow ?? 0
-  const grm      = prop.grm ?? 15
-  const comps    = prop.comparable_count ?? 0
-  // real days-on-market from the API (computed from the listed date); null only if truly unknown
-  const dom      = prop.days_on_market
-  const domScore = dom != null ? norm(dom, 7, 90) : 30
-  const domValue = dom != null ? `${dom}d` : '—'
-  const price    = prop.asking_price ?? 1
-
-  return [
-    { label: 'Price Discount', weight: 28, score: norm(discount, 0, 20),               value: `${discount.toFixed(1)}%` },
-    { label: 'Cap Rate',       weight: 18, score: norm(capRate, 0, 8),                 value: `${capRate.toFixed(2)}%` },
-    { label: 'Cash Flow',      weight: 17, score: norm((cf / price) * 100, -0.5, 1.0), value: `${fmtCAD(cf)}/mo` },
-    { label: 'Days Listed',    weight: 13, score: domScore,                            value: domValue },
-    { label: 'Confidence',     weight: 10, score: norm(comps, 0, 10),                  value: `${comps} comps` },
-    { label: 'GRM',            weight:  7, score: norm(-(grm), -18, -10),              value: `${grm.toFixed(1)}x` },
-    { label: 'Price Trend',    weight:  7, score: 50,                                   value: '—' },
-  ]
+  const weights = prop.ai_weights ?? STRATEGY_WEIGHTS.both
+  return buildFactorRows(prop, weights)
 }
 
 // ── Investment Report (main data-driven section) ──────────────────────────────
@@ -1008,7 +993,7 @@ function InvestmentReport({ prop }: { prop: PropertyDetail }) {
                 <div className="flex items-center justify-between mb-1.5">
                   <div>
                     <span className="text-sm font-semibold text-ink">{f.label}</span>
-                    <span className="text-xs text-muted ml-1.5">{f.weight}% weight</span>
+                    <span className="text-xs text-muted ml-1.5">{f.weightPct}% weight</span>
                   </div>
                   <div className="flex items-center gap-3">
                     <span className="text-sm font-mono text-muted">{f.value}</span>
@@ -1305,6 +1290,7 @@ function BriefTab({ prop }: { prop: PropertyDetail }) {
   return (
     <div className="space-y-5 animate-slide-up">
       <VerdictBanner prop={prop} />
+      <VerdictCompare prop={prop} />
       <InvestmentInsights prop={prop} />
 
       {hasFinancials ? (

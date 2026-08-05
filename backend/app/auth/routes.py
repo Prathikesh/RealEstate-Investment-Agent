@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agent.scorer import WEIGHTS
 from app.analytics.models import EventType
 from app.analytics.service import log_event
 from app.api.deps import get_db
@@ -78,6 +79,9 @@ class UserResponse(BaseModel):
     min_score_for_alert:  Optional[int]       = None
     email_alerts_enabled: Optional[bool]      = None
     language:             Optional[str]       = None
+    # Optional override of the strategy's preset scoring weights — see
+    # app/agent/scorer.py WEIGHTS. Null means "use investment_strategy's preset".
+    custom_score_weights: Optional[dict[str, float]] = None
 
     @field_validator("role", "investment_strategy", "language", mode="before")
     @classmethod
@@ -96,6 +100,7 @@ class PreferencesUpdate(BaseModel):
     min_score_for_alert:  Optional[int]       = None
     email_alerts_enabled: Optional[bool]      = None
     language:             Optional[str]       = None
+    custom_score_weights: Optional[dict[str, float]] = None
 
 
 # ── Cookie helpers ────────────────────────────────────────────────────────────
@@ -225,6 +230,11 @@ async def update_me(
         data["min_score_for_alert"] = max(0, min(100, int(data["min_score_for_alert"])))
     if data.get("location_radius_km") is not None:
         data["location_radius_km"] = max(1, min(200, int(data["location_radius_km"])))
+    if "custom_score_weights" in data and data["custom_score_weights"] is not None:
+        weights = data["custom_score_weights"]
+        valid_keys = set(WEIGHTS["both"].keys())
+        if set(weights.keys()) != valid_keys or abs(sum(weights.values()) - 1.0) > 0.01:
+            raise HTTPException(status_code=400, detail="custom_score_weights must cover all scoring factors and sum to 1.0")
 
     for key, value in data.items():
         setattr(user, key, value)

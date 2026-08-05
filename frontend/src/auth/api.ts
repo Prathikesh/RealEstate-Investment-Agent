@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { http } from '../api'
+import type { ScoreWeights } from '../lib/verdict'
 
 export interface User {
   id: string
@@ -17,6 +18,9 @@ export interface User {
   min_score_for_alert?: number | null
   email_alerts_enabled?: boolean | null
   language?: 'en' | 'fr' | null
+  // Optional per-user override of the scoring weights (see ScoreWeights).
+  // Null / absent means "use investment_strategy's preset". Drives "Your Verdict".
+  custom_score_weights?: ScoreWeights | null
 }
 
 export interface PreferencesPayload {
@@ -29,6 +33,7 @@ export interface PreferencesPayload {
   min_score_for_alert?: number
   email_alerts_enabled?: boolean
   language?: 'en' | 'fr'
+  custom_score_weights?: ScoreWeights | null
 }
 
 export async function updatePreferences(payload: PreferencesPayload): Promise<User> {

@@ -24,6 +24,7 @@ from app.agent.constraint_matcher import CONSTRAINT_EXPLAIN
 from app.agent.constants import SOURCES
 from app.agent.full_analysis import run_full_analysis
 from app.agent.pipeline import InvestmentPipeline
+from app.agent.scorer import WEIGHTS
 from app.agent.zoning_matcher import current_units as _current_units
 from app.analytics.models import EventType
 from app.analytics.service import log_event
@@ -156,6 +157,8 @@ async def list_properties(
     score_max:     int           = Query(100, ge=0, le=100),
     price_min:     Optional[float] = Query(None),
     price_max:     Optional[float] = Query(None),
+    cap_rate_min:  Optional[float] = Query(None),
+    cash_flow_min: Optional[float] = Query(None),
     status:        Optional[str] = Query(None),
     multi_site:    Optional[bool] = Query(None),
     has_sqft:      Optional[bool] = Query(None),
@@ -209,6 +212,10 @@ async def list_properties(
         stmt = stmt.where(Property.asking_price >= price_min)
     if price_max:
         stmt = stmt.where(Property.asking_price <= price_max)
+    if cap_rate_min is not None:
+        stmt = stmt.where(Property.cap_rate.isnot(None)).where(Property.cap_rate >= cap_rate_min)
+    if cash_flow_min is not None:
+        stmt = stmt.where(Property.monthly_cash_flow.isnot(None)).where(Property.monthly_cash_flow >= cash_flow_min)
     if status:
         try:
             s = PropertyStatus(status)
@@ -283,7 +290,8 @@ async def list_properties(
                 "city": city, "mls_number": mls_number, "property_type": property_type,
                 "score_min": score_min if score_min > 0 else None,
                 "score_max": score_max if score_max < 100 else None,
-                "price_min": price_min, "price_max": price_max, "status": status,
+                "price_min": price_min, "price_max": price_max,
+                "cap_rate_min": cap_rate_min, "cash_flow_min": cash_flow_min, "status": status,
                 "multi_site": multi_site, "has_sqft": has_sqft, "listed_within": listed_within,
                 "sort_by": sort_by if sort_by != "score" else None,
             }.items() if v is not None
@@ -486,6 +494,12 @@ async def get_property(
 
     src_name, src_price = _lowest_price_source(prop.sources)
     detail = PropertyDetail.model_validate(prop)
+    # score_components comes straight off the Property row (populated by the
+    # pipeline). ai_weights is the weight set actually used to combine those
+    # components into `score` — the pipeline always scores with "both" (see
+    # app/agent/pipeline.py), so that's what's returned here, not the viewing
+    # broker's own strategy (which may differ from how the stored score was built).
+    detail.ai_weights            = WEIGHTS.get("both")
     detail.days_on_market       = compute_days_on_market(prop)
     detail.cross_site_prices    = _build_cross_site_prices(prop.sources)
     detail.multi_site_count     = len([s for s in prop.sources if s.is_active])

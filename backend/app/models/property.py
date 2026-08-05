@@ -166,6 +166,9 @@ class Property(Base):
     # ── AI Analysis Results ───────────────────────────────────────────────────
     score: Mapped[Optional[int]] = mapped_column(Integer)
     score_category: Mapped[Optional[ScoreCategory]] = mapped_column(SAEnum(ScoreCategory))
+    # Per-factor breakdown from OpportunityScorer.score() (see ScoreResult.components) —
+    # lets the frontend show an accurate breakdown and recombine with a broker's own weights.
+    score_components: Mapped[Optional[dict]] = mapped_column(JSONB)
 
     # Comparable data
     comparable_count: Mapped[Optional[int]] = mapped_column(Integer)

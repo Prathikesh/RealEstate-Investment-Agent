@@ -3,12 +3,36 @@ import { useNavigate } from 'react-router-dom'
 import {
   Bell, MapPin, Home, TrendingUp, Globe, CheckCircle2, ShieldCheck,
   Smartphone, MessageCircle, Wrench, Building2, Mail, SlidersHorizontal,
-  ChevronDown, Check, Search, Layers,
+  ChevronDown, Check, Search, Layers, Gauge, RotateCcw,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useLang } from '../context/LanguageContext'
 import { useAuth } from '../auth/AuthContext'
 import { updatePreferences, type PreferencesPayload, type User } from '../auth/api'
+import {
+  SCORE_FACTORS, STRATEGY_WEIGHTS, FACTOR_LABEL,
+  type ScoreFactor, type ScoreWeights,
+} from '../lib/verdict'
+
+// Short investor-facing descriptions for each scoring factor (My Scoring Criteria).
+const FACTOR_DESC: Record<ScoreFactor, string> = {
+  discount:      'How far below comparable sales it is priced',
+  cap_rate:      'Annual return — net income vs. purchase price',
+  cash_flow:     'Monthly profit after mortgage, taxes & expenses',
+  grm:           'Price relative to gross rent (lower is better)',
+  confidence:    'How much comparable data backs the numbers',
+  dom_bonus:     'Days on market — longer means more leverage',
+  price_history: 'Past price cuts signal a motivated seller',
+}
+
+// Seed slider "points" (0-100 each) from stored fractional weights (×100),
+// falling back to the strategy preset when the user has no custom weights.
+function pointsFromWeights(w: ScoreWeights): Record<ScoreFactor, number> {
+  return SCORE_FACTORS.reduce((acc, f) => {
+    acc[f] = Math.round((w[f] ?? 0) * 100)
+    return acc
+  }, {} as Record<ScoreFactor, number>)
+}
 
 // ── Option data ──────────────────────────────────────────────────────────────
 const PROPERTY_TYPES = [
@@ -71,6 +95,12 @@ export default function Settings() {
   const [goals, setGoals]             = useState<string[]>(goalsFromStrategy(user?.investment_strategy))
   const [minScore, setMinScore]       = useState(user?.min_score_for_alert ?? 60)
   const [emailAlerts, setEmailAlerts] = useState(user?.email_alerts_enabled ?? true)
+  // Custom scoring weights → "Your Verdict". Points are relative (0-100 each);
+  // normalized to fractions summing to 1.0 on save. Seeded from the user's saved
+  // custom weights, else their strategy preset.
+  const [weightPoints, setWeightPoints] = useState<Record<ScoreFactor, number>>(
+    pointsFromWeights(user?.custom_score_weights ?? STRATEGY_WEIGHTS[user?.investment_strategy ?? 'both']),
+  )
   // delivery/trigger extras — local until the alert engine + fields land server-side
   const [newListings, setNewListings]     = useState<boolean>(d0.newListings ?? true)
   const [priceDrops, setPriceDrops]       = useState<boolean>(d0.priceDrops ?? true)
@@ -90,7 +120,18 @@ export default function Settings() {
     setGoals(goalsFromStrategy(user.investment_strategy))
     setMinScore(user.min_score_for_alert ?? 60)
     setEmailAlerts(user.email_alerts_enabled ?? true)
+    setWeightPoints(pointsFromWeights(user.custom_score_weights ?? STRATEGY_WEIGHTS[user.investment_strategy ?? 'both']))
   }, [user?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Live normalized share of each factor (always sums to 100). This is what the
+  // user sees while dragging — "cap rate is 24% of your score".
+  const pointsTotal = SCORE_FACTORS.reduce((sum, f) => sum + weightPoints[f], 0)
+  const factorPct = (f: ScoreFactor): number =>
+    pointsTotal > 0 ? Math.round((weightPoints[f] / pointsTotal) * 100) : 0
+
+  function resetWeightsToStrategy() {
+    setWeightPoints(pointsFromWeights(STRATEGY_WEIGHTS[strategyFromGoals(goals)]))
+  }
 
   const phoneNeeded = (smsAlerts || whatsappAlerts) && digits(phone).length < 10
   const emailValid = !emailAlerts || (user?.email ? EMAIL_RE.test(user.email) : false)
@@ -98,6 +139,25 @@ export default function Settings() {
 
   function toggleType(v: string) {
     setTypes(prev => prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v])
+  }
+
+  // Normalize the relative slider points to fractions summing to 1.0, as the
+  // backend requires (see auth/routes.py custom_score_weights validation). The
+  // last factor absorbs rounding drift so the sum is exactly 1.0.
+  function normalizedWeights(): ScoreWeights {
+    const total = SCORE_FACTORS.reduce((s, f) => s + weightPoints[f], 0) || 1
+    const w = {} as ScoreWeights
+    let acc = 0
+    SCORE_FACTORS.forEach((f, i) => {
+      if (i === SCORE_FACTORS.length - 1) {
+        w[f] = Math.round((1 - acc) * 1000) / 1000
+      } else {
+        const v = Math.round((weightPoints[f] / total) * 1000) / 1000
+        w[f] = v
+        acc += v
+      }
+    })
+    return w
   }
 
   function accountPayload(): PreferencesPayload {
@@ -112,6 +172,7 @@ export default function Settings() {
       min_score_for_alert: minScore,
       email_alerts_enabled: emailAlerts,
       language: lang,
+      custom_score_weights: normalizedWeights(),
     }
   }
 
@@ -208,6 +269,46 @@ export default function Settings() {
 
           <SectionCard icon={<Home size={15} />} title="Investment goal" desc="Choose one or more strategies.">
             <GoalDropdown selected={goals} onChange={setGoals} />
+          </SectionCard>
+
+          <SectionCard
+            icon={<Gauge size={15} />}
+            title="My Scoring Criteria"
+            desc="Weight the factors behind your own verdict. Every property shows your score next to the AI score."
+          >
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs text-muted">
+                Drag to set how much each factor matters. The percentages are relative and always add up to 100%.
+              </p>
+              <button
+                type="button"
+                onClick={resetWeightsToStrategy}
+                className="btn-ghost text-xs shrink-0 ml-3"
+                title="Reset the weights to your strategy's default"
+              >
+                <RotateCcw size={13} /> Reset
+              </button>
+            </div>
+            <div className="space-y-3.5">
+              {SCORE_FACTORS.map(f => (
+                <div key={f}>
+                  <div className="flex items-center justify-between gap-3 mb-1">
+                    <div className="min-w-0">
+                      <span className="text-sm font-semibold text-ink">{FACTOR_LABEL[f]}</span>
+                      <span className="block text-[11px] text-muted leading-snug">{FACTOR_DESC[f]}</span>
+                    </div>
+                    <span className="text-sm font-bold font-mono text-accent shrink-0 tabular-nums w-11 text-right">{factorPct(f)}%</span>
+                  </div>
+                  <input
+                    type="range" min={0} max={100} step={1}
+                    value={weightPoints[f]}
+                    onChange={e => setWeightPoints(prev => ({ ...prev, [f]: Number(e.target.value) }))}
+                    aria-label={`${FACTOR_LABEL[f]} weight`}
+                    className="w-full accent-accent"
+                  />
+                </div>
+              ))}
+            </div>
           </SectionCard>
         </div>
 

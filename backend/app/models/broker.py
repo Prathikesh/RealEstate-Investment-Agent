@@ -77,6 +77,11 @@ class Broker(Base):
     investment_strategy: Mapped[InvestmentStrategy] = mapped_column(
         SAEnum(InvestmentStrategy), default=InvestmentStrategy.BOTH
     )
+    # Optional override of the strategy's preset weights — dict of factor name
+    # (see app/agent/scorer.py WEIGHTS keys) to weight, must sum to 1.0.
+    # Null means "use investment_strategy's preset". Drives the broker's
+    # personalized "Your Verdict" score shown alongside the AI verdict.
+    custom_score_weights: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
     # ── Notification Preferences ──────────────────────────────────────────────
     email_alerts_enabled: Mapped[bool] = mapped_column(Boolean, default=True)

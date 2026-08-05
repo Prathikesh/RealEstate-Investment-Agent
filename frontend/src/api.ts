@@ -1,4 +1,5 @@
 import axios from 'axios'
+import type { ScoreComponents, ScoreWeights } from './lib/verdict'
 
 export const API_BASE = import.meta.env.VITE_API_URL ?? '/api'
 
@@ -177,6 +178,12 @@ export interface PropertyDetail extends PropertyCard {
   market_benchmark: MarketBenchmarkInfo | null
   assessment: AssessmentInfo | null
   constraints: ConstraintFlag[] | null
+
+  // Per-factor 0-100 breakdown behind `score` and the weights used to combine
+  // them (both from the backend). Null on properties analyzed before this
+  // feature shipped — the UI falls back gracefully. See lib/verdict.ts.
+  score_components: ScoreComponents | null
+  ai_weights: ScoreWeights | null
 }
 
 export interface PropertyListResponse {
@@ -209,6 +216,8 @@ export interface PropertyFilters {
   score_max?: number
   price_min?: number
   price_max?: number
+  cap_rate_min?: number
+  cash_flow_min?: number
   status?: string
   sort_by?: 'score' | 'price' | 'newest' | 'discount' | 'price_asc' | 'price_desc'
   listed_within?: '24h' | '48h' | '7d' | '30d'

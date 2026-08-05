@@ -350,8 +350,9 @@ class InvestmentPipeline:
                 prop.down_payment_20pct = calc_fields["down_payment_20pct"]
 
         # Score
-        prop.score          = score.total
-        prop.score_category = score.category
+        prop.score            = score.total
+        prop.score_category   = score.category
+        prop.score_components = score.components
 
         # Confidence
         conf_map = {"high": AnalysisConfidence.HIGH, "medium": AnalysisConfidence.MEDIUM, "low": AnalysisConfidence.LOW}

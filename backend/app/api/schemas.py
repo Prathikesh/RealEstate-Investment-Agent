@@ -240,6 +240,12 @@ class PropertyDetail(BaseModel):
 
     score:                   Optional[int]
     score_category:          Optional[str]
+    # Per-factor breakdown behind `score` (see OpportunityScorer.score) and the
+    # weights actually used to produce it — lets the frontend show an accurate
+    # "Score Breakdown" and recombine the same components with a broker's own
+    # custom_score_weights (fetched separately from /api/auth/me) for "Your Verdict".
+    score_components:        Optional[dict[str, float]] = None
+    ai_weights:              Optional[dict[str, float]] = None
     comparable_count:        Optional[int]
     comparable_median_price: Optional[float]
     comparable_mean_price:   Optional[float]

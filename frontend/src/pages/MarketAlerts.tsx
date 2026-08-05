@@ -4,24 +4,25 @@ import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   Bell, Plus, Trash2, ChevronRight, Building2,
-  TrendingUp, ArrowDownCircle, Check, X, Zap,
+  TrendingUp, ArrowDownCircle, Check, X, Zap, Percent, CircleDollarSign,
 } from 'lucide-react'
 import { fetchProperties, type PropertyCard, type PropertyFilters } from '../api'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type AlertType = 'new_listing' | 'price_drop' | 'score_threshold' | 'new_in_city'
+// Metric-based alerts: pick a metric (+ threshold for numeric ones) and,
+// optionally, restrict to a city. Threshold metrics use "at or above" (gte),
+// which matches how investors think ("alert me when cap rate ≥ 6%").
+type AlertMetric = 'new_listing' | 'price_drop' | 'score' | 'cap_rate' | 'cash_flow'
 
 interface AlertRule {
   id: string
-  type: AlertType
+  metric: AlertMetric
+  value?: number       // threshold for score / cap_rate / cash_flow
+  city?: string        // optional city restriction (any metric)
   label: string
-  city?: string
-  scoreMin?: number
-  priceMax?: number
   active: boolean
   createdAt: string
-  matchCount: number
 }
 
 // ── Storage helpers ───────────────────────────────────────────────────────────
@@ -29,9 +30,33 @@ interface AlertRule {
 const STORAGE_KEY      = 'qre_alert_rules'
 const LAST_VISITED_KEY = 'qre_alerts_last_visited'
 
+// Old rules (pre-metric model) used { type, scoreMin, priceMax }. Migrate them
+// so existing users don't lose their alerts when this ships.
+function migrateRule(r: Record<string, unknown>): AlertRule | null {
+  if (r.metric) return r as unknown as AlertRule
+  const legacy = r.type as string | undefined
+  const map: Record<string, AlertMetric> = {
+    new_listing: 'new_listing', price_drop: 'price_drop',
+    score_threshold: 'score', new_in_city: 'new_listing',
+  }
+  const metric = legacy ? map[legacy] : undefined
+  if (!metric) return null
+  return {
+    id: (r.id as string) ?? genId(),
+    metric,
+    value: metric === 'score' ? (r.scoreMin as number) ?? 70 : undefined,
+    city: (r.city as string) || undefined,
+    label: (r.label as string) ?? ruleLabel(metric, r.scoreMin as number, r.city as string),
+    active: (r.active as boolean) ?? true,
+    createdAt: (r.createdAt as string) ?? new Date().toISOString(),
+  }
+}
+
 function loadRules(): AlertRule[] {
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '[]') as AlertRule[] }
-  catch { return [] }
+  try {
+    const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '[]') as Record<string, unknown>[]
+    return raw.map(migrateRule).filter((r): r is AlertRule => r !== null)
+  } catch { return [] }
 }
 function saveRules(rules: AlertRule[]) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(rules))
@@ -53,14 +78,19 @@ function timeAgo(dateStr: string): string {
 
 // ── Alert metadata ────────────────────────────────────────────────────────────
 
-const ALERT_TYPES: Record<AlertType, {
+interface MetricMeta {
   label: string; desc: string; icon: React.ReactNode
   color: string; bg: string; border: string
-}> = {
-  new_listing:     { label: 'New Listing',     desc: 'Any new property added',         icon: <Plus size={15} />,            color: 'text-accent',       bg: 'bg-accent/10',       border: 'border-accent/30' },
-  price_drop:      { label: 'Price Drop',      desc: 'When asking price decreases',     icon: <ArrowDownCircle size={15} />, color: 'text-red-500',      bg: 'bg-red-50',          border: 'border-red-200' },
-  score_threshold: { label: 'High Score Deal', desc: 'AI score above your threshold',   icon: <TrendingUp size={15} />,      color: 'text-score-strong', bg: 'bg-score-strong/10', border: 'border-score-strong/30' },
-  new_in_city:     { label: 'New in City',     desc: 'New listings in a specific city', icon: <Building2 size={15} />,       color: 'text-blue-600',     bg: 'bg-blue-50',         border: 'border-blue-200' },
+  needsValue: boolean; unit?: string; defaultValue?: number
+  min?: number; max?: number; step?: number
+}
+
+const METRIC_META: Record<AlertMetric, MetricMeta> = {
+  new_listing: { label: 'New Listings', desc: 'Any new property (optionally in a city)', icon: <Plus size={15} />,            color: 'text-accent',       bg: 'bg-accent/10',       border: 'border-accent/30',       needsValue: false },
+  price_drop:  { label: 'Price Drops',  desc: 'Listings whose price just dropped',        icon: <ArrowDownCircle size={15} />, color: 'text-red-500',      bg: 'bg-red-50',          border: 'border-red-200',         needsValue: false },
+  score:       { label: 'AI Score',     desc: 'AI score at or above your threshold',      icon: <TrendingUp size={15} />,      color: 'text-score-strong', bg: 'bg-score-strong/10', border: 'border-score-strong/30', needsValue: true, unit: '/100', defaultValue: 70, min: 40, max: 95, step: 5 },
+  cap_rate:    { label: 'Cap Rate',     desc: 'Cap rate at or above your target',         icon: <Percent size={15} />,         color: 'text-emerald-600',  bg: 'bg-emerald-50',      border: 'border-emerald-200',     needsValue: true, unit: '%',    defaultValue: 6,  min: 1, max: 12, step: 0.5 },
+  cash_flow:   { label: 'Cash Flow',    desc: 'Monthly cash flow at or above your target', icon: <CircleDollarSign size={15} />, color: 'text-blue-600',     bg: 'bg-blue-50',         border: 'border-blue-200',        needsValue: true, unit: '$/mo', defaultValue: 200, min: -500, max: 3000, step: 50 },
 }
 
 const QC_CITIES = [
@@ -68,24 +98,37 @@ const QC_CITIES = [
   'Saguenay', 'Lévis', 'Gatineau', 'Drummondville', 'Saint-Jérôme',
 ]
 
+function ruleLabel(metric: AlertMetric, value?: number, city?: string): string {
+  const inCity = city ? ` in ${city}` : ''
+  const suffix = city ? ` · ${city}` : ''
+  switch (metric) {
+    case 'new_listing': return `New listings${inCity}`
+    case 'price_drop':  return `Price drops${suffix}`
+    case 'score':       return `AI score ≥ ${value}${suffix}`
+    case 'cap_rate':    return `Cap rate ≥ ${value}%${suffix}`
+    case 'cash_flow':   return `Cash flow ≥ $${value}/mo${suffix}`
+  }
+}
+
 function buildRuleFilters(rule: AlertRule): PropertyFilters {
-  if (rule.type === 'new_listing')
-    return { sort_by: 'newest', listed_within: '7d', page_size: 3 }
-  if (rule.type === 'price_drop')
-    return { sort_by: 'discount', price_max: rule.priceMax, page_size: 3 }
-  if (rule.type === 'score_threshold')
-    return { sort_by: 'score', score_min: rule.scoreMin ?? 65, page_size: 3 }
-  if (rule.type === 'new_in_city')
-    return { city: rule.city, sort_by: 'newest', page_size: 3 }
-  return { page_size: 3 }
+  const base: PropertyFilters = { page_size: 3, city: rule.city || undefined }
+  switch (rule.metric) {
+    case 'new_listing': return { ...base, sort_by: 'newest', listed_within: '7d' }
+    case 'price_drop':  return { ...base, sort_by: 'discount' }
+    case 'score':       return { ...base, sort_by: 'score', score_min: rule.value ?? 70 }
+    case 'cap_rate':    return { ...base, sort_by: 'score', cap_rate_min: rule.value ?? 6 }
+    case 'cash_flow':   return { ...base, sort_by: 'score', cash_flow_min: rule.value ?? 200 }
+  }
 }
 
 function alertLink(rule: AlertRule): string {
-  if (rule.type === 'new_listing')     return '/properties?sort_by=newest&listed_within=7d'
-  if (rule.type === 'price_drop')      return '/properties?sort_by=discount'
-  if (rule.type === 'score_threshold') return `/properties?score_min=${rule.scoreMin ?? 65}&sort_by=score`
-  if (rule.type === 'new_in_city')     return `/properties?city=${encodeURIComponent(rule.city ?? '')}&sort_by=newest`
-  return '/properties'
+  const f = buildRuleFilters(rule)
+  const p = new URLSearchParams()
+  Object.entries(f).forEach(([k, v]) => {
+    if (k === 'page_size' || v === undefined || v === '') return
+    p.set(k, String(v))
+  })
+  return `/properties?${p.toString()}`
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
@@ -93,7 +136,14 @@ function alertLink(rule: AlertRule): string {
 export default function MarketAlerts() {
   const [rules, setRules]       = useState<AlertRule[]>(loadRules)
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm]         = useState({ type: 'score_threshold' as AlertType, city: '', scoreMin: 65, priceMax: 1_000_000 })
+  const [form, setForm]         = useState<{ metric: AlertMetric; value: number; city: string }>(
+    { metric: 'cap_rate', value: METRIC_META.cap_rate.defaultValue!, city: '' },
+  )
+
+  // Switching metric resets the threshold to that metric's sensible default.
+  function pickMetric(metric: AlertMetric) {
+    setForm(f => ({ ...f, metric, value: METRIC_META[metric].defaultValue ?? f.value }))
+  }
 
   // Track last visit — read previous timestamp, immediately update to now
   const [prevVisited] = useState<string | null>(() => {
@@ -108,18 +158,17 @@ export default function MarketAlerts() {
   const { data: discountData }  = useQuery({ queryKey: ['alert-match', 'discount'],queryFn: () => fetchProperties({ sort_by: 'discount',                                  page_size: 1 }) })
 
   function addRule() {
-    const meta = ALERT_TYPES[form.type]
-    let label = meta.label
-    if (form.type === 'new_in_city' && form.city)   label = `New in ${form.city}`
-    if (form.type === 'score_threshold')             label = `AI Score ≥ ${form.scoreMin}`
-    if (form.type === 'price_drop' && form.priceMax) label = `Price drop ≤ $${(form.priceMax / 1000).toFixed(0)}K`
-
+    const meta = METRIC_META[form.metric]
+    const city = form.city || undefined
+    const value = meta.needsValue ? form.value : undefined
     const rule: AlertRule = {
-      id: genId(), type: form.type, label,
-      city:     form.type === 'new_in_city'     ? form.city     : undefined,
-      scoreMin: form.type === 'score_threshold' ? form.scoreMin : undefined,
-      priceMax: form.type === 'price_drop'      ? form.priceMax : undefined,
-      active: true, createdAt: new Date().toISOString(), matchCount: 0,
+      id: genId(),
+      metric: form.metric,
+      value,
+      city,
+      label: ruleLabel(form.metric, value, city),
+      active: true,
+      createdAt: new Date().toISOString(),
     }
     const next = [...rules, rule]
     setRules(next); saveRules(next); setShowForm(false)
@@ -177,69 +226,78 @@ export default function MarketAlerts() {
             </button>
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
-            {(Object.entries(ALERT_TYPES) as [AlertType, typeof ALERT_TYPES[AlertType]][]).map(([type, meta]) => (
-              <button
-                key={type}
-                onClick={() => setForm(f => ({ ...f, type }))}
-                className={`flex items-start gap-3 px-4 py-3.5 rounded-xl border text-left transition-all duration-150 ${
-                  form.type === type
-                    ? `${meta.bg} ${meta.border} ${meta.color}`
-                    : 'bg-white border-surface-border text-muted hover:text-ink hover:bg-surface-hover'
-                }`}
-              >
-                <span className={`mt-0.5 ${form.type === type ? meta.color : 'text-muted'}`}>{meta.icon}</span>
-                <div>
-                  <p className="font-semibold text-sm">{meta.label}</p>
-                  <p className="text-xs opacity-70 mt-0.5">{meta.desc}</p>
-                </div>
-              </button>
-            ))}
+          <div>
+            <p className="text-xs font-bold text-muted uppercase tracking-wider mb-2">Alert me based on</p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {(Object.entries(METRIC_META) as [AlertMetric, MetricMeta][]).map(([metric, meta]) => (
+                <button
+                  key={metric}
+                  onClick={() => pickMetric(metric)}
+                  className={`flex items-start gap-3 px-4 py-3.5 rounded-xl border text-left transition-all duration-150 ${
+                    form.metric === metric
+                      ? `${meta.bg} ${meta.border} ${meta.color}`
+                      : 'bg-white border-surface-border text-muted hover:text-ink hover:bg-surface-hover'
+                  }`}
+                >
+                  <span className={`mt-0.5 ${form.metric === metric ? meta.color : 'text-muted'}`}>{meta.icon}</span>
+                  <div>
+                    <p className="font-semibold text-sm">{meta.label}</p>
+                    <p className="text-xs opacity-70 mt-0.5">{meta.desc}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
           </div>
 
-          {form.type === 'new_in_city' && (
-            <div>
-              <p className="text-xs font-bold text-muted uppercase tracking-wider mb-2">Select city</p>
-              <div className="flex flex-wrap gap-2">
-                {QC_CITIES.map(city => (
-                  <button key={city} onClick={() => setForm(f => ({ ...f, city }))}
-                    className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${
-                      form.city === city ? 'bg-accent text-white border-accent' : 'bg-surface border-surface-border text-muted hover:text-ink'
-                    }`}
-                  >
-                    {city}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {form.type === 'score_threshold' && (
+          {/* Threshold — for numeric metrics (score / cap rate / cash flow) */}
+          {METRIC_META[form.metric].needsValue && (
             <div>
               <div className="flex items-center justify-between mb-3">
-                <p className="text-xs font-bold text-muted uppercase tracking-wider">Minimum AI score</p>
-                <span className="text-lg font-bold text-accent font-mono">{form.scoreMin}<span className="text-sm text-muted font-sans">/100</span></span>
+                <p className="text-xs font-bold text-muted uppercase tracking-wider">
+                  Minimum {METRIC_META[form.metric].label.toLowerCase()}
+                </p>
+                <span className="text-lg font-bold text-accent font-mono">
+                  {form.value}<span className="text-sm text-muted font-sans">{METRIC_META[form.metric].unit}</span>
+                </span>
               </div>
-              <input type="range" min={50} max={95} step={5} value={form.scoreMin}
-                onChange={e => setForm(f => ({ ...f, scoreMin: +e.target.value }))}
+              <input
+                type="range"
+                min={METRIC_META[form.metric].min}
+                max={METRIC_META[form.metric].max}
+                step={METRIC_META[form.metric].step}
+                value={form.value}
+                onChange={e => setForm(f => ({ ...f, value: +e.target.value }))}
                 className="w-full accent-accent"
               />
               <div className="flex justify-between text-xs text-muted mt-1.5">
-                <span>50 — Good</span><span>70 — Great</span><span>80+ — Best</span>
+                <span>{METRIC_META[form.metric].min}{METRIC_META[form.metric].unit}</span>
+                <span>{METRIC_META[form.metric].max}{METRIC_META[form.metric].unit}</span>
               </div>
             </div>
           )}
 
-          {form.type === 'price_drop' && (
-            <div>
-              <p className="text-xs font-bold text-muted uppercase tracking-wider mb-2">Max property price</p>
-              <input type="number" value={form.priceMax}
-                onChange={e => setForm(f => ({ ...f, priceMax: +e.target.value }))}
-                className="input max-w-xs" placeholder="1000000" step={50000}
-              />
-              <p className="text-xs text-muted mt-1.5">Only alert on price drops for properties under this value</p>
+          {/* Optional city restriction — applies to any metric */}
+          <div>
+            <p className="text-xs font-bold text-muted uppercase tracking-wider mb-2">City <span className="font-normal normal-case text-muted/70">— optional</span></p>
+            <div className="flex flex-wrap gap-2">
+              <button onClick={() => setForm(f => ({ ...f, city: '' }))}
+                className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${
+                  form.city === '' ? 'bg-accent text-white border-accent' : 'bg-surface border-surface-border text-muted hover:text-ink'
+                }`}
+              >
+                Any city
+              </button>
+              {QC_CITIES.map(city => (
+                <button key={city} onClick={() => setForm(f => ({ ...f, city }))}
+                  className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${
+                    form.city === city ? 'bg-accent text-white border-accent' : 'bg-surface border-surface-border text-muted hover:text-ink'
+                  }`}
+                >
+                  {city}
+                </button>
+              ))}
             </div>
-          )}
+          </div>
 
           <div className="flex gap-2 pt-1 border-t border-surface-border">
             <button onClick={addRule} className="btn-primary"><Check size={14} /> Save Alert</button>
@@ -322,10 +380,10 @@ function AlertRuleCard({
   onDelete: (id: string) => void
   onToggle: (id: string) => void
 }) {
-  const meta = ALERT_TYPES[rule.type]
+  const meta = METRIC_META[rule.metric]
 
   const { data, isLoading } = useQuery({
-    queryKey: ['alert-rule-props', rule.id, rule.type, rule.city, rule.scoreMin, rule.priceMax],
+    queryKey: ['alert-rule-props', rule.id, rule.metric, rule.city, rule.value],
     queryFn: () => fetchProperties(buildRuleFilters(rule)),
     enabled: rule.active,
     staleTime: 5 * 60_000,
