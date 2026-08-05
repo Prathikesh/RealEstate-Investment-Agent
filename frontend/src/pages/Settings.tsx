@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   Bell, MapPin, Home, TrendingUp, Globe, CheckCircle2, ShieldCheck,
   Smartphone, MessageCircle, Wrench, Building2, Mail, SlidersHorizontal,
-  ChevronDown, Check, Search, Layers, Gauge, RotateCcw,
+  ChevronDown, Check, Search, Layers, Gauge, RotateCcw, Scale, CircleDollarSign,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useLang } from '../context/LanguageContext'
@@ -24,6 +24,26 @@ const FACTOR_DESC: Record<ScoreFactor, string> = {
   dom_bonus:     'Days on market — longer means more leverage',
   price_history: 'Past price cuts signal a motivated seller',
 }
+
+// Distinct colour per factor — ties the weight donut to its slider row.
+const FACTOR_COLOR: Record<ScoreFactor, string> = {
+  discount:      '#2563EB',
+  cap_rate:      '#0EA5E9',
+  cash_flow:     '#10B981',
+  grm:           '#8B5CF6',
+  confidence:    '#F59E0B',
+  dom_bonus:     '#EC4899',
+  price_history: '#64748B',
+}
+
+// One-tap starting points. The three strategy presets mirror the backend's
+// weight sets; "Cash-flow" is an income-first tilt for buy-and-hold investors.
+const WEIGHT_PRESETS: { id: string; label: string; icon: typeof Scale; weights: ScoreWeights }[] = [
+  { id: 'balanced', label: 'Balanced',     icon: Scale,           weights: STRATEGY_WEIGHTS.both },
+  { id: 'cashflow', label: 'Cash-flow',    icon: CircleDollarSign, weights: { discount: 0.12, cap_rate: 0.28, cash_flow: 0.30, grm: 0.10, confidence: 0.08, dom_bonus: 0.07, price_history: 0.05 } },
+  { id: 'income',   label: 'Buy & Hold',   icon: TrendingUp,      weights: STRATEGY_WEIGHTS.buy_and_hold },
+  { id: 'value',    label: 'Value / Flip', icon: Wrench,          weights: STRATEGY_WEIGHTS.buy_fix_sell },
+]
 
 // Seed slider "points" (0-100 each) from stored fractional weights (×100),
 // falling back to the strategy preset when the user has no custom weights.
@@ -129,6 +149,16 @@ export default function Settings() {
   const factorPct = (f: ScoreFactor): number =>
     pointsTotal > 0 ? Math.round((weightPoints[f] / pointsTotal) * 100) : 0
 
+  // Normalized 0-100 share map, used by the donut and preset-matching.
+  const pctMap = SCORE_FACTORS.reduce((m, f) => { m[f] = factorPct(f); return m }, {} as Record<ScoreFactor, number>)
+  // Highlight whichever preset the current mix matches (±1pt), else "Custom".
+  const activePreset = WEIGHT_PRESETS.find(p =>
+    SCORE_FACTORS.every(f => Math.abs(pctMap[f] - Math.round((p.weights[f] ?? 0) * 100)) <= 1),
+  )?.id ?? null
+
+  function applyPreset(weights: ScoreWeights) {
+    setWeightPoints(pointsFromWeights(weights))
+  }
   function resetWeightsToStrategy() {
     setWeightPoints(pointsFromWeights(STRATEGY_WEIGHTS[strategyFromGoals(goals)]))
   }
@@ -274,40 +304,81 @@ export default function Settings() {
           <SectionCard
             icon={<Gauge size={15} />}
             title="My Scoring Criteria"
-            desc="Weight the factors behind your own verdict. Every property shows your score next to the AI score."
+            desc="Weight the factors behind your own verdict. Every property shows your score next to the AI's."
           >
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-xs text-muted">
-                Drag to set how much each factor matters. The percentages are relative and always add up to 100%.
-              </p>
+            {/* Preset chips — one tap to start, then fine-tune below */}
+            <div className="flex flex-wrap items-center gap-2">
+              {WEIGHT_PRESETS.map(p => {
+                const Icon = p.icon
+                const active = activePreset === p.id
+                return (
+                  <button
+                    key={p.id} type="button" onClick={() => applyPreset(p.weights)}
+                    className={clsx(
+                      'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-semibold transition-all',
+                      active ? 'bg-accent/10 text-accent border-accent/40 ring-1 ring-accent/20'
+                             : 'bg-white text-muted border-surface-border hover:border-accent/40 hover:text-ink',
+                    )}
+                  >
+                    <Icon size={13} /> {p.label}
+                  </button>
+                )
+              })}
+              <span className={clsx(
+                'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-semibold',
+                activePreset === null ? 'bg-accent/10 text-accent border-accent/40 ring-1 ring-accent/20'
+                                      : 'border-dashed border-surface-border text-muted/70',
+              )}>
+                <SlidersHorizontal size={13} /> Custom
+              </span>
               <button
-                type="button"
-                onClick={resetWeightsToStrategy}
-                className="btn-ghost text-xs shrink-0 ml-3"
-                title="Reset the weights to your strategy's default"
+                type="button" onClick={resetWeightsToStrategy}
+                className="btn-ghost text-xs ml-auto" title="Reset to your strategy's default mix"
               >
                 <RotateCcw size={13} /> Reset
               </button>
             </div>
-            <div className="space-y-3.5">
-              {SCORE_FACTORS.map(f => (
-                <div key={f}>
-                  <div className="flex items-center justify-between gap-3 mb-1">
-                    <div className="min-w-0">
-                      <span className="text-sm font-semibold text-ink">{FACTOR_LABEL[f]}</span>
-                      <span className="block text-[11px] text-muted leading-snug">{FACTOR_DESC[f]}</span>
-                    </div>
-                    <span className="text-sm font-bold font-mono text-accent shrink-0 tabular-nums w-11 text-right">{factorPct(f)}%</span>
-                  </div>
-                  <input
-                    type="range" min={0} max={100} step={1}
-                    value={weightPoints[f]}
-                    onChange={e => setWeightPoints(prev => ({ ...prev, [f]: Number(e.target.value) }))}
-                    aria-label={`${FACTOR_LABEL[f]} weight`}
-                    className="w-full accent-accent"
-                  />
+
+            {/* Donut + sliders */}
+            <div className="flex flex-col lg:flex-row gap-6 pt-4">
+              {/* Weight distribution donut */}
+              <div className="flex lg:flex-col items-center gap-4 shrink-0 mx-auto lg:mx-0">
+                <WeightDonut pct={pctMap} />
+                <div className="text-center">
+                  <p className="text-[11px] font-semibold text-muted uppercase tracking-wider">Your mix</p>
+                  <p className="text-[11px] text-muted mt-0.5 max-w-[140px]">
+                    Relative weight of each factor in your verdict.
+                  </p>
                 </div>
-              ))}
+              </div>
+
+              {/* Sliders */}
+              <div className="flex-1 space-y-3.5 min-w-0">
+                {SCORE_FACTORS.map(f => (
+                  <div key={f}>
+                    <div className="flex items-center justify-between gap-3 mb-1">
+                      <div className="min-w-0 flex items-start gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full shrink-0 mt-1" style={{ backgroundColor: FACTOR_COLOR[f] }} />
+                        <div className="min-w-0">
+                          <span className="text-sm font-semibold text-ink">{FACTOR_LABEL[f]}</span>
+                          <span className="block text-[11px] text-muted leading-snug">{FACTOR_DESC[f]}</span>
+                        </div>
+                      </div>
+                      <span className="text-sm font-bold font-mono shrink-0 tabular-nums w-11 text-right" style={{ color: FACTOR_COLOR[f] }}>
+                        {factorPct(f)}%
+                      </span>
+                    </div>
+                    <input
+                      type="range" min={0} max={100} step={1}
+                      value={weightPoints[f]}
+                      onChange={e => setWeightPoints(prev => ({ ...prev, [f]: Number(e.target.value) }))}
+                      aria-label={`${FACTOR_LABEL[f]} weight`}
+                      className="w-full"
+                      style={{ accentColor: FACTOR_COLOR[f] }}
+                    />
+                  </div>
+                ))}
+              </div>
             </div>
           </SectionCard>
         </div>
@@ -361,6 +432,43 @@ export default function Settings() {
             </div>
           </SectionCard>
         </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Weight distribution donut ─────────────────────────────────────────────────
+// Inline SVG (no chart lib): one arc segment per factor, coloured to match its
+// slider row, sized to its share of the total.
+function WeightDonut({ pct }: { pct: Record<ScoreFactor, number> }) {
+  const size = 160, stroke = 24
+  const r = (size - stroke) / 2
+  const C = 2 * Math.PI * r
+  const top = [...SCORE_FACTORS].sort((a, b) => (pct[b] ?? 0) - (pct[a] ?? 0))[0]
+  let offset = 0
+  return (
+    <div className="relative" style={{ width: size, height: size }}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        <g transform={`rotate(-90 ${size / 2} ${size / 2})`}>
+          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#E2E8F0" strokeWidth={stroke} />
+          {SCORE_FACTORS.map(f => {
+            const len = ((pct[f] ?? 0) / 100) * C
+            const seg = (
+              <circle
+                key={f} cx={size / 2} cy={size / 2} r={r} fill="none"
+                stroke={FACTOR_COLOR[f]} strokeWidth={stroke}
+                strokeDasharray={`${len} ${C - len}`} strokeDashoffset={-offset}
+              />
+            )
+            offset += len
+            return seg
+          })}
+        </g>
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-6">
+        <span className="text-[10px] font-semibold text-muted uppercase tracking-wider">Top factor</span>
+        <span className="text-xs font-bold text-ink leading-tight mt-0.5">{FACTOR_LABEL[top]}</span>
+        <span className="text-sm font-black font-mono" style={{ color: FACTOR_COLOR[top] }}>{pct[top]}%</span>
       </div>
     </div>
   )
