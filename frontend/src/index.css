@@ -2,15 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── Base scale ──────────────────────────────────────────────
-   The UI was calibrated at 125% browser zoom on desktop, so bake that scale
-   in as the default (CSS `zoom` reproduces browser zoom exactly). Scoped to
-   ≥768px — phones keep their native responsive scale so nothing overflows.
-   To revert, delete this block. */
-@media (min-width: 768px) {
-  body { zoom: 1.25; }
-}
-
 @layer base {
   body {
     @apply bg-surface text-ink antialiased;

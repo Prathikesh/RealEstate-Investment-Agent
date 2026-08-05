@@ -20,21 +20,28 @@ const NAV = [
   { to: '/reports',    Icon: FileBarChart2,    label: 'Reports' },
 ]
 
-// ── Tooltip wrapper ───────────────────────────────────────────────────────────
+// ── Sidebar link (icon + label; label reveals when the rail expands) ──────────
 
-function Tip({ label, children }: { label: string; children: React.ReactNode }) {
+function SideLink({ to, Icon, label }: { to: string; Icon: typeof Bookmark; label: string }) {
   return (
-    <div className="relative group/tip flex justify-center w-full">
-      {children}
-      <div className="pointer-events-none absolute left-[calc(100%+10px)] top-1/2 -translate-y-1/2 z-50
-                      opacity-0 group-hover/tip:opacity-100 translate-x-1 group-hover/tip:translate-x-0
-                      transition-all duration-150">
-        <div className="bg-ink text-white text-xs font-semibold px-2.5 py-1.5 rounded-lg whitespace-nowrap shadow-lg">
-          {label}
-          <span className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-ink" />
-        </div>
-      </div>
-    </div>
+    <NavLink
+      to={to}
+      className={({ isActive }) =>
+        clsx('relative flex items-center h-11 transition-colors', isActive ? 'text-accent' : 'text-muted hover:text-ink')
+      }
+    >
+      {({ isActive }) => (
+        <>
+          {isActive && <span className="absolute left-0 top-1/2 -translate-y-1/2 h-6 w-1 rounded-r-full bg-accent" />}
+          <span className="grid place-items-center w-[76px] shrink-0">
+            <span className={clsx('grid place-items-center w-10 h-10 rounded-xl transition-colors', isActive ? 'bg-accent/10' : 'group-hover:bg-surface-hover')}>
+              <Icon size={20} />
+            </span>
+          </span>
+          <span className="text-sm font-semibold whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200">{label}</span>
+        </>
+      )}
+    </NavLink>
   )
 }
 
@@ -46,6 +53,10 @@ export default function Layout() {
   const navigate = useNavigate()
   const [mobileOpen, setMobileOpen] = useState(false)
 
+  const initials = user?.name
+    ? user.name.split(' ').filter(Boolean).slice(0, 2).map(s => s[0]).join('').toUpperCase()
+    : (user?.email?.[0] ?? '?').toUpperCase()
+
   async function handleLogout() {
     await logout()
     navigate('/login', { replace: true })
@@ -54,111 +65,65 @@ export default function Layout() {
   return (
     <div className="flex h-screen overflow-hidden bg-surface">
 
-      {/* ── Icon sidebar (desktop) ─────────────────────────────────────── */}
-      <aside className="hidden md:flex w-[64px] shrink-0 bg-white border-r border-surface-border flex-col items-center py-4 gap-1 z-30 shadow-sm">
+      {/* ── Sidebar (desktop): collapsed icon rail, expands on hover ─────── */}
+      <aside className="hidden md:block relative w-[76px] shrink-0 z-30">
+        <div className="group absolute inset-y-0 left-0 flex flex-col w-[76px] hover:w-[240px]
+                        bg-white border-r border-surface-border shadow-sm
+                        transition-[width] duration-200 ease-out overflow-hidden">
 
-        {/* Quartis logo mark */}
-        <Link to="/" className="mb-5 group/logo" title="PlexAI">
-          <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center shadow-md
-                          group-hover/logo:shadow-lg group-hover/logo:scale-105 transition-all duration-200">
-            <QuartisIcon size={18} className="text-white" />
+          {/* Logo */}
+          <Link to="/" className="flex items-center h-16 shrink-0" title="PlexAI">
+            <span className="grid place-items-center w-[76px] shrink-0">
+              <span className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center shadow-md">
+                <QuartisIcon size={20} className="text-white" />
+              </span>
+            </span>
+            <span className="font-black text-lg text-ink tracking-tight whitespace-nowrap
+                             opacity-0 group-hover:opacity-100 transition-opacity duration-200">PlexAI</span>
+          </Link>
+
+          {/* Primary nav */}
+          <nav className="flex-1 py-2 space-y-1">
+            {NAV.map(item => <SideLink key={item.to} {...item} />)}
+          </nav>
+
+          {/* Utility nav */}
+          <div className="py-2 space-y-1 border-t border-surface-border">
+            <SideLink to="/watching" Icon={Bookmark} label="Saved Properties" />
+            {user?.role === 'admin' && <SideLink to="/admin" Icon={ShieldCheck} label="Admin Dashboard" />}
+            <SideLink to="/settings" Icon={Settings} label="Settings" />
           </div>
-        </Link>
 
-        {/* Nav icons */}
-        <nav className="flex flex-col items-center gap-1 flex-1 w-full">
-          {NAV.map(({ to, Icon, label }) => (
-            <Tip key={to} label={label}>
-              <NavLink
-                to={to}
-                className={({ isActive }) =>
-                  clsx(
-                    'w-10 h-10 flex items-center justify-center rounded-xl transition-all duration-150',
-                    isActive
-                      ? 'bg-accent text-white shadow-md'
-                      : 'text-muted hover:text-ink hover:bg-surface-hover',
-                  )
-                }
-              >
-                <Icon size={18} />
-              </NavLink>
-            </Tip>
-          ))}
-        </nav>
+          {/* Account */}
+          <div className="border-t border-surface-border py-3 space-y-2">
+            <div className="flex items-center">
+              <span className="grid place-items-center w-[76px] shrink-0">
+                <span className="w-9 h-9 rounded-full bg-accent/10 text-accent text-xs font-bold grid place-items-center">{initials}</span>
+              </span>
+              <div className="min-w-0 pr-3 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                <p className="text-xs font-semibold text-ink truncate">{user?.name ?? 'Investor'}</p>
+                <p className="text-[10px] text-muted truncate">{user?.email}</p>
+              </div>
+            </div>
 
-        {/* Bottom controls */}
-        <div className="flex flex-col items-center gap-1 mt-auto w-full">
-          {/* Saved Properties */}
-          <Tip label="Saved Properties">
-            <NavLink
-              to="/watching"
-              className={({ isActive }) =>
-                clsx(
-                  'w-10 h-10 flex items-center justify-center rounded-xl transition-all duration-150',
-                  isActive ? 'bg-accent text-white shadow-md' : 'text-muted hover:text-ink hover:bg-surface-hover',
-                )
-              }
-            >
-              <Bookmark size={18} />
-            </NavLink>
-          </Tip>
-
-          {/* Admin dashboard — admins only */}
-          {user?.role === 'admin' && (
-            <Tip label="Admin Dashboard">
-              <NavLink
-                to="/admin"
-                className={({ isActive }) =>
-                  clsx(
-                    'w-10 h-10 flex items-center justify-center rounded-xl transition-all duration-150',
-                    isActive ? 'bg-accent text-white shadow-md' : 'text-muted hover:text-ink hover:bg-surface-hover',
-                  )
-                }
-              >
-                <ShieldCheck size={18} />
-              </NavLink>
-            </Tip>
-          )}
-
-          {/* Settings */}
-          <Tip label="Settings">
-            <NavLink
-              to="/settings"
-              className={({ isActive }) =>
-                clsx(
-                  'w-10 h-10 flex items-center justify-center rounded-xl transition-all duration-150',
-                  isActive ? 'bg-accent text-white shadow-md' : 'text-muted hover:text-ink hover:bg-surface-hover',
-                )
-              }
-            >
-              <Settings size={18} />
-            </NavLink>
-          </Tip>
-
-          {/* Logout */}
-          <Tip label="Logout">
-            <button
-              onClick={handleLogout}
-              className="w-10 h-10 flex items-center justify-center rounded-xl text-muted hover:text-ink hover:bg-surface-hover transition-all duration-150"
-            >
-              <LogOut size={18} />
+            <button onClick={handleLogout}
+              className="w-full flex items-center h-10 text-muted hover:text-ink hover:bg-surface-hover transition-colors">
+              <span className="grid place-items-center w-[76px] shrink-0"><LogOut size={20} /></span>
+              <span className="text-sm font-semibold whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200">Logout</span>
             </button>
-          </Tip>
 
-          {/* Language toggle */}
-          <div className="mt-2 flex flex-col gap-0.5 items-center w-full px-3">
-            {(['fr', 'en'] as const).map(l => (
-              <button
-                key={l}
-                onClick={() => setLang(l)}
-                className={clsx(
-                  'w-full py-1.5 rounded-lg text-[10px] font-black tracking-widest uppercase transition-all duration-150 text-center',
-                  lang === l ? 'bg-accent text-white shadow-sm' : 'text-muted hover:text-ink hover:bg-surface-hover',
-                )}
-              >
-                {l}
-              </button>
-            ))}
+            <div className="flex items-center">
+              <span className="w-[76px] shrink-0" />
+              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                {(['fr', 'en'] as const).map(l => (
+                  <button key={l} onClick={() => setLang(l)}
+                    className={clsx('px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors',
+                      lang === l ? 'bg-accent text-white' : 'text-muted hover:text-ink hover:bg-surface-hover')}>
+                    {l}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       </aside>
@@ -231,7 +196,10 @@ export default function Layout() {
       <main className="flex-1 overflow-y-auto min-w-0 md:pt-0 pt-14">
         <PageViewTracker />
         <ScrapeProgressBar />
-        <div className="animate-fade-in">
+        {/* Content scaled to the calibrated 125% on desktop. Applied here (not
+            on the shell) so the sidebar/app-shell keep native viewport height
+            and the sidebar stays fixed instead of scrolling. */}
+        <div className="animate-fade-in md:[zoom:1.25]">
           <Outlet />
         </div>
       </main>
