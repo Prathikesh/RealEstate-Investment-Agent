@@ -9,6 +9,7 @@ GET  /api/properties/{id}/full-analysis  — on-demand comprehensive AI analysis
 """
 import json
 import logging
+import re
 import uuid
 from datetime import datetime, timezone, timedelta
 from typing import Literal, Optional
@@ -350,13 +351,19 @@ async def get_stats(
         select(func.avg(Property.score)).where(Property.score.isnot(None))
     )
 
+    # All distinct cities (no cap — the province-wide scrape yields ~280 cities,
+    # so an old limit=50 was cutting the alphabetical list off at "F" and hiding
+    # Montréal). Collapse borough/sector parentheticals ("Montréal (Anjou)" →
+    # "Montréal") and dedupe so each city appears once; the city filter matches
+    # by substring (folded_city.contains), so selecting "Montréal" still returns
+    # every borough.
     cities_rows = await db.execute(
-        select(distinct(Property.city))
-        .where(Property.city.isnot(None))
-        .order_by(Property.city)
-        .limit(50)
+        select(distinct(Property.city)).where(Property.city.isnot(None))
     )
-    cities = [r[0] for r in cities_rows.all()]
+    cities = sorted({
+        re.sub(r"\s*\(.*$", "", r[0]).strip()
+        for r in cities_rows.all() if r[0]
+    })
 
     multi_site_sub = (
         select(PropertySource.property_id)
