@@ -3,11 +3,12 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Users, Wifi, UserPlus, ChevronDown, ChevronUp, Compass, Eye, Calculator, Search,
   Download, Flame, ArrowUpRight, ArrowDownRight, Ban, CheckCircle2, MapPin,
-  Building2, DollarSign,
+  Building2, DollarSign, Plus, KeyRound,
 } from 'lucide-react'
 import clsx from 'clsx'
 import {
   fetchAdminOverview, fetchAdminUsers, fetchAdminUserDetail, fetchActivityFeed, updateUserStatus,
+  fetchInviteCodes, createInviteCodes, revokeInviteCode,
   type UserSummary, type PropertyViewSummary, type ActivityEntry, type Engagement,
   type RankedLabel, type EngagementBreakdown,
 } from './api'
@@ -475,11 +476,115 @@ export default function AdminDashboard() {
         )}
       </div>
 
+      {/* ── Invite codes — registration is invite-only ── */}
+      <InviteCodesCard />
+
       {/* ── Live activity — demoted to the bottom, secondary to the numbers ── */}
       <Card title="Live Activity" subtitle="What's happening right now, across everyone">
         <ActivityFeed entries={feed ?? []} showUser empty="Nothing's happened yet." />
       </Card>
     </div>
+  )
+}
+
+// ── Invite codes management ───────────────────────────────────────────────────
+function InviteCodesCard() {
+  const qc = useQueryClient()
+  const { data: codes } = useQuery({ queryKey: ['admin-invite-codes'], queryFn: fetchInviteCodes, refetchInterval: 60_000 })
+  const [label, setLabel] = useState('')
+  const [count, setCount] = useState(1)
+  const [copied, setCopied] = useState<string | null>(null)
+
+  const gen = useMutation({
+    mutationFn: () => createInviteCodes({ label: label.trim() || undefined, count }),
+    onSuccess: () => { setLabel(''); setCount(1); qc.invalidateQueries({ queryKey: ['admin-invite-codes'] }) },
+  })
+  const revoke = useMutation({
+    mutationFn: (id: string) => revokeInviteCode(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-invite-codes'] }),
+  })
+
+  const copy = (code: string) => {
+    navigator.clipboard?.writeText(code)
+    setCopied(code)
+    setTimeout(() => setCopied(c => (c === code ? null : c)), 1500)
+  }
+
+  const list = codes ?? []
+  const unused = list.filter(c => c.is_active && !c.used_at).length
+
+  return (
+    <Card title="Invite Codes" subtitle="Registration is invite-only — generate a code per student and share it.">
+      {/* Generate */}
+      <div className="flex flex-wrap items-end gap-2 mb-4">
+        <label className="flex-1 min-w-[160px]">
+          <span className="block text-xs font-semibold text-muted mb-1">Label (optional)</span>
+          <input value={label} onChange={e => setLabel(e.target.value)} placeholder="Student name / note"
+            className="w-full px-3 py-2 rounded-lg border border-surface-border text-sm focus:border-accent outline-none" />
+        </label>
+        <label className="w-24">
+          <span className="block text-xs font-semibold text-muted mb-1">How many</span>
+          <input type="number" min={1} max={100} value={count}
+            onChange={e => setCount(Math.max(1, Math.min(100, Number(e.target.value) || 1)))}
+            className="w-full px-3 py-2 rounded-lg border border-surface-border text-sm focus:border-accent outline-none" />
+        </label>
+        <button onClick={() => gen.mutate()} disabled={gen.isPending}
+          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-accent text-white text-sm font-semibold hover:bg-accent-hover transition-colors disabled:opacity-50">
+          <Plus size={15} /> {gen.isPending ? 'Generating…' : 'Generate'}
+        </button>
+      </div>
+
+      <p className="text-xs text-muted mb-3 flex items-center gap-1.5">
+        <KeyRound size={13} /> {unused} unused · {list.length} total
+      </p>
+
+      {list.length === 0 ? (
+        <p className="text-sm text-muted">No codes yet — generate one above and share it with a student.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-xs text-muted text-left border-b border-surface-border">
+                <th className="py-2 pr-3 font-semibold">Code</th>
+                <th className="py-2 pr-3 font-semibold">Label</th>
+                <th className="py-2 pr-3 font-semibold">Status</th>
+                <th className="py-2 pl-3 font-semibold text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {list.map(c => {
+                const used = !!c.used_at
+                const revoked = !c.is_active && !used
+                return (
+                  <tr key={c.id} className="border-b border-surface-border/60">
+                    <td className="py-2 pr-3 font-mono font-bold text-ink whitespace-nowrap">{c.code}</td>
+                    <td className="py-2 pr-3 text-muted">{c.label ?? '—'}</td>
+                    <td className="py-2 pr-3">
+                      {used ? <span className="text-xs text-muted">Used · {c.used_by_email}</span>
+                        : revoked ? <span className="text-xs font-semibold text-score-notrecommended">Revoked</span>
+                        : <span className="text-xs font-semibold text-score-strong">Unused</span>}
+                    </td>
+                    <td className="py-2 pl-3 text-right whitespace-nowrap">
+                      {!used && !revoked ? (
+                        <>
+                          <button onClick={() => copy(c.code)} className="text-xs font-semibold text-accent hover:underline mr-4">
+                            {copied === c.code ? 'Copied!' : 'Copy'}
+                          </button>
+                          <button onClick={() => revoke.mutate(c.id)} disabled={revoke.isPending}
+                            className="text-xs font-semibold text-score-notrecommended hover:underline disabled:opacity-50">
+                            Revoke
+                          </button>
+                        </>
+                      ) : <span className="text-xs text-muted/50">—</span>}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
   )
 }
 

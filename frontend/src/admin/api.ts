@@ -131,3 +131,31 @@ export async function updateUserStatus(id: string, is_active: boolean): Promise<
   const { data } = await http.patch<UserSummary>(`/admin/users/${id}/status`, { is_active })
   return data
 }
+
+// ── Invite codes ──────────────────────────────────────────────────────────────
+
+export interface InviteCode {
+  id: string
+  code: string
+  label: string | null
+  is_active: boolean
+  used_at: string | null
+  used_by_email: string | null
+  used_by_method: string | null
+  created_at: string
+}
+
+export async function fetchInviteCodes(): Promise<InviteCode[]> {
+  const { data } = await http.get<InviteCode[]>('/admin/invite-codes')
+  return data
+}
+
+export async function createInviteCodes(payload: { label?: string; count?: number }): Promise<InviteCode[]> {
+  const { data } = await http.post<InviteCode[]>('/admin/invite-codes', payload)
+  return data
+}
+
+export async function revokeInviteCode(id: string): Promise<InviteCode> {
+  const { data } = await http.patch<InviteCode>(`/admin/invite-codes/${id}/revoke`, {})
+  return data
+}

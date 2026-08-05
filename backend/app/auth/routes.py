@@ -22,6 +22,7 @@ from app.analytics.models import EventType
 from app.analytics.service import log_event
 from app.api.deps import get_db
 from app.auth.deps import ACCESS_COOKIE_NAME, get_current_user
+from app.auth.invites import consume_code, validate_code
 from app.auth.models import RefreshToken
 from app.auth.oauth import oauth
 from app.auth.security import (
@@ -47,6 +48,7 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str
     name: Optional[str] = None
+    invite_code: Optional[str] = None
 
     @field_validator("password")
     @classmethod
@@ -151,6 +153,9 @@ async def register(
     response: Response,
     db: AsyncSession = Depends(get_db),
 ) -> Broker:
+    # Invite-only registration: validate the code before doing anything else.
+    code_obj = await validate_code(db, data.invite_code)
+
     existing = await db.scalar(select(Broker).where(Broker.email == data.email))
     if existing:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="An account with this email already exists")
@@ -160,8 +165,10 @@ async def register(
         name=data.name,
         password_hash=hash_password(data.password),
         role=UserRole.USER,
+        invited_by=code_obj.code if code_obj else None,
     )
     db.add(user)
+    consume_code(code_obj, data.email, "password")
     await db.flush()
 
     await _issue_session(response, db, user, request)
@@ -250,9 +257,14 @@ async def update_me(
 # SessionMiddleware (app/main.py) between these two requests.
 
 @router.get("/google/login")
-async def google_login(request: Request):
+async def google_login(request: Request, invite_code: Optional[str] = None):
     if not settings.google_client_id:
         raise HTTPException(status_code=503, detail="Google sign-in is not configured")
+    # Stash the invite code in the session (which already carries authlib's OAuth
+    # state across the round trip) so the callback can validate it IF this turns
+    # out to be a first-time signup — new-account creation is invite-only.
+    # Existing users signing in don't need a code.
+    request.session["invite_code"] = (invite_code or "").strip()
     redirect_uri = f"{settings.app_base_url}/api/auth/google/callback"
     return await oauth.google.authorize_redirect(request, redirect_uri)
 
@@ -282,6 +294,12 @@ async def google_callback(request: Request, db: AsyncSession = Depends(get_db)):
             if not user.avatar_url and userinfo.get("picture"):
                 user.avatar_url = userinfo["picture"]
         else:
+            # First-time Google sign-in = brand-new account → invite-only.
+            code = (request.session.pop("invite_code", "") or "").strip()
+            try:
+                code_obj = await validate_code(db, code)
+            except HTTPException:
+                return RedirectResponse(f"{settings.frontend_url}/register?error=invite")
             user = Broker(
                 google_id=google_id,
                 email=email,
@@ -289,8 +307,10 @@ async def google_callback(request: Request, db: AsyncSession = Depends(get_db)):
                 avatar_url=userinfo.get("picture"),
                 role=UserRole.USER,
                 is_verified=True,  # Google already verified this email
+                invited_by=code_obj.code if code_obj else None,
             )
             db.add(user)
+            consume_code(code_obj, email, "google")
             await db.flush()
 
     if not user.is_active:

@@ -50,6 +50,7 @@ export interface RegisterPayload {
   email: string
   password: string
   name?: string
+  invite_code?: string
 }
 
 export async function fetchMe(): Promise<User> {

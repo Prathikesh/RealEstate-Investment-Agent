@@ -40,6 +40,11 @@ class Settings(BaseSettings):
     admin_bootstrap_email: str = ""
     admin_bootstrap_password: str = ""
 
+    # Registration gating — when True, creating an account (email/password OR
+    # first-time Google sign-in) requires a valid, unused invite code. Existing
+    # users' login is never gated. Set REQUIRE_INVITE_CODE=false to open signup.
+    require_invite_code: bool = True
+
     # Email
     mail_username: str = ""
     mail_password: str = ""

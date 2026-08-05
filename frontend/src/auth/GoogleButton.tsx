@@ -12,13 +12,21 @@ function GoogleIcon() {
 }
 
 /** Full browser navigation, not an axios call — the browser has to actually
- * visit Google and come back through the server-side OAuth redirect flow. */
-export default function GoogleButton({ label }: { label: string }) {
+ * visit Google and come back through the server-side OAuth redirect flow.
+ * `inviteCode` (register only) is forwarded so first-time Google signups are
+ * gated the same way as email/password. `disabled` blocks the flow until a
+ * code is entered. */
+export default function GoogleButton({ label, inviteCode, disabled }: { label: string; inviteCode?: string; disabled?: boolean }) {
+  const start = () => {
+    const q = inviteCode ? `?invite_code=${encodeURIComponent(inviteCode)}` : ''
+    window.location.href = `${API_BASE}/auth/google/login${q}`
+  }
   return (
     <button
       type="button"
-      onClick={() => { window.location.href = `${API_BASE}/auth/google/login` }}
-      className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border border-surface-border text-sm font-semibold text-ink hover:bg-surface-hover transition-colors"
+      onClick={start}
+      disabled={disabled}
+      className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border border-surface-border text-sm font-semibold text-ink hover:bg-surface-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
     >
       <GoogleIcon />
       {label}

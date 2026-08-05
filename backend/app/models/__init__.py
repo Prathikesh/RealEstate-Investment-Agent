@@ -7,6 +7,7 @@ from app.models.assessment import AssessmentParcel
 from app.models.constraint import ConstraintZone
 from app.auth.models import RefreshToken
 from app.analytics.models import UserEvent, EventType
+from app.models.invite import InviteCode
 
 __all__ = [
     "AssessmentParcel",
@@ -28,4 +29,5 @@ __all__ = [
     "RefreshToken",
     "UserEvent",
     "EventType",
+    "InviteCode",
 ]
