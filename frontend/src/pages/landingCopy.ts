@@ -14,9 +14,9 @@ const en = {
     trust: ['2,000+ listings analyzed', 'Full analysis in seconds', 'Backed by official data'],
   },
   stats: [
-    { value: '2,000+', label: 'Properties scored' },
-    { value: '24/7', label: 'Market monitoring' },
-    { value: '< 60s', label: 'Full analysis per deal' },
+    { key: 'total',  label: 'Properties scored' },
+    { key: 'today',  label: 'Added in the last 24h' },
+    { key: 'cities', label: 'Quebec cities covered' },
     { value: '100%', label: 'Backed by official data' },
   ],
   why: {
@@ -141,9 +141,9 @@ const fr: typeof en = {
     trust: ['2 000+ inscriptions analysées', 'Analyse complète en secondes', 'Appuyé par des données officielles'],
   },
   stats: [
-    { value: '2,000+', label: 'Propriétés évaluées' },
-    { value: '24/7', label: 'Surveillance du marché' },
-    { value: '< 60s', label: 'Analyse complète par occasion' },
+    { key: 'total',  label: 'Propriétés évaluées' },
+    { key: 'today',  label: 'Ajoutées ces 24 h' },
+    { key: 'cities', label: 'Villes québécoises couvertes' },
     { value: '100%', label: 'Fondé sur des données officielles' },
   ],
   why: {

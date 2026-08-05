@@ -2,12 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ArrowRight, Building2, Bell, ShieldCheck, LineChart, Map, Calculator,
-  BarChart3, MapPin, Check, X, Layers, Search, Menu, X as Close, Zap, Clock,
+  BarChart3, MapPin, Check, X, Layers, Search, Menu, X as Close, Clock,
   ChevronDown, TrendingUp, AlertTriangle, History, Landmark, Star,
 } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import { AppIcon } from '../components/QuartisLogo'
 import { useLang } from '../context/LanguageContext'
 import { useAuth } from '../auth/AuthContext'
+import { fetchStats } from '../api'
 import { LANDING_COPY } from './landingCopy'
 
 const NAVY = 'radial-gradient(120% 130% at 12% -10%, #1E3A5F 0%, #131b2e 45%, #0b1120 100%)'
@@ -16,7 +18,7 @@ const HERO_PHOTO = 'https://images.unsplash.com/photo-1570129477492-45c003edd2be
 
 const FEATURE_ICONS = [LineChart, Building2, Map, Calculator, BarChart3, Bell]
 const ALSO_ICONS = [TrendingUp, AlertTriangle, History, Landmark, ShieldCheck, MapPin]
-const STAT_ICONS = [Building2, Clock, Zap, ShieldCheck]
+const STAT_ICONS = [Building2, Clock, MapPin, ShieldCheck]
 const STEP_ICONS = [Search, Layers, Bell]
 
 export default function LandingPage() {
@@ -34,7 +36,7 @@ export default function LandingPage() {
   }, [])
 
   return (
-    <div className="min-h-screen overflow-x-hidden bg-surface text-ink antialiased" style={{ scrollBehavior: 'smooth' }}>
+    <div className="min-h-screen overflow-x-hidden bg-surface text-ink antialiased md:[zoom:1.1]" style={{ scrollBehavior: 'smooth' }}>
       <Nav t={t} scrolled={scrolled} menuOpen={menuOpen} setMenuOpen={setMenuOpen} loggedIn={!!user} />
       <Hero t={t} loggedIn={!!user} />
       <StatsBand t={t} />
@@ -177,18 +179,39 @@ function HeroVisual({ t }: { t: Copy }) {
   )
 }
 
-// ── Stats band ────────────────────────────────────────────────────────────────
+// ── Stats band (live) ─────────────────────────────────────────────────────────
 function StatsBand({ t }: { t: Copy }) {
+  // Public endpoint (no auth) — shows real platform scale on the landing page.
+  const { data } = useQuery({ queryKey: ['landing-stats'], queryFn: fetchStats, staleTime: 5 * 60_000 })
+  const items = t.stats as { key?: string; value?: string; label: string }[]
+
+  const liveValue = (key?: string): string | null => {
+    if (!data) return null
+    if (key === 'total')  return data.total_properties.toLocaleString('en-CA')
+    if (key === 'today')  return data.new_today.toLocaleString('en-CA')
+    if (key === 'cities') return String(data.cities.length)
+    return null
+  }
+
   return (
     <section className="relative overflow-hidden" style={{ background: 'linear-gradient(90deg,#1D4ED8,#2563EB 50%,#1D4ED8)' }}>
       <div aria-hidden className="absolute inset-0 opacity-20" style={{ backgroundImage: 'radial-gradient(circle at 15% 130%, #fff 0%, transparent 45%)' }} />
       <div className="relative max-w-7xl mx-auto px-5 sm:px-8 py-10 grid grid-cols-2 lg:grid-cols-4 gap-8 text-white">
-        {t.stats.map((s, i) => {
+        {items.map((s, i) => {
           const Icon = STAT_ICONS[i]
+          const live = liveValue(s.key)
+          const loading = !!s.key && !data
           return (
             <div key={s.label} className="flex items-center gap-3">
               <span className="w-11 h-11 rounded-xl bg-white/15 ring-1 ring-white/20 flex items-center justify-center shrink-0"><Icon size={20} /></span>
-              <div><p className="text-2xl font-extrabold tabular-nums leading-none">{s.value}</p><p className="text-[13px] text-blue-100 mt-1">{s.label}</p></div>
+              <div>
+                <p className="text-2xl font-extrabold tabular-nums leading-none">
+                  {loading
+                    ? <span className="inline-block w-16 h-6 rounded bg-white/20 animate-pulse align-middle" />
+                    : (live ?? s.value ?? '—')}
+                </p>
+                <p className="text-[13px] text-blue-100 mt-1">{s.label}</p>
+              </div>
             </div>
           )
         })}
@@ -432,7 +455,7 @@ function Footer({ t, loggedIn }: { t: Copy; loggedIn: boolean }) {
   const columns = [
     { title: t.footer.product, items: [{ label: t.nav.features, href: '#features' }, { label: t.nav.how, href: '#how' }, { label: t.nav.faq, href: '#faq' }] },
     { title: t.footer.account, items: loggedIn ? [{ label: t.nav.dashboard, to: '/dashboard' }] : [{ label: t.nav.signin, to: '/login' }, { label: t.footer.create, to: '/register' }] },
-    { title: t.footer.company, items: t.footer.companyItems.map(label => ({ label })) },
+    { title: t.footer.company, items: [{ label: t.why.eyebrow, href: '#why' }, { label: t.spot.edge, href: '#coverage' }, { label: t.nav.faq, href: '#faq' }] },
   ] as { title: string; items: { label: string; to?: string; href?: string }[] }[]
   return (
     <footer className="bg-ink text-slate-300">
