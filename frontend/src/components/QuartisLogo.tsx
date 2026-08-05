@@ -1,4 +1,4 @@
-// Plexa — brand mark.
+// PlexAI — brand mark.
 // Named for the Québec "plex" (duplex/triplex/plex — the heart of Montréal
 // investment real estate). The mark is a house (property) whose interior rises
 // as three ascending bars (investment analytics) — property + intelligence in
@@ -28,12 +28,12 @@ export function AppIcon({ size = 24, className = '' }: IconProps) {
   )
 }
 
-// Full wordmark lockup (icon + "Plexa").
+// Full wordmark lockup (icon + "PlexAI").
 export function AppWordmark({ className = '', iconSize = 26 }: { className?: string; iconSize?: number }) {
   return (
     <span className={`inline-flex items-center gap-2 ${className}`}>
       <AppIcon size={iconSize} />
-      <span className="font-extrabold tracking-tight" style={{ fontSize: iconSize * 0.72 }}>Plexa</span>
+      <span className="font-extrabold tracking-tight" style={{ fontSize: iconSize * 0.72 }}>PlexAI</span>
     </span>
   )
 }

@@ -51,7 +51,7 @@ export default function AuthLayout({
         <div className="relative">
           <Link to="/" className="inline-flex items-center gap-2.5">
             <span className="w-10 h-10 rounded-xl bg-white/10 ring-1 ring-white/15 flex items-center justify-center"><AppIcon size={22} className="text-white" /></span>
-            <span className="text-lg font-extrabold tracking-tight">Plexa</span>
+            <span className="text-lg font-extrabold tracking-tight">PlexAI</span>
           </Link>
         </div>
 
@@ -104,7 +104,7 @@ export default function AuthLayout({
         <div className="w-full max-w-[380px] mx-auto">
           <Link to="/" className="lg:hidden inline-flex items-center gap-2 mb-8">
             <span className="w-9 h-9 rounded-xl bg-accent flex items-center justify-center shadow-md"><AppIcon size={19} className="text-white" /></span>
-            <span className="text-base font-extrabold tracking-tight text-ink">Plexa</span>
+            <span className="text-base font-extrabold tracking-tight text-ink">PlexAI</span>
           </Link>
           <Link to="/" className="hidden lg:inline-flex items-center gap-1.5 text-sm text-muted hover:text-ink transition-colors mb-8"><ArrowLeft size={15} /> {p.back}</Link>
 

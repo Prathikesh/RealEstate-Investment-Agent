@@ -300,7 +300,7 @@ export default function AdminDashboard() {
       <div>
         <h1 className="text-2xl font-black text-ink">Admin Dashboard</h1>
         <p className="text-sm text-muted mt-1 max-w-2xl">
-          A plain-English look at who&apos;s using Plexa: who&apos;s ready to convert, what they want,
+          A plain-English look at who&apos;s using PlexAI: who&apos;s ready to convert, what they want,
           what they spend their time on, and who needs a nudge.
         </p>
       </div>

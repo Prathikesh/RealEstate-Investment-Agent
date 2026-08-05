@@ -7,7 +7,7 @@ const en = {
     badge: 'Quebec real-estate investment intelligence',
     h1a: 'Spot the undervalued Quebec property',
     h1b: 'before anyone else.',
-    sub: 'Plexa watches the entire Quebec market around the clock, scores every listing with AI, uncovers hidden development potential from official records, and pings you the second a real opportunity appears.',
+    sub: 'PlexAI watches the entire Quebec market around the clock, scores every listing with AI, uncovers hidden development potential from official records, and pings you the second a real opportunity appears.',
     cta1: 'Start free',
     cta2: 'See how it works',
     chip: 'Strong buy',
@@ -20,9 +20,9 @@ const en = {
     { value: '100%', label: 'Backed by official data' },
   ],
   why: {
-    eyebrow: 'Why Plexa',
+    eyebrow: 'Why PlexAI',
     title: 'Investing on gut feel leaves money on the table',
-    subtitle: 'Serious investors win on speed and information. Plexa gives you both.',
+    subtitle: 'Serious investors win on speed and information. PlexAI gives you both.',
     oldTitle: 'The old way',
     old: [
       'Refresh listing sites for hours, hoping to catch a deal first',
@@ -30,7 +30,7 @@ const en = {
       'Never know if the lot can be developed further',
       'Miss price drops until the property is already gone',
     ],
-    newTitle: 'With Plexa',
+    newTitle: 'With PlexAI',
     neu: [
       'New deals scored and delivered to you automatically',
       'AI value gap vs. comparable sales, computed instantly',
@@ -39,9 +39,9 @@ const en = {
     ],
   },
   spot: {
-    edge: 'The Plexa edge',
+    edge: 'The PlexAI edge',
     title: 'Turn a single-family lot into a development opportunity',
-    body: 'A property listed as a house might sit on land the city already allows you to build several units on. Plexa reads the official zoning code and the government lot record, then estimates what could be built — right on the listing, with the source document one click away.',
+    body: 'A property listed as a house might sit on land the city already allows you to build several units on. PlexAI reads the official zoning code and the government lot record, then estimates what could be built — right on the listing, with the source document one click away.',
     bullets: [
       'An interactive map matches the exact zoning polygon by GPS',
       'Real lot size from official records — not the listing',
@@ -62,9 +62,9 @@ const en = {
       { title: 'AI deal score, 0–100', desc: 'Every listing graded on cap rate, cash flow, discount vs. comparable sales and risk — so you know in seconds whether it deserves a closer look.' },
       { title: 'Development potential', desc: 'See what could be built on any lot from official zoning + lot data — the upside most investors never check, surfaced automatically.' },
       { title: 'Interactive zoning map', desc: 'The property pinned inside its exact zone boundary on a live map, with the official bylaw and source document one click away.' },
-      { title: 'Rebuild & profit calculator', desc: 'Model a teardown-and-rebuild with your own construction costs and rents — Plexa computes the numbers and the net upside live.' },
+      { title: 'Rebuild & profit calculator', desc: 'Model a teardown-and-rebuild with your own construction costs and rents — PlexAI computes the numbers and the net upside live.' },
       { title: 'Comparable-sales value gap', desc: 'We find nearby comparable sales and show exactly how far below (or above) market the asking price really is.' },
-      { title: 'Instant deal alerts', desc: 'Set your criteria once. The moment a matching property — or a price drop — appears, Plexa pings you by email or WhatsApp.' },
+      { title: 'Instant deal alerts', desc: 'Set your criteria once. The moment a matching property — or a price drop — appears, PlexAI pings you by email or WhatsApp.' },
     ],
     alsoTitle: 'Also included on every property',
     also: [
@@ -92,7 +92,7 @@ const en = {
     eyebrow: 'How it works',
     title: 'From the whole market to a verdict — in seconds',
     steps: [
-      { title: 'We scan, around the clock', desc: 'Plexa continuously monitors the Quebec market and merges duplicate listings into one clean record.' },
+      { title: 'We scan, around the clock', desc: 'PlexAI continuously monitors the Quebec market and merges duplicate listings into one clean record.' },
       { title: 'AI scores & checks zoning', desc: 'Each property gets a deal score, full financials, comparable analysis, and its development potential.' },
       { title: 'You get the edge', desc: 'Browse the ranked dashboard, or let alerts bring the best matching deals straight to your inbox.' },
     ],
@@ -101,7 +101,7 @@ const en = {
     eyebrow: 'Investors',
     title: 'Built for people who move first',
     quotes: [
-      { q: 'I found a triplex 12% under market the morning it was listed. Plexa flagged the development upside I would have completely missed.', n: 'Marc-André L.', r: 'Plex investor · Montréal' },
+      { q: 'I found a triplex 12% under market the morning it was listed. PlexAI flagged the development upside I would have completely missed.', n: 'Marc-André L.', r: 'Plex investor · Montréal' },
       { q: 'The zoning read alone is worth it. Knowing a lot can take four units before I even call the broker changes how I bid.', n: 'Sophie T.', r: 'Real-estate investor · Laval' },
       { q: 'I used to spend my evenings refreshing listings. Now the good deals just land in my inbox, already analyzed.', n: 'David R.', r: 'Buy-and-hold investor' },
     ],
@@ -111,14 +111,14 @@ const en = {
     title: 'Questions, answered',
     items: [
       { q: 'How accurate is the data?', a: 'Lot size, dwelling counts and zoning come from official government records, with the source document linked on each property so you can verify it yourself. Financials use live Quebec tax rates. Any development estimate is framed as a guide — always confirm with the city before acting.' },
-      { q: 'What makes the development-potential feature different?', a: 'Most tools stop at the current listing. Plexa matches the property to its exact zoning polygon and reads the official lot record, then estimates how many units could be built — the kind of analysis that normally takes a broker or an urban planner.' },
+      { q: 'What makes the development-potential feature different?', a: 'Most tools stop at the current listing. PlexAI matches the property to its exact zoning polygon and reads the official lot record, then estimates how many units could be built — the kind of analysis that normally takes a broker or an urban planner.' },
       { q: 'Which cities are covered?', a: 'Development potential is live for Montréal and Laval today, with more Quebec cities being added continuously. Deal scoring, financials and alerts work across the wider Quebec market.' },
-      { q: 'How fast are the alerts?', a: 'Plexa monitors the market around the clock. When a new property matches your criteria — or an existing one drops in price — you’re notified by email or WhatsApp within the hour, not the next day.' },
+      { q: 'How fast are the alerts?', a: 'PlexAI monitors the market around the clock. When a new property matches your criteria — or an existing one drops in price — you’re notified by email or WhatsApp within the hour, not the next day.' },
       { q: 'Can I tune what counts as a “good deal”?', a: 'Yes. Set your location, budget, property types and a minimum deal-quality score in Settings, and both your dashboard and your alerts follow those preferences.' },
       { q: 'Do I need a credit card to start?', a: 'No. Create an account and explore the dashboard for free — no card required, cancel anytime.' },
     ],
   },
-  cta: { title: 'Stop guessing. Start investing with an edge.', sub: 'Join Quebec investors who find better deals in less time with Plexa.', cta1: 'Get started free', note: 'No credit card required · Cancel anytime' },
+  cta: { title: 'Stop guessing. Start investing with an edge.', sub: 'Join Quebec investors who find better deals in less time with PlexAI.', cta1: 'Get started free', note: 'No credit card required · Cancel anytime' },
   footer: {
     tagline: 'Quebec real-estate investment intelligence — AI-scored deals, development potential from official data, and instant alerts.',
     product: 'Product', account: 'Account', create: 'Create account', company: 'Company',
@@ -134,7 +134,7 @@ const fr: typeof en = {
     badge: 'Intelligence en investissement immobilier au Québec',
     h1a: 'Repérez la propriété québécoise sous-évaluée',
     h1b: 'avant tout le monde.',
-    sub: 'Plexa surveille tout le marché québécois en continu, évalue chaque inscription par IA, révèle le potentiel de développement caché à partir des données officielles, et vous alerte dès qu’une véritable occasion se présente.',
+    sub: 'PlexAI surveille tout le marché québécois en continu, évalue chaque inscription par IA, révèle le potentiel de développement caché à partir des données officielles, et vous alerte dès qu’une véritable occasion se présente.',
     cta1: 'Commencer gratuitement',
     cta2: 'Voir comment ça marche',
     chip: 'Achat fort',
@@ -147,9 +147,9 @@ const fr: typeof en = {
     { value: '100%', label: 'Fondé sur des données officielles' },
   ],
   why: {
-    eyebrow: 'Pourquoi Plexa',
+    eyebrow: 'Pourquoi PlexAI',
     title: 'Investir à l’instinct vous coûte de l’argent',
-    subtitle: 'Les investisseurs sérieux gagnent sur la vitesse et l’information. Plexa vous donne les deux.',
+    subtitle: 'Les investisseurs sérieux gagnent sur la vitesse et l’information. PlexAI vous donne les deux.',
     oldTitle: 'L’ancienne façon',
     old: [
       'Rafraîchir les sites d’inscriptions pendant des heures en espérant être le premier',
@@ -157,7 +157,7 @@ const fr: typeof en = {
       'Ne jamais savoir si le terrain peut être développé davantage',
       'Manquer les baisses de prix jusqu’à ce que la propriété soit partie',
     ],
-    newTitle: 'Avec Plexa',
+    newTitle: 'Avec PlexAI',
     neu: [
       'Les nouvelles occasions évaluées et livrées automatiquement',
       'L’écart de valeur vs ventes comparables, calculé instantanément',
@@ -166,9 +166,9 @@ const fr: typeof en = {
     ],
   },
   spot: {
-    edge: 'L’avantage Plexa',
+    edge: 'L’avantage PlexAI',
     title: 'Transformez un terrain unifamilial en occasion de développement',
-    body: 'Une propriété inscrite comme maison peut reposer sur un terrain où la ville permet déjà d’ériger plusieurs logements. Plexa lit le code d’urbanisme officiel et le rôle d’évaluation, puis estime ce qui pourrait être bâti — directement sur l’inscription, le document source à un clic.',
+    body: 'Une propriété inscrite comme maison peut reposer sur un terrain où la ville permet déjà d’ériger plusieurs logements. PlexAI lit le code d’urbanisme officiel et le rôle d’évaluation, puis estime ce qui pourrait être bâti — directement sur l’inscription, le document source à un clic.',
     bullets: [
       'Une carte interactive associe la zone exacte par GPS',
       'La vraie superficie du terrain, tirée des données officielles — pas de l’inscription',
@@ -189,9 +189,9 @@ const fr: typeof en = {
       { title: 'Score IA, 0–100', desc: 'Chaque inscription notée sur le taux de capitalisation, le flux de trésorerie, l’écart vs ventes comparables et le risque — pour savoir en secondes si elle mérite un second regard.' },
       { title: 'Potentiel de développement', desc: 'Voyez ce qui pourrait être bâti sur un terrain à partir du zonage et des données officielles — l’atout que la plupart des investisseurs ignorent, révélé automatiquement.' },
       { title: 'Carte de zonage interactive', desc: 'La propriété épinglée dans les limites exactes de sa zone sur une carte en direct, avec le règlement officiel et le document source à un clic.' },
-      { title: 'Calculateur de reconstruction et de profit', desc: 'Modélisez une démolition-reconstruction avec vos propres coûts et loyers — Plexa calcule les chiffres et le gain net en direct.' },
+      { title: 'Calculateur de reconstruction et de profit', desc: 'Modélisez une démolition-reconstruction avec vos propres coûts et loyers — PlexAI calcule les chiffres et le gain net en direct.' },
       { title: 'Écart de valeur vs ventes comparables', desc: 'Nous trouvons les ventes comparables à proximité et montrons à quel point le prix demandé est sous (ou au-dessus) du marché.' },
-      { title: 'Alertes instantanées', desc: 'Définissez vos critères une fois. Dès qu’une propriété correspond — ou baisse de prix — Plexa vous avertit par courriel ou WhatsApp.' },
+      { title: 'Alertes instantanées', desc: 'Définissez vos critères une fois. Dès qu’une propriété correspond — ou baisse de prix — PlexAI vous avertit par courriel ou WhatsApp.' },
     ],
     alsoTitle: 'Inclus sur chaque propriété',
     also: [
@@ -219,7 +219,7 @@ const fr: typeof en = {
     eyebrow: 'Comment ça marche',
     title: 'Du marché entier au verdict — en secondes',
     steps: [
-      { title: 'On surveille, 24 h sur 24', desc: 'Plexa surveille le marché québécois en continu et fusionne les inscriptions en double en une seule fiche.' },
+      { title: 'On surveille, 24 h sur 24', desc: 'PlexAI surveille le marché québécois en continu et fusionne les inscriptions en double en une seule fiche.' },
       { title: 'L’IA évalue et vérifie le zonage', desc: 'Chaque propriété reçoit un score, une analyse financière complète, des comparables et son potentiel de développement.' },
       { title: 'Vous prenez l’avantage', desc: 'Parcourez le tableau de bord classé, ou laissez les alertes vous livrer les meilleures occasions.' },
     ],
@@ -228,7 +228,7 @@ const fr: typeof en = {
     eyebrow: 'Investisseurs',
     title: 'Conçu pour ceux qui agissent en premier',
     quotes: [
-      { q: 'J’ai trouvé un triplex 12 % sous le marché le matin même de son inscription. Plexa a signalé un potentiel de développement que j’aurais complètement manqué.', n: 'Marc-André L.', r: 'Investisseur en plex · Montréal' },
+      { q: 'J’ai trouvé un triplex 12 % sous le marché le matin même de son inscription. PlexAI a signalé un potentiel de développement que j’aurais complètement manqué.', n: 'Marc-André L.', r: 'Investisseur en plex · Montréal' },
       { q: 'La lecture du zonage à elle seule en vaut la peine. Savoir qu’un terrain peut accueillir quatre logements avant même d’appeler le courtier change ma façon d’offrir.', n: 'Sophie T.', r: 'Investisseuse immobilière · Laval' },
       { q: 'Je passais mes soirées à rafraîchir les inscriptions. Maintenant, les bonnes occasions arrivent dans ma boîte courriel, déjà analysées.', n: 'David R.', r: 'Investisseur achat-conservation' },
     ],
@@ -238,14 +238,14 @@ const fr: typeof en = {
     title: 'Vos questions, répondues',
     items: [
       { q: 'Quelle est la fiabilité des données ?', a: 'La superficie, le nombre de logements et le zonage proviennent des données gouvernementales officielles, avec le document source lié à chaque propriété pour que vous puissiez le vérifier. Les chiffres financiers utilisent les taux de taxe québécois en vigueur. Toute estimation de développement est présentée comme un guide — confirmez toujours avec la ville.' },
-      { q: 'Qu’est-ce qui distingue le potentiel de développement ?', a: 'La plupart des outils s’arrêtent à l’inscription actuelle. Plexa associe la propriété à sa zone exacte et lit le rôle d’évaluation officiel, puis estime le nombre de logements possibles — une analyse qui exige normalement un courtier ou un urbaniste.' },
+      { q: 'Qu’est-ce qui distingue le potentiel de développement ?', a: 'La plupart des outils s’arrêtent à l’inscription actuelle. PlexAI associe la propriété à sa zone exacte et lit le rôle d’évaluation officiel, puis estime le nombre de logements possibles — une analyse qui exige normalement un courtier ou un urbaniste.' },
       { q: 'Quelles villes sont couvertes ?', a: 'Le potentiel de développement est en service pour Montréal et Laval, et d’autres villes québécoises s’ajoutent en continu. Le score, les finances et les alertes couvrent l’ensemble du marché québécois.' },
-      { q: 'À quelle vitesse arrivent les alertes ?', a: 'Plexa surveille le marché en tout temps. Quand une nouvelle propriété correspond à vos critères — ou qu’une baisse de prix survient — vous êtes averti par courriel ou WhatsApp dans l’heure, pas le lendemain.' },
+      { q: 'À quelle vitesse arrivent les alertes ?', a: 'PlexAI surveille le marché en tout temps. Quand une nouvelle propriété correspond à vos critères — ou qu’une baisse de prix survient — vous êtes averti par courriel ou WhatsApp dans l’heure, pas le lendemain.' },
       { q: 'Puis-je ajuster ce qui compte comme « bonne affaire » ?', a: 'Oui. Définissez votre secteur, votre budget, les types de propriété et un score de qualité minimal dans les Réglages, et votre tableau de bord comme vos alertes suivront ces préférences.' },
       { q: 'Faut-il une carte de crédit pour commencer ?', a: 'Non. Créez un compte et explorez le tableau de bord gratuitement — aucune carte requise, annulez en tout temps.' },
     ],
   },
-  cta: { title: 'Cessez de deviner. Investissez avec une longueur d’avance.', sub: 'Rejoignez les investisseurs québécois qui trouvent de meilleures occasions en moins de temps avec Plexa.', cta1: 'Commencer gratuitement', note: 'Aucune carte de crédit requise · Annulez en tout temps' },
+  cta: { title: 'Cessez de deviner. Investissez avec une longueur d’avance.', sub: 'Rejoignez les investisseurs québécois qui trouvent de meilleures occasions en moins de temps avec PlexAI.', cta1: 'Commencer gratuitement', note: 'Aucune carte de crédit requise · Annulez en tout temps' },
   footer: {
     tagline: 'Intelligence en investissement immobilier au Québec — occasions notées par IA, potentiel de développement à partir de données officielles, et alertes instantanées.',
     product: 'Produit', account: 'Compte', create: 'Créer un compte', company: 'Entreprise',

@@ -301,86 +301,6 @@ export default function Settings() {
             <GoalDropdown selected={goals} onChange={setGoals} />
           </SectionCard>
 
-          <SectionCard
-            icon={<Gauge size={15} />}
-            title="My Scoring Criteria"
-            desc="Weight the factors behind your own verdict. Every property shows your score next to the AI's."
-          >
-            {/* Preset chips — one tap to start, then fine-tune below */}
-            <div className="flex flex-wrap items-center gap-2">
-              {WEIGHT_PRESETS.map(p => {
-                const Icon = p.icon
-                const active = activePreset === p.id
-                return (
-                  <button
-                    key={p.id} type="button" onClick={() => applyPreset(p.weights)}
-                    className={clsx(
-                      'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-semibold transition-all',
-                      active ? 'bg-accent/10 text-accent border-accent/40 ring-1 ring-accent/20'
-                             : 'bg-white text-muted border-surface-border hover:border-accent/40 hover:text-ink',
-                    )}
-                  >
-                    <Icon size={13} /> {p.label}
-                  </button>
-                )
-              })}
-              <span className={clsx(
-                'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-semibold',
-                activePreset === null ? 'bg-accent/10 text-accent border-accent/40 ring-1 ring-accent/20'
-                                      : 'border-dashed border-surface-border text-muted/70',
-              )}>
-                <SlidersHorizontal size={13} /> Custom
-              </span>
-              <button
-                type="button" onClick={resetWeightsToStrategy}
-                className="btn-ghost text-xs ml-auto" title="Reset to your strategy's default mix"
-              >
-                <RotateCcw size={13} /> Reset
-              </button>
-            </div>
-
-            {/* Donut + sliders */}
-            <div className="flex flex-col lg:flex-row gap-6 pt-4">
-              {/* Weight distribution donut */}
-              <div className="flex lg:flex-col items-center gap-4 shrink-0 mx-auto lg:mx-0">
-                <WeightDonut pct={pctMap} />
-                <div className="text-center">
-                  <p className="text-[11px] font-semibold text-muted uppercase tracking-wider">Your mix</p>
-                  <p className="text-[11px] text-muted mt-0.5 max-w-[140px]">
-                    Relative weight of each factor in your verdict.
-                  </p>
-                </div>
-              </div>
-
-              {/* Sliders */}
-              <div className="flex-1 space-y-3.5 min-w-0">
-                {SCORE_FACTORS.map(f => (
-                  <div key={f}>
-                    <div className="flex items-center justify-between gap-3 mb-1">
-                      <div className="min-w-0 flex items-start gap-2">
-                        <span className="w-2.5 h-2.5 rounded-full shrink-0 mt-1" style={{ backgroundColor: FACTOR_COLOR[f] }} />
-                        <div className="min-w-0">
-                          <span className="text-sm font-semibold text-ink">{FACTOR_LABEL[f]}</span>
-                          <span className="block text-[11px] text-muted leading-snug">{FACTOR_DESC[f]}</span>
-                        </div>
-                      </div>
-                      <span className="text-sm font-bold font-mono shrink-0 tabular-nums w-11 text-right" style={{ color: FACTOR_COLOR[f] }}>
-                        {factorPct(f)}%
-                      </span>
-                    </div>
-                    <input
-                      type="range" min={0} max={100} step={1}
-                      value={weightPoints[f]}
-                      onChange={e => setWeightPoints(prev => ({ ...prev, [f]: Number(e.target.value) }))}
-                      aria-label={`${FACTOR_LABEL[f]} weight`}
-                      className="w-full"
-                      style={{ accentColor: FACTOR_COLOR[f] }}
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-          </SectionCard>
         </div>
 
         {/* RIGHT — alerts + language */}
@@ -432,6 +352,90 @@ export default function Settings() {
             </div>
           </SectionCard>
         </div>
+      </div>
+
+      {/* Full-width — My Scoring Criteria (donut + sliders need the room) */}
+      <div className="mt-5">
+        <SectionCard
+          icon={<Gauge size={15} />}
+          title="My Scoring Criteria"
+          desc="Weight the factors behind your own verdict. Every property shows your score next to the AI's."
+        >
+          {/* Preset chips — one tap to start, then fine-tune below */}
+          <div className="flex flex-wrap items-center gap-2">
+            {WEIGHT_PRESETS.map(p => {
+              const Icon = p.icon
+              const active = activePreset === p.id
+              return (
+                <button
+                  key={p.id} type="button" onClick={() => applyPreset(p.weights)}
+                  className={clsx(
+                    'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-semibold transition-all',
+                    active ? 'bg-accent/10 text-accent border-accent/40 ring-1 ring-accent/20'
+                           : 'bg-white text-muted border-surface-border hover:border-accent/40 hover:text-ink',
+                  )}
+                >
+                  <Icon size={13} /> {p.label}
+                </button>
+              )
+            })}
+            <span className={clsx(
+              'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-semibold',
+              activePreset === null ? 'bg-accent/10 text-accent border-accent/40 ring-1 ring-accent/20'
+                                    : 'border-dashed border-surface-border text-muted/70',
+            )}>
+              <SlidersHorizontal size={13} /> Custom
+            </span>
+            <button
+              type="button" onClick={resetWeightsToStrategy}
+              className="btn-ghost text-xs ml-auto" title="Reset to your strategy's default mix"
+            >
+              <RotateCcw size={13} /> Reset
+            </button>
+          </div>
+
+          {/* Donut + sliders */}
+          <div className="flex flex-col lg:flex-row gap-8 pt-4">
+            {/* Weight distribution donut */}
+            <div className="flex lg:flex-col items-center gap-4 shrink-0 mx-auto lg:mx-0">
+              <WeightDonut pct={pctMap} />
+              <div className="text-center">
+                <p className="text-[11px] font-semibold text-muted uppercase tracking-wider">Your mix</p>
+                <p className="text-[11px] text-muted mt-0.5 max-w-[140px]">
+                  Relative weight of each factor in your verdict.
+                </p>
+              </div>
+            </div>
+
+            {/* Sliders — two columns on wide screens now that it's full-width */}
+            <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3.5 min-w-0 content-start">
+              {SCORE_FACTORS.map(f => (
+                <div key={f}>
+                  <div className="flex items-center justify-between gap-3 mb-1">
+                    <div className="min-w-0 flex items-start gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0 mt-1" style={{ backgroundColor: FACTOR_COLOR[f] }} />
+                      <div className="min-w-0">
+                        <span className="text-sm font-semibold text-ink">{FACTOR_LABEL[f]}</span>
+                        <span className="block text-[11px] text-muted leading-snug">{FACTOR_DESC[f]}</span>
+                      </div>
+                    </div>
+                    <span className="text-sm font-bold font-mono shrink-0 tabular-nums w-11 text-right" style={{ color: FACTOR_COLOR[f] }}>
+                      {factorPct(f)}%
+                    </span>
+                  </div>
+                  <input
+                    type="range" min={0} max={100} step={1}
+                    value={weightPoints[f]}
+                    onChange={e => setWeightPoints(prev => ({ ...prev, [f]: Number(e.target.value) }))}
+                    aria-label={`${FACTOR_LABEL[f]} weight`}
+                    className="w-full"
+                    style={{ accentColor: FACTOR_COLOR[f] }}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        </SectionCard>
       </div>
     </div>
   )
@@ -499,8 +503,8 @@ function ToggleRow({ label, sub, value, onChange, icon }: { label: string; sub: 
         <div className="min-w-0"><p className="text-sm font-semibold text-ink leading-tight">{label}</p><p className="text-xs text-muted leading-snug mt-0.5">{sub}</p></div>
       </div>
       <button onClick={() => onChange(!value)} role="switch" aria-checked={value}
-        className={clsx('relative shrink-0 w-11 h-6 rounded-full transition-colors duration-200', value ? 'bg-accent' : 'bg-surface-border')}>
-        <span className={clsx('absolute top-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-transform duration-200', value ? 'translate-x-[22px]' : 'translate-x-0.5')} />
+        className={clsx('inline-flex shrink-0 items-center w-11 h-6 rounded-full px-0.5 transition-colors duration-200', value ? 'bg-accent' : 'bg-surface-border')}>
+        <span className={clsx('inline-block w-5 h-5 rounded-full bg-white shadow-sm transition-transform duration-200', value ? 'translate-x-5' : 'translate-x-0')} />
       </button>
     </div>
   )

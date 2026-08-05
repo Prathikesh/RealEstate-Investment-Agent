@@ -9,8 +9,8 @@ import GoogleButton from './GoogleButton'
 interface LocationState { from?: { pathname: string } }
 
 const COPY = {
-  en: { eyebrow: 'Welcome back', title: 'Sign in to Plexa', subtitle: 'Your Quebec deal pipeline is one click away.', email: 'Email', password: 'Password', forgot: 'Forgot?', submit: 'Sign in', submitting: 'Signing in…', noAccount: "Don’t have an account?", create: 'Create one free', err: 'Invalid email or password', or: 'or', google: 'Sign in with Google' },
-  fr: { eyebrow: 'Bon retour', title: 'Connexion à Plexa', subtitle: 'Votre pipeline d’occasions au Québec, à un clic.', email: 'Courriel', password: 'Mot de passe', forgot: 'Oublié ?', submit: 'Se connecter', submitting: 'Connexion…', noAccount: 'Pas encore de compte ?', create: 'Créez-en un gratuitement', err: 'Courriel ou mot de passe invalide', or: 'ou', google: 'Se connecter avec Google' },
+  en: { eyebrow: 'Welcome back', title: 'Sign in to PlexAI', subtitle: 'Your Quebec deal pipeline is one click away.', email: 'Email', password: 'Password', forgot: 'Forgot?', submit: 'Sign in', submitting: 'Signing in…', noAccount: "Don’t have an account?", create: 'Create one free', err: 'Invalid email or password', or: 'or', google: 'Sign in with Google' },
+  fr: { eyebrow: 'Bon retour', title: 'Connexion à PlexAI', subtitle: 'Votre pipeline d’occasions au Québec, à un clic.', email: 'Courriel', password: 'Mot de passe', forgot: 'Oublié ?', submit: 'Se connecter', submitting: 'Connexion…', noAccount: 'Pas encore de compte ?', create: 'Créez-en un gratuitement', err: 'Courriel ou mot de passe invalide', or: 'ou', google: 'Se connecter avec Google' },
 }
 
 const OAUTH_ERROR_MESSAGES: Record<string, string> = {
