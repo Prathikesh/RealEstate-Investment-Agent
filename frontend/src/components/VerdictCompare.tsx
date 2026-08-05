@@ -34,6 +34,13 @@ const CAT_LABEL_KEY: Record<string, 'strongOpportunity' | 'worthInvestigating' |
   not_recommended:     'notRecommended',
 }
 
+// Friendly strategy names — the raw enum ("both") reads badly in a sentence.
+const STRATEGY_LABEL: Record<string, string> = {
+  buy_and_hold: 'Buy & Hold',
+  buy_fix_sell: 'Flip (Fix & Sell)',
+  both:         'Buy & Hold + Flip',
+}
+
 function VerdictTile({
   icon, title, subtitle, score, category, accent,
 }: {
@@ -91,6 +98,16 @@ export default function VerdictCompare({
   const aiCategory = prop.score_category ?? (aiScore != null ? scoreToCategory(aiScore) : 'not_recommended')
 
   const delta = aiScore != null ? yourScore - aiScore : null
+  // "Your Verdict" only tells the investor something new once it diverges from
+  // the AI — either because they set custom weights, or because they're running
+  // live financing scenarios. Until then it mirrors the AI, so we say so plainly
+  // rather than showing two identical numbers that look broken.
+  const personalized = customValid || !!live
+  const yourSubtitle = live
+    ? 'your weights · live'
+    : personalized
+      ? 'your weights'
+      : 'mirrors AI until you set your weights'
 
   return (
     <div className={clsx('card p-5 space-y-3', className)}>
@@ -118,10 +135,10 @@ export default function VerdictCompare({
         <VerdictTile
           icon={<SlidersHorizontal size={12} className="text-accent" />}
           title="Your Verdict"
-          subtitle={live ? 'your weights · live' : 'your weights'}
+          subtitle={yourSubtitle}
           score={yourScore}
           category={yourCategory}
-          accent
+          accent={personalized}
         />
       </div>
 
@@ -129,7 +146,7 @@ export default function VerdictCompare({
         <span>
           {customValid
             ? 'Using your custom scoring criteria.'
-            : `Using your ${strategy.replace(/_/g, ' ')} strategy defaults.`}
+            : `Using your ${STRATEGY_LABEL[strategy]} defaults — set your own in Settings.`}
         </span>
         <Link to="/settings" className="inline-flex items-center gap-0.5 text-accent font-semibold hover:underline">
           Adjust criteria <ArrowUpRight size={12} />

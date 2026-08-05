@@ -270,10 +270,15 @@ export default function FinancingWorkbench({ prop, pricePerSqft }: { prop: Prope
         </div>
       </div>
 
-      {/* Live verdict — recomputes from the cap rate / cash flow below as the
-          user changes the down payment, rate, rent, etc. */}
+      {/* Verdict — matches the stored analysis at rest, then recomputes live
+          from the cap rate / cash flow below once the user changes a term.
+          Gating on `modified` keeps this consistent with the static card on the
+          AI Verdict tab until the user actually starts running scenarios. */}
       <div className="px-4 sm:px-5 pt-4">
-        <VerdictCompare prop={prop} live={{ capRatePct: capRate, monthlyCashFlow: monthlyCF }} />
+        <VerdictCompare
+          prop={prop}
+          live={modified ? { capRatePct: capRate, monthlyCashFlow: monthlyCF } : undefined}
+        />
       </div>
 
       <div className="p-4 sm:p-5 grid grid-cols-1 lg:grid-cols-5 gap-4">
