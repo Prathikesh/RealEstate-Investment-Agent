@@ -122,7 +122,7 @@ export default function Dashboard() {
           <Metric
             label="Total properties"
             value={stats?.total_properties.toLocaleString() ?? '—'}
-            sublabel="in database"
+            sublabel="across Quebec"
             icon={<Home size={18} />}
             iconColor="text-blue-600"
             iconBg="bg-blue-50"

@@ -97,7 +97,7 @@ export default function Reports() {
       {/* ── Metric strip ────────────────────────────────────────────────── */}
       <div className="bg-surface-card border border-surface-border rounded-2xl shadow-card overflow-hidden">
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 divide-x divide-y sm:divide-y-0 divide-surface-border">
-          <Metric label="Total listings"    value={total.toLocaleString()}                                sublabel="in database"     icon={<Home size={18} />}          iconColor="text-blue-600"        iconBg="bg-blue-50" />
+          <Metric label="Total listings"    value={total.toLocaleString()}                                sublabel="across Quebec"     icon={<Home size={18} />}          iconColor="text-blue-600"        iconBg="bg-blue-50" />
           <Metric label="New today"         value={stats?.new_today ?? 0}                                 sublabel="added today"     icon={<Zap size={18} />}           iconColor="text-accent"          iconBg="bg-accent/10"        to="/properties?listed_within=24h" />
           <Metric label="Great deals"       value={stats?.strong_opportunities ?? 0}                      sublabel="score 80+"       icon={<TrendingUp size={18} />}    iconColor="text-score-strong"    iconBg="bg-score-strong/10"  to="/properties?score_min=80&sort_by=score" />
           <Metric label="Worth checking"    value={stats?.worth_investigating ?? 0}                       sublabel="score 60–79"     icon={<BarChart2 size={18} />}     iconColor="text-score-worth"     iconBg="bg-score-worth/10"   to="/properties?score_min=60&sort_by=score" />
