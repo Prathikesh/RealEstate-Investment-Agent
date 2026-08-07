@@ -1,8 +1,12 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import clsx from 'clsx'
 import { ShieldCheck, SlidersHorizontal, RotateCcw, Landmark, FileText, Percent, ClipboardList } from 'lucide-react'
 import type { PropertyDetail } from '../api'
 import VerdictCompare from './VerdictCompare'
+import {
+  loadFinancingScenario, saveFinancingScenario, clearFinancingScenario,
+  type FinancingLive,
+} from '../lib/financingScenario'
 
 /**
  * Financing analysis — broker underwriting sheet.
@@ -162,7 +166,13 @@ const UNITS_BY_TYPE: Record<string, number> = {
 }
 const DEFAULT_RENT_PER_UNIT = 1200
 
-export default function FinancingWorkbench({ prop, pricePerSqft }: { prop: PropertyDetail; pricePerSqft?: number | null }) {
+export default function FinancingWorkbench({ prop, pricePerSqft, onScenarioChange }: {
+  prop: PropertyDetail
+  pricePerSqft?: number | null
+  /** Lifts the live cap-rate/cash-flow up so PropertyPage can drive the AI Verdict
+   *  tab's verdict too (undefined = user is at listing defaults). */
+  onScenarioChange?: (live: FinancingLive | undefined) => void
+}) {
   const listPrice   = prop.asking_price ?? 0
   const hasRentData = prop.rental_income_monthly != null && prop.rental_income_monthly > 0
   const estUnits    = prop.unit_count ?? UNITS_BY_TYPE[prop.property_type] ?? 2
@@ -181,22 +191,28 @@ export default function FinancingWorkbench({ prop, pricePerSqft }: { prop: Prope
     maintPct:   '0',
   }), [prop.id])  // eslint-disable-line react-hooks/exhaustive-deps
 
-  const [offer, setOffer]           = useState(defaults.offer)
-  const [downPctS, setDownPctS]     = useState(defaults.downPct)
-  const [rate, setRate]             = useState(defaults.rate)
-  const [amort, setAmort]           = useState(defaults.amort)
-  const [freq, setFreq]             = useState<Frequency>(defaults.freq)
-  const [rentEst, setRentEst]       = useState(defaults.rentEst)
-  const [vacancyPct, setVacancyPct] = useState(defaults.vacancyPct)
-  const [mgmtPct, setMgmtPct]       = useState(defaults.mgmtPct)
-  const [insurance, setInsurance]   = useState(defaults.insurance)
-  const [maintPct, setMaintPct]     = useState(defaults.maintPct)
+  // Restore a previously-saved scenario for this property (survives reload/nav).
+  const saved = useMemo(() => loadFinancingScenario(prop.id)?.inputs, [prop.id])
+  const init = saved ?? defaults
+
+  const [offer, setOffer]           = useState(init.offer)
+  const [downPctS, setDownPctS]     = useState(init.downPct)
+  const [rate, setRate]             = useState(init.rate)
+  const [amort, setAmort]           = useState(init.amort)
+  const [freq, setFreq]             = useState<Frequency>(init.freq)
+  const [rentEst, setRentEst]       = useState(init.rentEst)
+  const [vacancyPct, setVacancyPct] = useState(init.vacancyPct)
+  const [mgmtPct, setMgmtPct]       = useState(init.mgmtPct)
+  const [insurance, setInsurance]   = useState(init.insurance)
+  const [maintPct, setMaintPct]     = useState(init.maintPct)
 
   const reset = () => {
     setOffer(defaults.offer); setDownPctS(defaults.downPct)
     setRate(defaults.rate); setAmort(defaults.amort); setFreq(defaults.freq)
     setRentEst(defaults.rentEst); setVacancyPct(defaults.vacancyPct); setMgmtPct(defaults.mgmtPct)
     setInsurance(defaults.insurance); setMaintPct(defaults.maintPct)
+    clearFinancingScenario(prop.id)
+    onScenarioChange?.(undefined)
   }
 
   const modified =
@@ -239,6 +255,26 @@ export default function FinancingWorkbench({ prop, pricePerSqft }: { prop: Prope
   const cashToClose = dAmt + (transferTax ?? 0)
   const coc         = cashToClose > 0 ? (annualCF / cashToClose) * 100 : 0
 
+  // Persist the scenario (per property) and lift the live values up so the AI
+  // Verdict tab reacts to the same "what if" numbers. Only the derived cap-rate/
+  // cash-flow matter to the verdict; we gate on `modified` to stay identical to
+  // the stored analysis until the user actually changes a term.
+  const live: FinancingLive | undefined = modified
+    ? { capRatePct: capRate, monthlyCashFlow: monthlyCF }
+    : undefined
+  useEffect(() => {
+    if (modified) {
+      saveFinancingScenario(prop.id, {
+        inputs: { offer, downPct: downPctS, rate, amort, freq, rentEst, vacancyPct, mgmtPct, insurance, maintPct },
+        live, modified: true,
+      })
+    } else {
+      clearFinancingScenario(prop.id)
+    }
+    onScenarioChange?.(live)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prop.id, offer, downPctS, rate, amort, freq, rentEst, vacancyPct, mgmtPct, insurance, maintPct])
+
   const freqNoun = freq === 'monthly' ? 'per month' : freq === 'biweekly' ? 'every two weeks' : 'per week'
 
   const selectCls =
@@ -275,10 +311,7 @@ export default function FinancingWorkbench({ prop, pricePerSqft }: { prop: Prope
           Gating on `modified` keeps this consistent with the static card on the
           AI Verdict tab until the user actually starts running scenarios. */}
       <div className="px-4 sm:px-5 pt-4">
-        <VerdictCompare
-          prop={prop}
-          live={modified ? { capRatePct: capRate, monthlyCashFlow: monthlyCF } : undefined}
-        />
+        <VerdictCompare prop={prop} live={live} />
       </div>
 
       <div className="p-4 sm:p-5 grid grid-cols-1 lg:grid-cols-5 gap-4">

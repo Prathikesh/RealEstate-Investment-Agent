@@ -5,6 +5,7 @@ import {
   Zap, Activity, ArrowDownCircle, BarChart2, ArrowRight,
 } from 'lucide-react'
 import { fetchStats, fetchProperties } from '../api'
+import { useAuth } from '../auth/AuthContext'
 import PropertyCardGrid from '../components/PropertyCardGrid'
 
 function fmtCAD(v: number | null): string {
@@ -55,10 +56,17 @@ function Metric({ label, value, sublabel, icon, iconColor, iconBg, to }: MetricP
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function Reports() {
+  const { user } = useAuth()
+  // "Best deals" ranks by the broker's own criteria once they've set them.
+  const rankMode: 'ai' | 'your' = user?.custom_score_weights ? 'your' : 'ai'
   const { data: stats } = useQuery({ queryKey: ['stats'], queryFn: fetchStats })
   const { data: bestDeals } = useQuery({
-    queryKey: ['properties', 'reports-best'],
-    queryFn: () => fetchProperties({ sort_by: 'score', score_min: 50, page_size: 8 }),
+    queryKey: ['properties', 'reports-best', rankMode],
+    queryFn: () => fetchProperties(
+      rankMode === 'your'
+        ? { sort_by: 'your_verdict', your_score_min: 50, page_size: 8 }
+        : { sort_by: 'score', score_min: 50, page_size: 8 },
+    ),
   })
   const { data: newest } = useQuery({
     queryKey: ['properties', 'reports-newest'],
@@ -164,16 +172,21 @@ export default function Reports() {
           <div className="flex items-center gap-2">
             <TrendingUp size={16} className="text-score-strong" />
             <h2 className="font-bold text-ink text-base">Best Deals</h2>
-            <span className="text-xs px-2 py-0.5 bg-score-strong/10 text-score-strong rounded-full font-semibold">Score 50+</span>
+            <span className="text-xs px-2 py-0.5 bg-score-strong/10 text-score-strong rounded-full font-semibold">
+              {rankMode === 'your' ? 'Your score 50+' : 'Score 50+'}
+            </span>
           </div>
-          <Link to="/properties?sort_by=score&score_min=50" className="flex items-center gap-1 text-sm text-accent hover:underline font-semibold">
+          <Link
+            to={rankMode === 'your' ? '/properties?sort_by=your_verdict' : '/properties?sort_by=score&score_min=50'}
+            className="flex items-center gap-1 text-sm text-accent hover:underline font-semibold"
+          >
             View all <ChevronRight size={14} />
           </Link>
         </div>
 
         {bestDeals?.items && bestDeals.items.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-            {bestDeals.items.map(p => <PropertyCardGrid key={p.id} property={p} />)}
+            {bestDeals.items.map(p => <PropertyCardGrid key={p.id} property={p} rankMode={rankMode} />)}
           </div>
         ) : (
           <div className="card py-12 text-center space-y-2">

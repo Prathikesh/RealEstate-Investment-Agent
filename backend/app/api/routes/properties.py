@@ -25,6 +25,9 @@ from app.agent.constants import SOURCES
 from app.agent.full_analysis import run_full_analysis
 from app.agent.pipeline import InvestmentPipeline
 from app.agent.scorer import WEIGHTS
+from app.agent.verdict import (
+    effective_weights, weighted_score_expr, clamp_round, your_verdict_category,
+)
 from app.agent.zoning_matcher import current_units as _current_units
 from app.analytics.models import EventType
 from app.analytics.service import log_event
@@ -159,12 +162,13 @@ async def list_properties(
     price_max:     Optional[float] = Query(None),
     cap_rate_min:  Optional[float] = Query(None),
     cash_flow_min: Optional[float] = Query(None),
+    your_score_min: Optional[int] = Query(None, ge=0, le=100),  # Your Verdict threshold
     status:        Optional[str] = Query(None),
     multi_site:    Optional[bool] = Query(None),
     has_sqft:      Optional[bool] = Query(None),
     listed_within: Optional[str] = Query(None),  # 24h | 48h | 7d | 30d
-    # Sorting
-    sort_by: Literal["score", "price", "price_asc", "price_desc", "newest", "discount"] = Query("score"),
+    # Sorting. "your_verdict" ranks by the logged-in broker's own metrics.
+    sort_by: Literal["score", "your_verdict", "price", "price_asc", "price_desc", "newest", "discount"] = Query("score"),
     # Pagination
     page:      int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -172,7 +176,15 @@ async def list_properties(
     user: Optional[Broker] = Depends(get_current_user_optional),
 ) -> PropertyListResponse:
 
-    stmt = select(Property).where(Property.asking_price.isnot(None))
+    # Your Verdict — only meaningful for a logged-in broker. When present we
+    # compute their personalized score in-DB (from stored score_components) so we
+    # can both surface it on every card AND rank the whole set by it.
+    your_expr = weighted_score_expr(effective_weights(user)) if user is not None else None
+
+    if your_expr is not None:
+        stmt = select(Property, your_expr.label("your_score")).where(Property.asking_price.isnot(None))
+    else:
+        stmt = select(Property).where(Property.asking_price.isnot(None))
 
     # Filters
     if city:
@@ -216,6 +228,8 @@ async def list_properties(
         stmt = stmt.where(Property.cap_rate.isnot(None)).where(Property.cap_rate >= cap_rate_min)
     if cash_flow_min is not None:
         stmt = stmt.where(Property.monthly_cash_flow.isnot(None)).where(Property.monthly_cash_flow >= cash_flow_min)
+    if your_score_min is not None and your_expr is not None:
+        stmt = stmt.where(your_expr >= your_score_min)
     if status:
         try:
             s = PropertyStatus(status)
@@ -246,7 +260,11 @@ async def list_properties(
     total = await db.scalar(count_stmt) or 0
 
     # Sort
-    if sort_by == "score":
+    if sort_by == "your_verdict" and your_expr is not None:
+        # Ties broken by the AI score so equal-Your-Verdict rows stay stable.
+        stmt = stmt.order_by(your_expr.desc().nullslast(), Property.score.desc().nullslast())
+    elif sort_by in ("score", "your_verdict"):
+        # "your_verdict" with no logged-in broker → fall back to the AI score.
         stmt = stmt.order_by(Property.score.desc().nullslast())
     elif sort_by in ("price", "price_asc"):
         stmt = stmt.order_by(Property.asking_price.asc())
@@ -265,17 +283,24 @@ async def list_properties(
     )
 
     result = await db.execute(stmt)
-    items = list(result.scalars().all())
+    # With a Your Verdict expression the rows are (Property, your_score); otherwise
+    # they're bare Property entities. Normalize to (Property, your_raw) pairs.
+    if your_expr is not None:
+        items = [(row[0], row[1]) for row in result.all()]
+    else:
+        items = [(p, None) for p in result.scalars().all()]
     pages = max(1, -(-total // page_size))  # ceiling division
 
     cards = []
-    for p in items:
+    for p, your_raw in items:
         src_name, src_price = _lowest_price_source(p.sources)
         card = PropertyCard.model_validate(p)
         card.days_on_market      = compute_days_on_market(p)
         card.multi_site_count    = len([s for s in p.sources if s.is_active])
         card.lowest_price_source = src_name
         card.lowest_price        = src_price
+        card.your_score          = clamp_round(your_raw)
+        card.your_score_category = your_verdict_category(card.your_score)
         if p.zoning_zone:
             lot_m2, _ = _property_lot_m2(p)
             est = estimate_max_units(lot_m2, p.zoning_zone.rules or {})
@@ -291,7 +316,8 @@ async def list_properties(
                 "score_min": score_min if score_min > 0 else None,
                 "score_max": score_max if score_max < 100 else None,
                 "price_min": price_min, "price_max": price_max,
-                "cap_rate_min": cap_rate_min, "cash_flow_min": cash_flow_min, "status": status,
+                "cap_rate_min": cap_rate_min, "cash_flow_min": cash_flow_min,
+                "your_score_min": your_score_min, "status": status,
                 "multi_site": multi_site, "has_sqft": has_sqft, "listed_within": listed_within,
                 "sort_by": sort_by if sort_by != "score" else None,
             }.items() if v is not None

@@ -38,6 +38,10 @@ export interface PropertyCard {
   price_per_sqft: number | null
   score: number | null
   score_category: string | null
+  // Your Verdict — the logged-in broker's personalized score for this property,
+  // computed server-side. null for anonymous requests or un-scored (legacy) rows.
+  your_score?: number | null
+  your_score_category?: string | null
   discount_pct: number | null
   cap_rate: number | null
   monthly_cash_flow: number | null
@@ -218,8 +222,9 @@ export interface PropertyFilters {
   price_max?: number
   cap_rate_min?: number
   cash_flow_min?: number
+  your_score_min?: number
   status?: string
-  sort_by?: 'score' | 'price' | 'newest' | 'discount' | 'price_asc' | 'price_desc'
+  sort_by?: 'score' | 'your_verdict' | 'price' | 'newest' | 'discount' | 'price_asc' | 'price_desc'
   listed_within?: '24h' | '48h' | '7d' | '30d'
   page?: number
   page_size?: number

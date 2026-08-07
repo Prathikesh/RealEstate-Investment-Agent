@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   Bell, Plus, Trash2, ChevronRight, Building2,
-  TrendingUp, ArrowDownCircle, Check, X, Zap, Percent, CircleDollarSign,
+  TrendingUp, ArrowDownCircle, Check, X, Zap, Percent, CircleDollarSign, SlidersHorizontal,
 } from 'lucide-react'
 import { fetchProperties, type PropertyCard, type PropertyFilters } from '../api'
 
@@ -13,7 +13,7 @@ import { fetchProperties, type PropertyCard, type PropertyFilters } from '../api
 // Metric-based alerts: pick a metric (+ threshold for numeric ones) and,
 // optionally, restrict to a city. Threshold metrics use "at or above" (gte),
 // which matches how investors think ("alert me when cap rate ≥ 6%").
-type AlertMetric = 'new_listing' | 'price_drop' | 'score' | 'cap_rate' | 'cash_flow'
+type AlertMetric = 'new_listing' | 'price_drop' | 'score' | 'your_verdict' | 'cap_rate' | 'cash_flow'
 
 interface AlertRule {
   id: string
@@ -89,6 +89,7 @@ const METRIC_META: Record<AlertMetric, MetricMeta> = {
   new_listing: { label: 'New Listings', desc: 'Any new property (optionally in a city)', icon: <Plus size={15} />,            color: 'text-accent',       bg: 'bg-accent/10',       border: 'border-accent/30',       needsValue: false },
   price_drop:  { label: 'Price Drops',  desc: 'Listings whose price just dropped',        icon: <ArrowDownCircle size={15} />, color: 'text-red-500',      bg: 'bg-red-50',          border: 'border-red-200',         needsValue: false },
   score:       { label: 'AI Score',     desc: 'AI score at or above your threshold',      icon: <TrendingUp size={15} />,      color: 'text-score-strong', bg: 'bg-score-strong/10', border: 'border-score-strong/30', needsValue: true, unit: '/100', defaultValue: 70, min: 40, max: 95, step: 5 },
+  your_verdict:{ label: 'Your Verdict',  desc: 'Your personalized score at or above your target', icon: <SlidersHorizontal size={15} />, color: 'text-accent',     bg: 'bg-accent/10',       border: 'border-accent/30',       needsValue: true, unit: '/100', defaultValue: 70, min: 40, max: 95, step: 5 },
   cap_rate:    { label: 'Cap Rate',     desc: 'Cap rate at or above your target',         icon: <Percent size={15} />,         color: 'text-emerald-600',  bg: 'bg-emerald-50',      border: 'border-emerald-200',     needsValue: true, unit: '%',    defaultValue: 6,  min: 1, max: 12, step: 0.5 },
   cash_flow:   { label: 'Cash Flow',    desc: 'Monthly cash flow at or above your target', icon: <CircleDollarSign size={15} />, color: 'text-blue-600',     bg: 'bg-blue-50',         border: 'border-blue-200',        needsValue: true, unit: '$/mo', defaultValue: 200, min: -500, max: 3000, step: 50 },
 }
@@ -105,6 +106,7 @@ function ruleLabel(metric: AlertMetric, value?: number, city?: string): string {
     case 'new_listing': return `New listings${inCity}`
     case 'price_drop':  return `Price drops${suffix}`
     case 'score':       return `AI score ≥ ${value}${suffix}`
+    case 'your_verdict': return `Your Verdict ≥ ${value}${suffix}`
     case 'cap_rate':    return `Cap rate ≥ ${value}%${suffix}`
     case 'cash_flow':   return `Cash flow ≥ $${value}/mo${suffix}`
   }
@@ -116,6 +118,7 @@ function buildRuleFilters(rule: AlertRule): PropertyFilters {
     case 'new_listing': return { ...base, sort_by: 'newest', listed_within: '7d' }
     case 'price_drop':  return { ...base, sort_by: 'discount' }
     case 'score':       return { ...base, sort_by: 'score', score_min: rule.value ?? 70 }
+    case 'your_verdict': return { ...base, sort_by: 'your_verdict', your_score_min: rule.value ?? 70 }
     case 'cap_rate':    return { ...base, sort_by: 'score', cap_rate_min: rule.value ?? 6 }
     case 'cash_flow':   return { ...base, sort_by: 'score', cash_flow_min: rule.value ?? 200 }
   }

@@ -100,12 +100,14 @@ export function cashFlowComponent(monthlyCashFlow: number | null | undefined): n
  * Weighted sum of components × weights, clamped 0-100. This is the base score
  * before backend-only modifiers (risk/neighbourhood/unverified-income cap).
  *
- * We deliberately do NOT re-apply those modifiers on the client: they depend on
- * data the client doesn't fully have (risk items, neighbourhood percentiles).
- * Instead, for the AI verdict we show the authoritative stored `score`; "Your
- * Verdict" is presented as a transparent weighted blend of the same factor
- * scores, which is exactly the "move the numbers around" tool the client asked
- * for — not a claim to reproduce the AI's risk overrides.
+ * We deliberately do NOT re-apply the risk/neighbourhood modifiers on the client:
+ * they depend on data the client doesn't fully have (risk items, neighbourhood
+ * percentiles). The one exception is the unverified-income cap, whose value IS
+ * carried in the stored components, so we honour it (see below) to avoid ranking
+ * fabricated-income listings above disclosed-income ones. Otherwise "Your Verdict"
+ * is a transparent weighted blend of the same factor scores — the "move the
+ * numbers around" tool the client asked for — not a claim to reproduce the AI's
+ * risk overrides. For the AI verdict we still show the authoritative stored `score`.
  */
 export function computeWeightedScore(
   components: ScoreComponents,
@@ -116,6 +118,14 @@ export function computeWeightedScore(
     const c = components[factor]
     if (c != null) total += c * weights[factor]
   }
+  // Data-integrity guard, mirroring backend verdict.py: when the listing's income
+  // was estimated (not disclosed), honour the same hard cap the AI applies so a
+  // broker weighting yield high can't push a fabricated-income listing to the top.
+  // This is the one backend modifier we DO re-apply client-side, because its value
+  // (unverified_income_cap) is carried in the stored components — unlike the risk /
+  // neighbourhood modifiers, which need data the client doesn't have.
+  const cap = components.unverified_income_cap
+  if (cap != null && cap > 0) total = Math.min(total, cap)
   return clamp(Math.round(total))
 }
 

@@ -81,6 +81,12 @@ class PropertyCard(BaseModel):
 
     score:              Optional[int]
     score_category:     Optional[str]
+    # Your Verdict — the logged-in broker's score for this property, recombining
+    # the same stored components with their own weights (see app/agent/verdict.py).
+    # Computed server-side so the list can rank the whole set by the broker's
+    # metrics. None for anonymous requests or legacy rows without a breakdown.
+    your_score:          Optional[int] = None
+    your_score_category: Optional[str] = None
     discount_pct:       Optional[float]
     cap_rate:           Optional[float]
     monthly_cash_flow:  Optional[float]

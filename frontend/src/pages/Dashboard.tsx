@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { fetchStats, fetchProperties } from '../api'
 import { useLang } from '../context/LanguageContext'
+import { useAuth } from '../auth/AuthContext'
 import PropertyCardGrid from '../components/PropertyCardGrid'
 
 function fmtCAD(v: number | null): string {
@@ -81,6 +82,7 @@ function Metric({ label, value, sublabel, icon, iconColor, iconBg, loading, to }
 
 export default function Dashboard() {
   const { t } = useLang()
+  const { user } = useAuth()
 
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ['stats'],
@@ -88,9 +90,18 @@ export default function Dashboard() {
     refetchInterval: 60_000,
   })
 
+  // When the broker has set their own scoring criteria, the "top opportunities"
+  // section ranks by THEIR metrics (Your Verdict) instead of the AI score — the
+  // client's "analyze every property on their own numbers" request, surfaced on
+  // the home screen. Falls back to the AI ranking for brokers on defaults.
+  const rankMode: 'ai' | 'your' = user?.custom_score_weights ? 'your' : 'ai'
   const { data: topDeals, isLoading: dealsLoading } = useQuery({
-    queryKey: ['properties', 'top-dashboard'],
-    queryFn: () => fetchProperties({ sort_by: 'score', page_size: 12, score_min: 60 }),
+    queryKey: ['properties', 'top-dashboard', rankMode],
+    queryFn: () => fetchProperties(
+      rankMode === 'your'
+        ? { sort_by: 'your_verdict', page_size: 12, your_score_min: 60 }
+        : { sort_by: 'score', page_size: 12, score_min: 60 },
+    ),
   })
 
   const { data: newListings } = useQuery({
@@ -195,10 +206,14 @@ export default function Dashboard() {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="font-bold text-ink text-base">{t('topOpps')}</h2>
-            <p className="text-xs text-muted">Best investment opportunities right now</p>
+            <p className="text-xs text-muted">
+              {rankMode === 'your'
+                ? 'Ranked by your own scoring criteria'
+                : 'Best investment opportunities right now'}
+            </p>
           </div>
           <Link
-            to="/properties?sort_by=score&score_min=60"
+            to={rankMode === 'your' ? '/properties?sort_by=your_verdict' : '/properties?sort_by=score&score_min=60'}
             className="flex items-center gap-1 text-sm text-accent hover:underline font-semibold"
           >
             View all <ChevronRight size={14} />
@@ -212,7 +227,7 @@ export default function Dashboard() {
         ) : topDeals?.items.length ? (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
             {topDeals.items.map(p => (
-              <PropertyCardGrid key={p.id} property={p} />
+              <PropertyCardGrid key={p.id} property={p} rankMode={rankMode} />
             ))}
           </div>
         ) : (

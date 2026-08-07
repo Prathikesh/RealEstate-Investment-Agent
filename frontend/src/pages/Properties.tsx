@@ -12,6 +12,8 @@ import {
   type PropertyFilters,
 } from '../api'
 import { useLang } from '../context/LanguageContext'
+import { useAuth } from '../auth/AuthContext'
+import { Sparkles, SlidersHorizontal as SlidersIcon } from 'lucide-react'
 import ScoreBadge from '../components/ScoreBadge'
 import PropertyCardGrid from '../components/PropertyCardGrid'
 
@@ -66,6 +68,7 @@ type ViewMode = 'grid' | 'list' | 'map'
 
 export default function Properties() {
   const { lang } = useLang()
+  const { user } = useAuth()
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const [view, setView] = useState<ViewMode>('grid')
@@ -137,6 +140,12 @@ export default function Properties() {
     filters.listed_within || filters.price_min || filters.price_max
   )
 
+  // Rank-by mode: "your" ranks the whole set by the broker's own metrics
+  // (sort_by=your_verdict), "ai" by the platform score. Only offered to logged-in
+  // brokers — anonymous visitors always see the AI ranking.
+  const rankMode: 'ai' | 'your' = filters.sort_by === 'your_verdict' ? 'your' : 'ai'
+  const hasCustomWeights = !!user?.custom_score_weights
+
   return (
     <div className="p-6 space-y-4 max-w-[1400px] mx-auto">
 
@@ -146,10 +155,43 @@ export default function Properties() {
           <h1 className="text-xl font-bold text-ink">{lang === 'fr' ? 'Propriétés' : 'Properties'}</h1>
           <p className="text-sm text-muted">
             {data?.total != null ? `${data.total.toLocaleString()} listings found` : 'Loading…'}
+            {rankMode === 'your' && (
+              <span className="text-accent font-semibold">
+                {' · '}{lang === 'fr' ? 'classées selon vos critères' : 'ranked by your metrics'}
+              </span>
+            )}
           </p>
         </div>
         {/* View toggle + Filters */}
         <div className="flex items-center gap-2">
+          {/* Rank-by: AI vs My Metrics — the core "analyze every property on your
+              own numbers" control. Logged-in brokers only. */}
+          {user && (
+            <div className="flex items-center gap-0.5 p-0.5 bg-white border border-surface-border rounded-xl shadow-sm">
+              <button
+                onClick={() => setFilter('sort_by', 'score')}
+                title={lang === 'fr' ? 'Classer par score IA' : 'Rank by the AI score'}
+                className={clsx(
+                  'flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150',
+                  rankMode === 'ai' ? 'bg-accent text-white shadow-sm' : 'text-muted hover:text-ink',
+                )}
+              >
+                <Sparkles size={12} /> {lang === 'fr' ? 'IA' : 'AI'}
+              </button>
+              <button
+                onClick={() => setFilter('sort_by', 'your_verdict')}
+                title={hasCustomWeights
+                  ? (lang === 'fr' ? 'Classer selon vos critères' : 'Rank by your own metrics')
+                  : (lang === 'fr' ? 'Définissez vos critères dans Réglages' : 'Set your metrics in Settings first')}
+                className={clsx(
+                  'flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150',
+                  rankMode === 'your' ? 'bg-accent text-white shadow-sm' : 'text-muted hover:text-ink',
+                )}
+              >
+                <SlidersIcon size={12} /> {lang === 'fr' ? 'Mes critères' : 'My Metrics'}
+              </button>
+            </div>
+          )}
           <button
             onClick={() => setShowFilters(v => !v)}
             className={clsx(
@@ -180,6 +222,22 @@ export default function Properties() {
           </div>
         </div>
       </div>
+
+      {/* Prompt to personalize when ranking by "My Metrics" on strategy defaults */}
+      {rankMode === 'your' && !hasCustomWeights && (
+        <div className="flex items-center gap-2 text-xs bg-accent/5 border border-accent/20 text-ink rounded-xl px-3 py-2">
+          <Sparkles size={13} className="text-accent shrink-0" />
+          <span className="text-muted">
+            {lang === 'fr'
+              ? 'Classement selon les pondérations par défaut de votre stratégie. '
+              : 'Ranking on your strategy default weights. '}
+            <Link to="/settings" className="text-accent font-semibold hover:underline">
+              {lang === 'fr' ? 'Définissez vos propres critères' : 'Set your own criteria'}
+            </Link>
+            {lang === 'fr' ? ' pour un classement personnalisé.' : ' for a fully personalized ranking.'}
+          </span>
+        </div>
+      )}
 
       {/* ── Unified search + sort bar ─────────────────────────────────────── */}
       <div className="flex gap-2 flex-wrap items-center bg-white border border-surface-border rounded-2xl px-3 py-2 shadow-sm">
@@ -444,9 +502,9 @@ export default function Properties() {
             </div>
           )}
           {view === 'grid' ? (
-            <GridView data={data?.items} isLoading={isLoading} />
+            <GridView data={data?.items} isLoading={isLoading} rankMode={rankMode} />
           ) : (
-            <ListView data={data?.items} isLoading={isLoading} />
+            <ListView data={data?.items} isLoading={isLoading} rankMode={rankMode} />
           )}
         </div>
       )}
@@ -513,7 +571,7 @@ export default function Properties() {
 
 // ── Grid view ─────────────────────────────────────────────────────────────────
 
-function GridView({ data, isLoading }: { data?: import('../api').PropertyCard[]; isLoading: boolean }) {
+function GridView({ data, isLoading, rankMode }: { data?: import('../api').PropertyCard[]; isLoading: boolean; rankMode: 'ai' | 'your' }) {
   if (isLoading) {
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
@@ -537,7 +595,7 @@ function GridView({ data, isLoading }: { data?: import('../api').PropertyCard[];
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
       {(data ?? []).map(p => (
-        <PropertyCardGrid key={p.id} property={p} />
+        <PropertyCardGrid key={p.id} property={p} rankMode={rankMode} />
       ))}
     </div>
   )
@@ -546,10 +604,11 @@ function GridView({ data, isLoading }: { data?: import('../api').PropertyCard[];
 // ── List view (table) ─────────────────────────────────────────────────────────
 
 function ListView({
-  data, isLoading,
+  data, isLoading, rankMode,
 }: {
   data?: import('../api').PropertyCard[]
   isLoading: boolean
+  rankMode: 'ai' | 'your'
 }) {
   return (
     <div className="bg-white border border-surface-border rounded-xl overflow-hidden shadow-sm">
@@ -581,7 +640,14 @@ function ListView({
               : (data ?? []).map(p => (
                   <tr key={p.id} className="hover:bg-surface-hover transition-colors">
                     <td className="px-5 py-3">
-                      <ScoreBadge score={p.score} category={p.score_category} size="sm" />
+                      {rankMode === 'your' && p.your_score != null ? (
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[9px] font-black tracking-wider uppercase text-accent">You</span>
+                          <ScoreBadge score={p.your_score} category={p.your_score_category ?? null} size="sm" />
+                        </div>
+                      ) : (
+                        <ScoreBadge score={p.score} category={p.score_category} size="sm" />
+                      )}
                     </td>
                     <td className="px-5 py-3 max-w-xs">
                       <Link to={`/properties/${p.id}`} className="text-ink hover:text-accent hover:underline font-medium">

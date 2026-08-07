@@ -18,6 +18,7 @@ import clsx from 'clsx'
 import { API_BASE, fetchProperty, type PropertyDetail } from '../api'
 import ScoreBadge from '../components/ScoreBadge'
 import VerdictCompare from '../components/VerdictCompare'
+import { loadFinancingScenario, type FinancingLive } from '../lib/financingScenario'
 import { useLang } from '../context/LanguageContext'
 import FinancingWorkbench from '../components/FinancingWorkbench'
 import { STRATEGY_WEIGHTS } from '../lib/verdict'
@@ -122,6 +123,12 @@ export default function PropertyPage() {
   const { id } = useParams<{ id: string }>()
   const { t } = useLang()
   const [activeTab, setActiveTab] = useState<TabKey>('aiBrief')
+  // Live financing scenario, shared across tabs so "Your Verdict" reacts to the
+  // same down-payment / rate "what if" on the AI Verdict tab as in the workbench.
+  // Seeded from any saved scenario so it shows immediately after a reload.
+  const [liveScenario, setLiveScenario] = useState<FinancingLive | undefined>(
+    () => (id ? loadFinancingScenario(id)?.live : undefined),
+  )
   const { data: prop, isLoading, error } = useQuery({
     queryKey: ['property', id],
     queryFn: () => fetchProperty(id!),
@@ -379,8 +386,8 @@ export default function PropertyPage() {
 
       {/* ── Tab content ──────────────────────────────────────────────────── */}
       <div key={activeTab} className="tab-enter">
-        {activeTab === 'aiBrief'      && <BriefTab      prop={prop} />}
-        {activeTab === 'financials'   && <FinancialsTab prop={prop} t={t} pricePerSqft={pricePerSqft} />}
+        {activeTab === 'aiBrief'      && <BriefTab      prop={prop} live={liveScenario} />}
+        {activeTab === 'financials'   && <FinancialsTab prop={prop} t={t} pricePerSqft={pricePerSqft} onScenarioChange={setLiveScenario} />}
         {activeTab === 'comparables'  && <ComparablesTab prop={prop} t={t} />}
         {activeTab === 'priceHistory' && <PriceHistoryTab prop={prop} t={t} />}
         {activeTab === 'zoning'       && <ZoningTab prop={prop} />}
@@ -978,7 +985,7 @@ function InvestmentReport({ prop }: { prop: PropertyDetail }) {
           <div className="flex items-start justify-between">
             <div>
               <h3 className="text-base font-bold text-ink">Score Breakdown</h3>
-              <p className="text-sm text-muted mt-0.5">How each signal contributes to the score</p>
+              <p className="text-sm text-muted mt-0.5">Each factor's points (sub-score × weight) add up to the score</p>
             </div>
             {prop.score != null && (
               <div className="text-right">
@@ -1001,6 +1008,10 @@ function InvestmentReport({ prop }: { prop: PropertyDetail }) {
                       'text-sm font-black font-mono w-8 text-right',
                       f.score >= 70 ? 'text-emerald-700' : f.score >= 40 ? 'text-amber-600' : 'text-red-600',
                     )}>{f.score}</span>
+                    {/* Points this factor actually adds to the total (sub-score × weight) */}
+                    <span className="text-xs font-mono font-bold text-accent w-12 text-right" title="Points added to the score (sub-score × weight)">
+                      +{f.contribution.toFixed(1)}
+                    </span>
                   </div>
                 </div>
                 <div className="h-2.5 bg-surface-border rounded-full overflow-hidden">
@@ -1014,6 +1025,14 @@ function InvestmentReport({ prop }: { prop: PropertyDetail }) {
                 </div>
               </div>
             ))}
+          </div>
+          {/* Arithmetic footer — the contributions sum to the base score, so the
+              total is never a black box: it's the sum of the +pts above. */}
+          <div className="pt-3 mt-1 border-t border-surface-border flex items-center justify-between">
+            <span className="text-xs text-muted">Sum of factor points (before risk adjustments)</span>
+            <span className="text-sm font-black font-mono text-accent">
+              {factors.reduce((s, f) => s + f.contribution, 0).toFixed(1)} pts
+            </span>
           </div>
           {prop.analysis_confidence && (
             <div className="pt-3 border-t border-surface-border flex items-center justify-between text-xs text-muted">
@@ -1284,13 +1303,13 @@ function StoredAnalysisSection({ prop }: { prop: PropertyDetail }) {
 
 // ── Investment Verdict tab ────────────────────────────────────────────────────
 
-function BriefTab({ prop }: { prop: PropertyDetail }) {
+function BriefTab({ prop, live }: { prop: PropertyDetail; live?: FinancingLive }) {
   const hasFinancials = prop.asking_price != null
 
   return (
     <div className="space-y-5 animate-slide-up">
       <VerdictBanner prop={prop} />
-      <VerdictCompare prop={prop} />
+      <VerdictCompare prop={prop} live={live} />
       <InvestmentInsights prop={prop} />
 
       {hasFinancials ? (
@@ -1309,12 +1328,17 @@ function BriefTab({ prop }: { prop: PropertyDetail }) {
 
 // ── Financials tab ────────────────────────────────────────────────────────────
 
-function FinancialsTab({ prop, t, pricePerSqft }: { prop: PropertyDetail; t: (k: string) => string; pricePerSqft: number | null }) {
+function FinancialsTab({ prop, t, pricePerSqft, onScenarioChange }: {
+  prop: PropertyDetail
+  t: (k: string) => string
+  pricePerSqft: number | null
+  onScenarioChange?: (live: FinancingLive | undefined) => void
+}) {
   return (
     <div className="space-y-5">
 
       {/* ── Financing Workbench — single source for all financial values ── */}
-      <FinancingWorkbench prop={prop} pricePerSqft={pricePerSqft} />
+      <FinancingWorkbench prop={prop} pricePerSqft={pricePerSqft} onScenarioChange={onScenarioChange} />
 
       {/* ── Market comparison bar ── */}
       {prop.asking_price != null && prop.comparable_median_price != null && (

@@ -52,22 +52,33 @@ export function factorDisplayValue(prop: PropertyDetail, f: ScoreFactor): string
 export interface VerdictFactorRow {
   factor: ScoreFactor
   label: string
-  weightPct: number   // 0-100
-  score: number       // 0-100 component sub-score
-  value: string       // raw display value
+  weightPct: number     // 0-100
+  score: number         // 0-100 component sub-score
+  contribution: number  // points this factor adds to the total (score × weight)
+  value: string         // raw display value
 }
 
-/** Build the breakdown rows for a given weight set. Reused for AI and Your Verdict. */
+/**
+ * Build the breakdown rows for a given weight set. Reused for AI and Your Verdict.
+ * `contribution` (= sub-score × weight) is the actual points each factor adds to
+ * the total — the sum of all contributions IS the base score, which is what makes
+ * "how is this an 87?" answerable at a glance.
+ */
 export function buildFactorRows(
   prop: PropertyDetail,
   weights: ScoreWeights,
   components: ScoreComponents = componentsForProperty(prop),
 ): VerdictFactorRow[] {
-  return SCORE_FACTORS.map(f => ({
-    factor: f,
-    label: FACTOR_LABEL[f],
-    weightPct: Math.round((weights[f] ?? 0) * 100),
-    score: Math.round(components[f] ?? 0),
-    value: factorDisplayValue(prop, f),
-  }))
+  return SCORE_FACTORS.map(f => {
+    const score = components[f] ?? 0
+    const weight = weights[f] ?? 0
+    return {
+      factor: f,
+      label: FACTOR_LABEL[f],
+      weightPct: Math.round(weight * 100),
+      score: Math.round(score),
+      contribution: Math.round(score * weight * 10) / 10,
+      value: factorDisplayValue(prop, f),
+    }
+  })
 }

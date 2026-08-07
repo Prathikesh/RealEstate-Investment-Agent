@@ -38,13 +38,25 @@ function VerdictChip({ category }: { category: string | null }) {
 interface Props {
   property: PropertyCard
   className?: string
+  /** 'your' shows the broker's personalized score on the badge/chip; 'ai' (or
+   *  undefined) shows the AI score. Set by the Properties "Rank by" toggle. */
+  rankMode?: 'ai' | 'your'
 }
 
-export default function PropertyCardGrid({ property: p, className }: Props) {
+export default function PropertyCardGrid({ property: p, className, rankMode }: Props) {
   const { lang } = useLang()
   const { toggle, has, isFull } = useCompare()
   const inCompare = has(p.id)
   const photos = p.photos ?? []
+
+  // Which verdict this card shows. In "your" mode we surface the broker's own
+  // score when it exists, falling back to the AI score for un-scored (legacy)
+  // rows so the card never goes blank. `showLabel` tags the badge AI/You so it's
+  // unambiguous which number is on screen once two verdicts are in play.
+  const yourMode    = rankMode === 'your' && p.your_score != null
+  const badgeScore  = yourMode ? p.your_score! : p.score
+  const badgeCat    = yourMode ? (p.your_score_category ?? null) : p.score_category
+  const showLabel   = rankMode != null && p.your_score != null
 
   const capRateClass =
     p.cap_rate == null        ? 'text-muted' :
@@ -133,7 +145,17 @@ export default function PropertyCardGrid({ property: p, className }: Props) {
 
         {/* Top-right: score + compare */}
         <div className="absolute top-3 right-3 flex flex-col items-end gap-1.5">
-          <ScoreBadge score={p.score} category={p.score_category} size="card" />
+          <div className="flex flex-col items-center gap-0.5">
+            {showLabel && (
+              <span className={clsx(
+                'px-1.5 py-px rounded-full text-[9px] font-black tracking-wider uppercase shadow-sm',
+                yourMode ? 'bg-accent text-white' : 'bg-white/90 text-slate-500',
+              )}>
+                {yourMode ? 'You' : 'AI'}
+              </span>
+            )}
+            <ScoreBadge score={badgeScore} category={badgeCat} size="card" />
+          </div>
           <button
             onClick={e => {
               e.preventDefault()
@@ -158,9 +180,9 @@ export default function PropertyCardGrid({ property: p, className }: Props) {
           </div>
         )}
 
-        {/* Bottom-left: verdict chip */}
+        {/* Bottom-left: verdict chip (reflects the active verdict) */}
         <div className="absolute bottom-3 left-3">
-          <VerdictChip category={p.score_category} />
+          <VerdictChip category={badgeCat} />
         </div>
       </div>
 
