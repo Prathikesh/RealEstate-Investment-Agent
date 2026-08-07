@@ -6,7 +6,11 @@ import clsx from 'clsx'
 import { fetchProperty } from '../api'
 import type { PropertyDetail } from '../api'
 import { useCompare } from '../context/CompareContext'
+import { useAuth } from '../auth/AuthContext'
+import { useMemo } from 'react'
 import ScoreBadge from '../components/ScoreBadge'
+import { computeWeightedScore, weightsAreValid, STRATEGY_WEIGHTS, type ScoreWeights } from '../lib/verdict'
+import { componentsForProperty } from '../lib/propertyVerdict'
 
 function fmtCAD(v: number | null | undefined): string {
   if (v == null) return '—'
@@ -82,6 +86,28 @@ function winnerIndex(row: Row, props: PropertyDetail[]): number | null {
 
 export default function Compare() {
   const { items, remove, clear } = useCompare()
+  const { user } = useAuth()
+
+  // Resolve the broker's Your Verdict weights (custom → strategy preset → both),
+  // matching VerdictCompare, then splice a "Your Verdict" row in next to "AI Score"
+  // so the comparison shows both the platform's and the investor's own scores.
+  const rows = useMemo<Row[]>(() => {
+    const strategy = user?.investment_strategy ?? 'both'
+    const customValid = user?.custom_score_weights && weightsAreValid(user.custom_score_weights)
+    const weights: ScoreWeights = customValid
+      ? (user!.custom_score_weights as ScoreWeights)
+      : STRATEGY_WEIGHTS[strategy]
+    const yourScore = (p: PropertyDetail) => computeWeightedScore(componentsForProperty(p), weights)
+    const yourRow: Row = {
+      group: 'Returns', label: 'Your Verdict', higherIsBetter: true,
+      getValue: p => `${yourScore(p)}/100`,
+      getRaw: p => yourScore(p),
+    }
+    const out = [...ROWS]
+    const aiIdx = out.findIndex(r => r.label === 'AI Score')
+    out.splice(aiIdx + 1, 0, yourRow)
+    return out
+  }, [user])
 
   const results = useQueries({
     queries: items.map(item => ({
@@ -112,7 +138,7 @@ export default function Compare() {
   }
 
   // Group rows by group label for section dividers
-  const groups = [...new Set(ROWS.map(r => r.group))]
+  const groups = [...new Set(rows.map(r => r.group))]
 
   return (
     <div className="p-6 space-y-6 animate-slide-up">
@@ -214,7 +240,7 @@ export default function Compare() {
             {/* ── Metric rows ── */}
             <tbody>
               {groups.map(group => {
-                const groupRows = ROWS.filter(r => r.group === group)
+                const groupRows = rows.filter(r => r.group === group)
                 return (
                   <>
                     {/* Group header */}
