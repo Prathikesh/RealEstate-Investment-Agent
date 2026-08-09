@@ -45,13 +45,22 @@ const WEIGHT_PRESETS: { id: string; label: string; icon: typeof Scale; weights: 
   { id: 'value',    label: 'Value / Flip', icon: Wrench,          weights: STRATEGY_WEIGHTS.buy_fix_sell },
 ]
 
-// Seed slider "points" (0-100 each) from stored fractional weights (×100),
-// falling back to the strategy preset when the user has no custom weights.
+// Seed slider points from stored fractional weights (×100). Points are a
+// direct 0-100 percentage that always sums to exactly 100 — the last factor
+// absorbs rounding drift so the invariant holds even after ×100 rounding.
 function pointsFromWeights(w: ScoreWeights): Record<ScoreFactor, number> {
-  return SCORE_FACTORS.reduce((acc, f) => {
-    acc[f] = Math.round((w[f] ?? 0) * 100)
-    return acc
-  }, {} as Record<ScoreFactor, number>)
+  const pts = {} as Record<ScoreFactor, number>
+  let acc = 0
+  SCORE_FACTORS.forEach((f, i) => {
+    if (i === SCORE_FACTORS.length - 1) {
+      pts[f] = Math.max(0, 100 - acc)
+    } else {
+      const v = Math.round((w[f] ?? 0) * 100)
+      pts[f] = v
+      acc += v
+    }
+  })
+  return pts
 }
 
 // ── Option data ──────────────────────────────────────────────────────────────
@@ -143,14 +152,10 @@ export default function Settings() {
     setWeightPoints(pointsFromWeights(user.custom_score_weights ?? STRATEGY_WEIGHTS[user.investment_strategy ?? 'both']))
   }, [user?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Live normalized share of each factor (always sums to 100). This is what the
-  // user sees while dragging — "cap rate is 24% of your score".
-  const pointsTotal = SCORE_FACTORS.reduce((sum, f) => sum + weightPoints[f], 0)
-  const factorPct = (f: ScoreFactor): number =>
-    pointsTotal > 0 ? Math.round((weightPoints[f] / pointsTotal) * 100) : 0
-
-  // Normalized 0-100 share map, used by the donut and preset-matching.
-  const pctMap = SCORE_FACTORS.reduce((m, f) => { m[f] = factorPct(f); return m }, {} as Record<ScoreFactor, number>)
+  // weightPoints IS the displayed percentage — it always sums to exactly 100,
+  // so the slider position and the label next to it are the same number.
+  // Used directly by the donut and preset-matching.
+  const pctMap = weightPoints
   // Highlight whichever preset the current mix matches (±1pt), else "Custom".
   const activePreset = WEIGHT_PRESETS.find(p =>
     SCORE_FACTORS.every(f => Math.abs(pctMap[f] - Math.round((p.weights[f] ?? 0) * 100)) <= 1),
@@ -163,6 +168,35 @@ export default function Settings() {
     setWeightPoints(pointsFromWeights(STRATEGY_WEIGHTS[strategyFromGoals(goals)]))
   }
 
+  // Drag factor `f` to `nextValue` (0-100): it takes that exact share, and the
+  // remaining 100-nextValue is redistributed across the other 6 factors in
+  // proportion to their current relative weights (so an existing tilt is
+  // preserved, just rescaled) — never just re-normalized after the fact. This
+  // is what keeps the slider position and its displayed % identical, and keeps
+  // every value on the track reachable (no dead zones from a drifting total).
+  function adjustWeight(f: ScoreFactor, nextValue: number) {
+    setWeightPoints(prev => {
+      const P = Math.max(0, Math.min(100, Math.round(nextValue)))
+      const others = SCORE_FACTORS.filter(x => x !== f)
+      const remainder = 100 - P
+      const othersTotal = others.reduce((s, x) => s + prev[x], 0)
+      const next = { ...prev, [f]: P }
+      let acc = 0
+      others.forEach((x, i) => {
+        const isLast = i === others.length - 1
+        if (isLast) {
+          next[x] = Math.max(0, remainder - acc)
+        } else {
+          const share = othersTotal > 0 ? prev[x] / othersTotal : 1 / others.length
+          const v = Math.round(share * remainder)
+          next[x] = v
+          acc += v
+        }
+      })
+      return next
+    })
+  }
+
   const phoneNeeded = (smsAlerts || whatsappAlerts) && digits(phone).length < 10
   const emailValid = !emailAlerts || (user?.email ? EMAIL_RE.test(user.email) : false)
   const canSave = !phoneNeeded && emailValid
@@ -171,18 +205,18 @@ export default function Settings() {
     setTypes(prev => prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v])
   }
 
-  // Normalize the relative slider points to fractions summing to 1.0, as the
-  // backend requires (see auth/routes.py custom_score_weights validation). The
-  // last factor absorbs rounding drift so the sum is exactly 1.0.
+  // Convert the slider points (already 0-100, summing to exactly 100) to
+  // fractions summing to 1.0, as the backend requires (see auth/routes.py
+  // custom_score_weights validation). The last factor absorbs rounding drift
+  // so the sum is exactly 1.0.
   function normalizedWeights(): ScoreWeights {
-    const total = SCORE_FACTORS.reduce((s, f) => s + weightPoints[f], 0) || 1
     const w = {} as ScoreWeights
     let acc = 0
     SCORE_FACTORS.forEach((f, i) => {
       if (i === SCORE_FACTORS.length - 1) {
         w[f] = Math.round((1 - acc) * 1000) / 1000
       } else {
-        const v = Math.round((weightPoints[f] / total) * 1000) / 1000
+        const v = Math.round((weightPoints[f] / 100) * 1000) / 1000
         w[f] = v
         acc += v
       }
@@ -420,13 +454,13 @@ export default function Settings() {
                       </div>
                     </div>
                     <span className="text-sm font-bold font-mono shrink-0 tabular-nums w-11 text-right" style={{ color: FACTOR_COLOR[f] }}>
-                      {factorPct(f)}%
+                      {weightPoints[f]}%
                     </span>
                   </div>
                   <input
                     type="range" min={0} max={100} step={1}
                     value={weightPoints[f]}
-                    onChange={e => setWeightPoints(prev => ({ ...prev, [f]: Number(e.target.value) }))}
+                    onChange={e => adjustWeight(f, Number(e.target.value))}
                     aria-label={`${FACTOR_LABEL[f]} weight`}
                     className="w-full"
                     style={{ accentColor: FACTOR_COLOR[f] }}
