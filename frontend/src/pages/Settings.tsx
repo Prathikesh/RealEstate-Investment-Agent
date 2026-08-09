@@ -27,19 +27,17 @@ const FACTOR_DESC: Record<ScoreFactor, string> = {
   price_history: 'Past price cuts signal a motivated seller',
 }
 
-// What a 0 and a 100 actually mean in real-world units for each factor —
-// mirrors the normalization bands in backend/app/agent/scorer.py. This is
-// what the "How this works" popup shows so the % next to a slider isn't a
-// bare, unexplained number (e.g. clarifying that "Days Listed" is a WEIGHT,
-// not the property's actual days-on-market — that lives on the property page).
-const FACTOR_SCALE: Record<ScoreFactor, string> = {
-  discount:      'Priced at market scores low; 20%+ below comparable sales scores highest.',
-  cap_rate:      'A 1% annual return scores lowest; 6%+ scores highest.',
-  cash_flow:     '–$3,000/mo scores lowest; +$500/mo or better scores highest.',
-  grm:           'An 18× gross-rent multiplier (weak) scores lowest; 10× (strong) scores highest.',
-  confidence:    'More comparable sales backing the numbers scores higher.',
-  dom_bonus:     'Listed under 7 days scores lowest; 90+ days on market scores highest — often a motivated seller.',
-  price_history: 'Multiple price drops score highest (motivated seller); a price increase scores lowest.',
+// Compact real-unit hint shown directly under each slider (not just in the
+// popup) — this is what actually shows the $ / days figures the client asked
+// for, right where he's looking, instead of behind a separate click.
+const FACTOR_UNIT_HINT: Record<ScoreFactor, string> = {
+  discount:      'at market → low  ·  20%+ off → high',
+  cap_rate:      '1% return → low  ·  6%+ → high',
+  cash_flow:     '–$3,000/mo → low  ·  +$500/mo → high',
+  grm:           '18× rent → low  ·  10× → high',
+  confidence:    'less comp data → low  ·  more → high',
+  dom_bonus:     '<7 days → low  ·  90+ days → high',
+  price_history: 'price ↑ → low  ·  repeat drops → high',
 }
 
 // A representative example listing's factor scores (0-100 each), used purely
@@ -485,6 +483,7 @@ export default function Settings() {
                       <div className="min-w-0">
                         <span className="text-sm font-semibold text-ink">{FACTOR_LABEL[f]}</span>
                         <span className="block text-[11px] text-muted leading-snug">{FACTOR_DESC[f]}</span>
+                        <span className="block text-[10px] text-muted/70 font-mono leading-snug mt-0.5">{FACTOR_UNIT_HINT[f]}</span>
                       </div>
                     </div>
                     <span className="text-sm font-bold font-mono shrink-0 tabular-nums w-11 text-right" style={{ color: FACTOR_COLOR[f] }}>
@@ -526,45 +525,46 @@ function ScoringCriteriaHelp({ weightPoints }: { weightPoints: Record<ScoreFacto
   return (
     <div className="space-y-5 text-sm">
       <p className="text-muted leading-relaxed">
-        The % next to each slider is how much that factor counts toward{' '}
-        <span className="font-semibold text-ink">Your Verdict</span> — it's a weight, not the
-        property's actual value. A property's real days-on-market or cash flow shows on its own
-        page; the slider just sets how heavily that factor is weighted across every listing.
+        Each % is a <span className="font-semibold text-ink">weight</span>, not the property's
+        actual value — a listing's real days-on-market or cash flow shows on its own page.
       </p>
 
-      <div className="space-y-3">
+      {/* Factor grid — mirrors the 2-col slider layout so it reads as "the same
+          list, with the units filled in," not a separate wall of prose. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         {SCORE_FACTORS.map(f => (
-          <div key={f} className="flex items-start gap-2.5">
-            <span className="w-2.5 h-2.5 rounded-full shrink-0 mt-1" style={{ backgroundColor: FACTOR_COLOR[f] }} />
+          <div key={f} className="flex items-start gap-2 p-2.5 rounded-lg border border-surface-border bg-surface/60">
+            <span className="w-2 h-2 rounded-full shrink-0 mt-1" style={{ backgroundColor: FACTOR_COLOR[f] }} />
             <div className="min-w-0">
               <p className="text-xs font-semibold text-ink leading-tight">{FACTOR_LABEL[f]}</p>
-              <p className="text-[11px] text-muted leading-snug mt-0.5">{FACTOR_SCALE[f]}</p>
+              <p className="text-[10px] text-muted font-mono leading-snug mt-0.5">{FACTOR_UNIT_HINT[f]}</p>
             </div>
           </div>
         ))}
       </div>
 
-      <div className="pt-4 border-t border-surface-border">
-        <p className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">
-          Your current mix, on an example listing
-        </p>
-        <div className="space-y-1.5">
+      {/* Worked example as a table-style card, not inline text rows. */}
+      <div className="rounded-xl border border-surface-border overflow-hidden">
+        <div className="px-3 py-2 bg-surface text-[11px] font-semibold text-muted uppercase tracking-wider">
+          Your mix, on an example listing
+        </div>
+        <div className="divide-y divide-surface-border">
           {rows.map(r => (
-            <div key={r.f} className="flex items-center justify-between text-xs tabular-nums">
-              <span className="text-muted">
-                {FACTOR_LABEL[r.f]}: {r.exampleScore}/100 score × {r.weightPct}% weight
-              </span>
-              <span className="font-semibold text-ink">+{r.points} pts</span>
+            <div key={r.f} className="flex items-center gap-3 px-3 py-2 text-xs">
+              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: FACTOR_COLOR[r.f] }} />
+              <span className="text-ink font-medium flex-1 min-w-0 truncate">{FACTOR_LABEL[r.f]}</span>
+              <span className="text-muted tabular-nums shrink-0">{r.exampleScore} × {r.weightPct}%</span>
+              <span className="font-semibold text-ink tabular-nums w-14 text-right shrink-0">+{r.points}</span>
             </div>
           ))}
-          <div className="flex items-center justify-between text-xs pt-1.5 mt-1.5 border-t border-surface-border">
-            <span className="font-semibold text-ink">Your Verdict for this example</span>
-            <span className="font-bold text-accent">{total}/100</span>
-          </div>
+        </div>
+        <div className="flex items-center justify-between px-3 py-2.5 bg-accent/10 border-t border-accent/20">
+          <span className="text-xs font-semibold text-ink">Your Verdict for this example</span>
+          <span className="text-sm font-bold text-accent">{total}/100</span>
         </div>
       </div>
 
-      <p className="text-[11px] text-muted leading-relaxed pt-1">
+      <p className="text-[11px] text-muted leading-relaxed">
         See these exact numbers for any real listing under its Score Breakdown tab.
       </p>
     </div>
