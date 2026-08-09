@@ -5,9 +5,11 @@ import { X } from 'lucide-react'
 // Criteria works"). Deliberately built on the app's existing shipped tokens
 // (surface/ink/muted/accent) rather than the in-progress design-system
 // tokens in components/ui/, so it can ship independently of that work.
+const SIZE_CLASS = { md: 'max-w-lg', lg: 'max-w-3xl' } as const
+
 export function InfoModal({
-  open, onClose, title, children,
-}: { open: boolean; onClose: () => void; title: string; children: React.ReactNode }) {
+  open, onClose, title, children, size = 'md',
+}: { open: boolean; onClose: () => void; title: string; children: React.ReactNode; size?: keyof typeof SIZE_CLASS }) {
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
@@ -24,7 +26,7 @@ export function InfoModal({
       role="presentation"
     >
       <div
-        className="w-full max-w-lg max-h-[85vh] overflow-y-auto bg-white border border-surface-border rounded-2xl shadow-card-hover p-6"
+        className={`w-full ${SIZE_CLASS[size]} max-h-[85vh] overflow-y-auto bg-white border border-surface-border rounded-2xl shadow-card-hover p-6 animate-scale-in`}
         onClick={e => e.stopPropagation()}
         role="dialog"
         aria-modal="true"

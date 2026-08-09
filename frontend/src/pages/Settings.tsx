@@ -505,7 +505,7 @@ export default function Settings() {
         </SectionCard>
       </div>
 
-      <InfoModal open={showScoringHelp} onClose={() => setShowScoringHelp(false)} title="How My Scoring Criteria works">
+      <InfoModal open={showScoringHelp} onClose={() => setShowScoringHelp(false)} title="How My Scoring Criteria works" size="lg">
         <ScoringCriteriaHelp weightPoints={weightPoints} />
       </InfoModal>
     </div>
@@ -523,44 +523,48 @@ function ScoringCriteriaHelp({ weightPoints }: { weightPoints: Record<ScoreFacto
   const total = Math.round(rows.reduce((s, r) => s + r.points, 0))
 
   return (
-    <div className="space-y-5 text-sm">
+    <div className="space-y-4 text-sm">
       <p className="text-muted leading-relaxed">
         Each % is a <span className="font-semibold text-ink">weight</span>, not the property's
         actual value — a listing's real days-on-market or cash flow shows on its own page.
       </p>
 
-      {/* Factor grid — mirrors the 2-col slider layout so it reads as "the same
-          list, with the units filled in," not a separate wall of prose. */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        {SCORE_FACTORS.map(f => (
-          <div key={f} className="flex items-start gap-2 p-2.5 rounded-lg border border-surface-border bg-surface/60">
-            <span className="w-2 h-2 rounded-full shrink-0 mt-1" style={{ backgroundColor: FACTOR_COLOR[f] }} />
-            <div className="min-w-0">
-              <p className="text-xs font-semibold text-ink leading-tight">{FACTOR_LABEL[f]}</p>
-              <p className="text-[10px] text-muted font-mono leading-snug mt-0.5">{FACTOR_UNIT_HINT[f]}</p>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Worked example as a table-style card, not inline text rows. */}
-      <div className="rounded-xl border border-surface-border overflow-hidden">
-        <div className="px-3 py-2 bg-surface text-[11px] font-semibold text-muted uppercase tracking-wider">
-          Your mix, on an example listing
-        </div>
-        <div className="divide-y divide-surface-border">
-          {rows.map(r => (
-            <div key={r.f} className="flex items-center gap-3 px-3 py-2 text-xs">
-              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: FACTOR_COLOR[r.f] }} />
-              <span className="text-ink font-medium flex-1 min-w-0 truncate">{FACTOR_LABEL[r.f]}</span>
-              <span className="text-muted tabular-nums shrink-0">{r.exampleScore} × {r.weightPct}%</span>
-              <span className="font-semibold text-ink tabular-nums w-14 text-right shrink-0">+{r.points}</span>
+      {/* Two columns on wide screens — factor list beside the worked example
+          instead of stacked, so the modal reads wide-and-short rather than a
+          tall scroll of sections. */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
+        {/* Factor list */}
+        <div className="lg:col-span-3 divide-y divide-surface-border">
+          {SCORE_FACTORS.map(f => (
+            <div key={f} className="flex items-start gap-2 py-2 first:pt-0">
+              <span className="w-2 h-2 rounded-full shrink-0 mt-1" style={{ backgroundColor: FACTOR_COLOR[f] }} />
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-ink leading-tight">{FACTOR_LABEL[f]}</p>
+                <p className="text-[10px] text-muted font-mono leading-snug mt-0.5">{FACTOR_UNIT_HINT[f]}</p>
+              </div>
             </div>
           ))}
         </div>
-        <div className="flex items-center justify-between px-3 py-2.5 bg-accent/10 border-t border-accent/20">
-          <span className="text-xs font-semibold text-ink">Your Verdict for this example</span>
-          <span className="text-sm font-bold text-accent">{total}/100</span>
+
+        {/* Worked example as a compact table-style card */}
+        <div className="lg:col-span-2 rounded-xl border border-surface-border overflow-hidden self-start">
+          <div className="px-3 py-1.5 bg-surface text-[10px] font-semibold text-muted uppercase tracking-wider">
+            Your mix, example listing
+          </div>
+          <div className="divide-y divide-surface-border">
+            {rows.map(r => (
+              <div key={r.f} className="flex items-center gap-2 px-3 py-1.5 text-[11px]">
+                <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: FACTOR_COLOR[r.f] }} />
+                <span className="text-ink font-medium flex-1 min-w-0 truncate">{FACTOR_LABEL[r.f]}</span>
+                <span className="text-muted tabular-nums shrink-0">{r.exampleScore}×{r.weightPct}%</span>
+                <span className="font-semibold text-ink tabular-nums w-10 text-right shrink-0">+{r.points}</span>
+              </div>
+            ))}
+          </div>
+          <div className="flex items-center justify-between px-3 py-2 bg-accent/10 border-t border-accent/20">
+            <span className="text-[11px] font-semibold text-ink">Your Verdict</span>
+            <span className="text-sm font-bold text-accent">{total}/100</span>
+          </div>
         </div>
       </div>
 
