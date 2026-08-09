@@ -4,6 +4,7 @@ import {
   Bell, MapPin, Home, TrendingUp, Globe, CheckCircle2, ShieldCheck,
   Smartphone, MessageCircle, Wrench, Building2, Mail, SlidersHorizontal,
   ChevronDown, Check, Search, Layers, Gauge, RotateCcw, Scale, CircleDollarSign,
+  HelpCircle,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useLang } from '../context/LanguageContext'
@@ -13,6 +14,7 @@ import {
   SCORE_FACTORS, STRATEGY_WEIGHTS, FACTOR_LABEL,
   type ScoreFactor, type ScoreWeights,
 } from '../lib/verdict'
+import { InfoModal } from '../components/InfoModal'
 
 // Short investor-facing descriptions for each scoring factor (My Scoring Criteria).
 const FACTOR_DESC: Record<ScoreFactor, string> = {
@@ -23,6 +25,29 @@ const FACTOR_DESC: Record<ScoreFactor, string> = {
   confidence:    'How much comparable data backs the numbers',
   dom_bonus:     'Days on market — longer means more leverage',
   price_history: 'Past price cuts signal a motivated seller',
+}
+
+// What a 0 and a 100 actually mean in real-world units for each factor —
+// mirrors the normalization bands in backend/app/agent/scorer.py. This is
+// what the "How this works" popup shows so the % next to a slider isn't a
+// bare, unexplained number (e.g. clarifying that "Days Listed" is a WEIGHT,
+// not the property's actual days-on-market — that lives on the property page).
+const FACTOR_SCALE: Record<ScoreFactor, string> = {
+  discount:      'Priced at market scores low; 20%+ below comparable sales scores highest.',
+  cap_rate:      'A 1% annual return scores lowest; 6%+ scores highest.',
+  cash_flow:     '–$3,000/mo scores lowest; +$500/mo or better scores highest.',
+  grm:           'An 18× gross-rent multiplier (weak) scores lowest; 10× (strong) scores highest.',
+  confidence:    'More comparable sales backing the numbers scores higher.',
+  dom_bonus:     'Listed under 7 days scores lowest; 90+ days on market scores highest — often a motivated seller.',
+  price_history: 'Multiple price drops score highest (motivated seller); a price increase scores lowest.',
+}
+
+// A representative example listing's factor scores (0-100 each), used purely
+// to illustrate the weighted-sum math in the "How this works" popup — not a
+// real property. Chosen to be a mixed bag so every row shows a different size
+// contribution.
+const EXAMPLE_COMPONENTS: Record<ScoreFactor, number> = {
+  discount: 65, cap_rate: 72, cash_flow: 58, grm: 44, confidence: 80, dom_bonus: 55, price_history: 40,
 }
 
 // Distinct colour per factor — ties the weight donut to its slider row.
@@ -138,6 +163,7 @@ export default function Settings() {
   const [phone, setPhone]                 = useState<string>(d0.phone ?? '')
   const [saved, setSaved]   = useState(false)
   const [saving, setSaving] = useState(false)
+  const [showScoringHelp, setShowScoringHelp] = useState(false)
 
   // Re-seed if the account arrives/changes after mount.
   useEffect(() => {
@@ -394,6 +420,14 @@ export default function Settings() {
           icon={<Gauge size={15} />}
           title="My Scoring Criteria"
           desc="Weight the factors behind your own verdict. Every property shows your score next to the AI's."
+          action={
+            <button
+              type="button" onClick={() => setShowScoringHelp(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-surface-border text-xs font-semibold text-muted hover:text-accent hover:border-accent/40 transition-colors"
+            >
+              <HelpCircle size={13} /> How this works
+            </button>
+          }
         >
           {/* Preset chips — one tap to start, then fine-tune below */}
           <div className="flex flex-wrap items-center gap-2">
@@ -471,6 +505,68 @@ export default function Settings() {
           </div>
         </SectionCard>
       </div>
+
+      <InfoModal open={showScoringHelp} onClose={() => setShowScoringHelp(false)} title="How My Scoring Criteria works">
+        <ScoringCriteriaHelp weightPoints={weightPoints} />
+      </InfoModal>
+    </div>
+  )
+}
+
+// ── "How this works" explainer content ──────────────────────────────────────
+function ScoringCriteriaHelp({ weightPoints }: { weightPoints: Record<ScoreFactor, number> }) {
+  const rows = SCORE_FACTORS.map(f => {
+    const weightPct = weightPoints[f]
+    const exampleScore = EXAMPLE_COMPONENTS[f]
+    const points = Math.round((weightPct / 100) * exampleScore * 10) / 10
+    return { f, weightPct, exampleScore, points }
+  })
+  const total = Math.round(rows.reduce((s, r) => s + r.points, 0))
+
+  return (
+    <div className="space-y-5 text-sm">
+      <p className="text-muted leading-relaxed">
+        The % next to each slider is how much that factor counts toward{' '}
+        <span className="font-semibold text-ink">Your Verdict</span> — it's a weight, not the
+        property's actual value. A property's real days-on-market or cash flow shows on its own
+        page; the slider just sets how heavily that factor is weighted across every listing.
+      </p>
+
+      <div className="space-y-3">
+        {SCORE_FACTORS.map(f => (
+          <div key={f} className="flex items-start gap-2.5">
+            <span className="w-2.5 h-2.5 rounded-full shrink-0 mt-1" style={{ backgroundColor: FACTOR_COLOR[f] }} />
+            <div className="min-w-0">
+              <p className="text-xs font-semibold text-ink leading-tight">{FACTOR_LABEL[f]}</p>
+              <p className="text-[11px] text-muted leading-snug mt-0.5">{FACTOR_SCALE[f]}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="pt-4 border-t border-surface-border">
+        <p className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">
+          Your current mix, on an example listing
+        </p>
+        <div className="space-y-1.5">
+          {rows.map(r => (
+            <div key={r.f} className="flex items-center justify-between text-xs tabular-nums">
+              <span className="text-muted">
+                {FACTOR_LABEL[r.f]}: {r.exampleScore}/100 score × {r.weightPct}% weight
+              </span>
+              <span className="font-semibold text-ink">+{r.points} pts</span>
+            </div>
+          ))}
+          <div className="flex items-center justify-between text-xs pt-1.5 mt-1.5 border-t border-surface-border">
+            <span className="font-semibold text-ink">Your Verdict for this example</span>
+            <span className="font-bold text-accent">{total}/100</span>
+          </div>
+        </div>
+      </div>
+
+      <p className="text-[11px] text-muted leading-relaxed pt-1">
+        See these exact numbers for any real listing under its Score Breakdown tab.
+      </p>
     </div>
   )
 }
@@ -513,15 +609,16 @@ function WeightDonut({ pct }: { pct: Record<ScoreFactor, number> }) {
 }
 
 // ── Section card ──────────────────────────────────────────────────────────────
-function SectionCard({ title, desc, icon, children }: { title: string; desc?: string; icon: React.ReactNode; children: React.ReactNode }) {
+function SectionCard({ title, desc, icon, action, children }: { title: string; desc?: string; icon: React.ReactNode; action?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="card space-y-4">
       <div className="flex items-start gap-3 pb-3 border-b border-surface-border">
         <span className="w-8 h-8 rounded-lg bg-accent/10 text-accent flex items-center justify-center shrink-0 mt-0.5">{icon}</span>
-        <div>
+        <div className="min-w-0">
           <h2 className="text-sm font-bold text-ink leading-tight">{title}</h2>
           {desc && <p className="text-xs text-muted mt-0.5">{desc}</p>}
         </div>
+        {action && <div className="ml-auto shrink-0">{action}</div>}
       </div>
       {children}
     </div>
