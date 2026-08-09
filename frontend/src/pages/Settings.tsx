@@ -40,12 +40,19 @@ const FACTOR_UNIT_HINT: Record<ScoreFactor, string> = {
   price_history: 'price ↑ → low  ·  repeat drops → high',
 }
 
-// A representative example listing's factor scores (0-100 each), used purely
-// to illustrate the weighted-sum math in the "How this works" popup — not a
-// real property. Chosen to be a mixed bag so every row shows a different size
-// contribution.
-const EXAMPLE_COMPONENTS: Record<ScoreFactor, number> = {
-  discount: 65, cap_rate: 72, cash_flow: 58, grm: 44, confidence: 80, dom_bonus: 55, price_history: 40,
+// A representative example listing for the "How this works" popup — not a
+// real property. Each score is back-solved from a realistic raw value using
+// the SAME normalization the backend scorer uses (see backend/app/agent/
+// scorer.py), so "14.6% below comps -> 82" etc. is mathematically real, not
+// made up, and the spread of scores (38 to 82) exercises all three bar colors.
+const EXAMPLE_ROW: Record<ScoreFactor, { value: string; score: number }> = {
+  discount:      { value: '14.6% below comps',       score: 82 },
+  cap_rate:      { value: '3.8%',                     score: 56 },
+  cash_flow:     { value: '-$1,670/mo',                score: 38 },
+  grm:           { value: '12.3x',                    score: 71 },
+  confidence:    { value: '5 comparable sales',        score: 50 },
+  dom_bonus:     { value: '60 days on market',         score: 55 },
+  price_history: { value: '3 price drops, -9.2% total', score: 78 },
 }
 
 // Distinct colour per factor — ties the weight donut to its slider row.
@@ -513,63 +520,71 @@ export default function Settings() {
 }
 
 // ── "How this works" explainer content ──────────────────────────────────────
+const barColor = (score: number) => (score >= 70 ? '#10B981' : score >= 40 ? '#F59E0B' : '#EF4444')
+const scoreTextColor = (score: number) => clsx(
+  'text-sm font-black font-mono w-8 text-right',
+  score >= 70 ? 'text-emerald-700' : score >= 40 ? 'text-amber-600' : 'text-red-600',
+)
+
+// Mirrors the real per-property "Score Breakdown" panel (PropertyPage.tsx) —
+// same row shape (label + weight%, raw value + score + contribution, colored
+// progress bar) — on a made-up example listing, since that panel is the one
+// piece of the app the client already reads comfortably. New UI here would
+// just be one more thing to learn; reusing it means "how do points gather"
+// already has a familiar answer.
 function ScoringCriteriaHelp({ weightPoints }: { weightPoints: Record<ScoreFactor, number> }) {
   const rows = SCORE_FACTORS.map(f => {
+    const { value, score } = EXAMPLE_ROW[f]
     const weightPct = weightPoints[f]
-    const exampleScore = EXAMPLE_COMPONENTS[f]
-    const points = Math.round((weightPct / 100) * exampleScore * 10) / 10
-    return { f, weightPct, exampleScore, points }
+    const contribution = Math.round((weightPct / 100) * score * 10) / 10
+    return { f, value, score, weightPct, contribution }
   })
-  const total = Math.round(rows.reduce((s, r) => s + r.points, 0))
+  const total = Math.round(rows.reduce((s, r) => s + r.contribution, 0))
 
   return (
-    <div className="space-y-4 text-sm">
+    <div className="space-y-5 text-sm">
       <p className="text-muted leading-relaxed">
-        Each % is a <span className="font-semibold text-ink">weight</span>, not the property's
-        actual value — a listing's real days-on-market or cash flow shows on its own page.
+        Every listing gets a 0–100 score on each factor below, from its real numbers (like an
+        actual $180/mo cash flow or 52 days on market). The % you set is how much that score
+        counts toward <span className="font-semibold text-ink">Your Verdict</span> — score ×
+        weight = points, and every factor's points add up to the total, exactly like the{' '}
+        <span className="font-semibold text-ink">Score Breakdown</span> on any property page.
       </p>
 
-      {/* Two columns on wide screens — factor list beside the worked example
-          instead of stacked, so the modal reads wide-and-short rather than a
-          tall scroll of sections. */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
-        {/* Factor list */}
-        <div className="lg:col-span-3 divide-y divide-surface-border">
-          {SCORE_FACTORS.map(f => (
-            <div key={f} className="flex items-start gap-2 py-2 first:pt-0">
-              <span className="w-2 h-2 rounded-full shrink-0 mt-1" style={{ backgroundColor: FACTOR_COLOR[f] }} />
+      <div className="space-y-4">
+        {rows.map(r => (
+          <div key={r.f}>
+            <div className="flex items-center justify-between mb-1.5 gap-3">
               <div className="min-w-0">
-                <p className="text-xs font-semibold text-ink leading-tight">{FACTOR_LABEL[f]}</p>
-                <p className="text-[10px] text-muted font-mono leading-snug mt-0.5">{FACTOR_UNIT_HINT[f]}</p>
+                <span className="text-sm font-semibold text-ink">{FACTOR_LABEL[r.f]}</span>
+                <span className="text-xs text-muted ml-1.5">{r.weightPct}% weight</span>
+              </div>
+              <div className="flex items-center gap-3 shrink-0">
+                <span className="text-sm font-mono text-muted">{r.value}</span>
+                <span className={scoreTextColor(r.score)}>{r.score}</span>
+                <span className="text-xs font-mono font-bold text-accent w-12 text-right" title="Points added to the score (sub-score × weight)">
+                  +{r.contribution}
+                </span>
               </div>
             </div>
-          ))}
-        </div>
+            <div className="h-2 bg-surface-border rounded-full overflow-hidden">
+              <div
+                className="h-full rounded-full transition-all duration-700 ease-out"
+                style={{ width: `${r.score}%`, backgroundColor: barColor(r.score) }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
 
-        {/* Worked example as a compact table-style card */}
-        <div className="lg:col-span-2 rounded-xl border border-surface-border overflow-hidden self-start">
-          <div className="px-3 py-1.5 bg-surface text-[10px] font-semibold text-muted uppercase tracking-wider">
-            Your mix, example listing
-          </div>
-          <div className="divide-y divide-surface-border">
-            {rows.map(r => (
-              <div key={r.f} className="flex items-center gap-2 px-3 py-1.5 text-[11px]">
-                <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: FACTOR_COLOR[r.f] }} />
-                <span className="text-ink font-medium flex-1 min-w-0 truncate">{FACTOR_LABEL[r.f]}</span>
-                <span className="text-muted tabular-nums shrink-0">{r.exampleScore}×{r.weightPct}%</span>
-                <span className="font-semibold text-ink tabular-nums w-10 text-right shrink-0">+{r.points}</span>
-              </div>
-            ))}
-          </div>
-          <div className="flex items-center justify-between px-3 py-2 bg-accent/10 border-t border-accent/20">
-            <span className="text-[11px] font-semibold text-ink">Your Verdict</span>
-            <span className="text-sm font-bold text-accent">{total}/100</span>
-          </div>
-        </div>
+      <div className="pt-3 border-t border-surface-border flex items-center justify-between">
+        <span className="text-xs text-muted">Example listing — sum of points above</span>
+        <span className="text-sm font-black font-mono text-accent">{total}/100 Your Verdict</span>
       </div>
 
       <p className="text-[11px] text-muted leading-relaxed">
-        See these exact numbers for any real listing under its Score Breakdown tab.
+        This is a made-up example so every bar shows a different score. See the real numbers for
+        any listing under its own Score Breakdown tab.
       </p>
     </div>
   )

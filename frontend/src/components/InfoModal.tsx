@@ -5,7 +5,7 @@ import { X } from 'lucide-react'
 // Criteria works"). Deliberately built on the app's existing shipped tokens
 // (surface/ink/muted/accent) rather than the in-progress design-system
 // tokens in components/ui/, so it can ship independently of that work.
-const SIZE_CLASS = { md: 'max-w-lg', lg: 'max-w-3xl' } as const
+const SIZE_CLASS = { md: 'max-w-lg', lg: 'max-w-2xl' } as const
 
 export function InfoModal({
   open, onClose, title, children, size = 'md',
