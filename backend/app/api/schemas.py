@@ -114,6 +114,10 @@ class PropertyCard(BaseModel):
     zoning_max_units: Optional[int]  = None
     zoning_upside:    Optional[bool] = None
 
+    # Lightweight development-constraint signal for the card badge — mirrors
+    # zoning_upside above. NOT the full ConstraintFlag list (that's on PropertyDetail).
+    flood_zone: Optional[bool] = None
+
     @field_validator("property_type", mode="before")
     @classmethod
     def extract_enum_value(cls, v: Any) -> str:

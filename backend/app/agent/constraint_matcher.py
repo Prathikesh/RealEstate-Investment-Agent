@@ -17,8 +17,9 @@ from app.models.property import Property
 CONSTRAINT_EXPLAIN = {
     "agricultural": "In Quebec's agricultural zone (CPTAQ) — use cannot be changed "
                     "and development is blocked without Commission approval.",
-    "flood":        "In a regulated flood zone — rebuilding may be prohibited and "
-                    "lenders may decline a mortgage.",
+    "flood":        "Government flood-risk mapping flags this location — this is indicative "
+                    "screening data, not a final regulatory determination. Verify with the "
+                    "municipality/CMM before treating it as a deal-killer.",
     "heritage":     "Heritage-protected — demolition and exterior changes are restricted.",
 }
 

@@ -90,6 +90,7 @@ export default function Properties() {
     page_size:     view === 'grid' ? 24 : 30,
     multi_site:    params.get('multi_site') === 'true' ? true : undefined,
     has_sqft:      params.get('has_sqft') === 'true' ? true : undefined,
+    flood_zone:    params.get('flood_zone') === 'true' ? true : undefined,
   }
 
   const { data, isLoading, isFetching } = useQuery({
@@ -136,7 +137,7 @@ export default function Properties() {
 
   const hasActiveFilters = !!(
     filters.city || filters.address || filters.mls_number || filters.property_type ||
-    filters.score_min || filters.multi_site || filters.has_sqft ||
+    filters.score_min || filters.multi_site || filters.has_sqft || filters.flood_zone ||
     filters.listed_within || filters.price_min || filters.price_max
   )
 
@@ -478,6 +479,20 @@ export default function Properties() {
                 className="w-4 h-4 accent-accent rounded"
               />
               <span className="text-sm text-ink">Has sqft only</span>
+            </label>
+          </label>
+
+          {/* Flood zone */}
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-muted">Flood risk</span>
+            <label className="flex items-center gap-2 cursor-pointer h-[38px]">
+              <input
+                type="checkbox"
+                checked={filters.flood_zone === true}
+                onChange={e => setFilter('flood_zone', e.target.checked ? 'true' : '')}
+                className="w-4 h-4 accent-accent rounded"
+              />
+              <span className="text-sm text-ink">Flagged flood zone only</span>
             </label>
           </label>
         </div>

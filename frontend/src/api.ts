@@ -62,6 +62,8 @@ export interface PropertyCard {
 
   zoning_max_units: number | null
   zoning_upside:    boolean | null
+
+  flood_zone: boolean | null
 }
 
 export interface ZoningInfo {
@@ -230,6 +232,7 @@ export interface PropertyFilters {
   page_size?: number
   multi_site?: boolean
   has_sqft?: boolean
+  flood_zone?: boolean
 }
 
 // ── API calls ─────────────────────────────────────────────────────────────────
@@ -415,5 +418,15 @@ export interface ZoningBoundary {
 
 export async function fetchZoningBoundary(id: string): Promise<ZoningBoundary> {
   const { data } = await http.get<ZoningBoundary>(`/properties/${id}/zoning/boundary`)
+  return data
+}
+
+export interface FloodBoundary {
+  zone_geometry:   GeoJSON.Geometry  // GeometryCollection — a property can span multiple grid cells
+  property_point:  { type: string; coordinates: [number, number] } | null
+}
+
+export async function fetchFloodBoundary(id: string): Promise<FloodBoundary> {
+  const { data } = await http.get<FloodBoundary>(`/properties/${id}/flood/boundary`)
   return data
 }

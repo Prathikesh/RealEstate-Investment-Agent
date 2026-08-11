@@ -166,6 +166,7 @@ async def list_properties(
     status:        Optional[str] = Query(None),
     multi_site:    Optional[bool] = Query(None),
     has_sqft:      Optional[bool] = Query(None),
+    flood_zone:    Optional[bool] = Query(None),
     listed_within: Optional[str] = Query(None),  # 24h | 48h | 7d | 30d
     # Sorting. "your_verdict" ranks by the logged-in broker's own metrics.
     sort_by: Literal["score", "your_verdict", "price", "price_asc", "price_desc", "newest", "discount"] = Query("score"),
@@ -247,6 +248,12 @@ async def list_properties(
         stmt = stmt.where(Property.id.in_(select(multi_sub.c.property_id)))
     if has_sqft:
         stmt = stmt.where(Property.sqft_total.isnot(None))
+    if flood_zone:
+        stmt = stmt.where(
+            Property.development_constraints.op("@>")(
+                text("'[{\"type\": \"flood\"}]'::jsonb")
+            )
+        )
     if listed_within:
         _delta_map = {"24h": timedelta(hours=24), "48h": timedelta(hours=48),
                       "7d": timedelta(days=7), "30d": timedelta(days=30)}
@@ -301,6 +308,10 @@ async def list_properties(
         card.lowest_price        = src_price
         card.your_score          = clamp_round(your_raw)
         card.your_score_category = your_verdict_category(card.your_score)
+        card.flood_zone = bool(
+            p.development_constraints
+            and any(c.get("type") == "flood" for c in p.development_constraints)
+        )
         if p.zoning_zone:
             lot_m2, _ = _property_lot_m2(p)
             est = estimate_max_units(lot_m2, p.zoning_zone.rules or {})
@@ -586,6 +597,50 @@ async def get_zoning_boundary(
         "zone_code":      row.zone_code,
         "zone_geometry":  json.loads(row.zone_geojson),
         "property_point": json.loads(row.point_geojson) if row.point_geojson else None,
+    }
+
+
+# ── Flood zone boundary (for the Zoning tab's flood-risk map) ──────────────────
+
+@router.get("/{property_id}/flood/boundary")
+async def get_flood_boundary(
+    property_id: uuid.UUID,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """
+    Flood constraint polygon(s) + property point as GeoJSON, for the Zoning tab's
+    flood-risk map. Same shape/caching approach as /zoning/boundary — geometry is
+    simplified server-side and the result is cache-friendly since the underlying
+    government grid only refreshes on a slow cycle.
+    """
+    prop = await db.scalar(select(Property).where(Property.id == property_id))
+    if not prop:
+        raise HTTPException(status_code=404, detail="Property not found")
+    if not prop.location:
+        raise HTTPException(status_code=404, detail="Property has no coordinates")
+
+    rows = (await db.execute(text("""
+        SELECT
+            ST_AsGeoJSON(ST_SimplifyPreserveTopology(c.geometry, 0.0001)) AS zone_geojson,
+            ST_AsGeoJSON(p.location) AS point_geojson
+        FROM constraint_zones c
+        JOIN properties p ON p.id = :prop_id
+        WHERE c.constraint_type = 'flood'
+          AND c.is_active = true
+          AND ST_Contains(c.geometry, p.location)
+    """), {"prop_id": str(property_id)})).all()
+
+    if not rows:
+        raise HTTPException(status_code=404, detail="No flood zone match for this property")
+
+    response.headers["Cache-Control"] = "public, max-age=3600"
+    return {
+        "zone_geometry": {
+            "type": "GeometryCollection",
+            "geometries": [json.loads(r.zone_geojson) for r in rows],
+        },
+        "property_point": json.loads(rows[0].point_geojson) if rows[0].point_geojson else None,
     }
 
 

@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { displayAddress } from '../lib/address'
-import { Building2, ArrowRight, GitCompareArrows, Camera, Bed, Bath, TrendingUp, TrendingDown, Minus, Hammer } from 'lucide-react'
+import { Building2, ArrowRight, GitCompareArrows, Camera, Bed, Bath, TrendingUp, TrendingDown, Minus, Hammer, AlertTriangle } from 'lucide-react'
 import clsx from 'clsx'
 import ScoreBadge from './ScoreBadge'
 import { useLang } from '../context/LanguageContext'
@@ -139,6 +139,12 @@ export default function PropertyCardGrid({ property: p, className, rankMode }: P
             <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-violet-600 text-white shadow-md">
               <Hammer size={10} className="shrink-0" />
               Zoned for {p.zoning_max_units}+ units
+            </span>
+          )}
+          {p.flood_zone && (
+            <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-600 text-white shadow-md">
+              <AlertTriangle size={10} className="shrink-0" />
+              Flood zone
             </span>
           )}
         </div>

@@ -26,6 +26,7 @@ import { buildFactorRows } from '../lib/propertyVerdict'
 
 // Code-split: MapLibre (~210KB gzip) loads only when the Zoning tab renders.
 const ZoningMap = lazy(() => import('../components/ZoningMap'))
+const FloodZoneMap = lazy(() => import('../components/FloodZoneMap'))
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 
@@ -2058,19 +2059,43 @@ function DealKillerBanner({ flags }: { flags: NonNullable<PropertyDetail['constr
   )
 }
 
+function FloodRiskCard({ prop }: { prop: PropertyDetail }) {
+  return (
+    <div className="card flex flex-col gap-4">
+      <h3 className="text-base font-bold text-ink">Flood risk</h3>
+      <div className="flex-1">
+        <Suspense fallback={<div className="shimmer rounded-xl border border-surface-border h-full min-h-[380px]" />}>
+          <FloodZoneMap propertyId={prop.id} />
+        </Suspense>
+      </div>
+    </div>
+  )
+}
+
 function ZoningTab({ prop }: { prop: PropertyDetail }) {
   const z = prop.zoning
+  const floodFlags = (prop.constraints || []).filter(c => c.type === 'flood')
+  const hasFlood = floodFlags.length > 0
 
   if (!z) {
     return (
-      <div className="card text-center py-10 space-y-2">
-        <p className="text-sm font-semibold text-ink">No zoning data available yet</p>
-        <p className="text-xs text-muted max-w-md mx-auto">
-          {prop.city?.split('(')[0].trim() || 'This city'} isn't covered by our zoning
-          data yet. Coverage currently includes <span className="font-semibold text-ink">Montréal</span> and{' '}
-          <span className="font-semibold text-ink">Laval</span>, expanding city by city. Everything else on this
-          property — score, financials and alerts — still works.
-        </p>
+      <div className="space-y-5">
+        {prop.constraints && prop.constraints.length > 0 && <DealKillerBanner flags={prop.constraints} />}
+        {hasFlood && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            <FloodRiskCard prop={prop} />
+            <div />
+          </div>
+        )}
+        <div className="card text-center py-10 space-y-2">
+          <p className="text-sm font-semibold text-ink">No zoning data available yet</p>
+          <p className="text-xs text-muted max-w-md mx-auto">
+            {prop.city?.split('(')[0].trim() || 'This city'} isn't covered by our zoning
+            data yet. Coverage currently includes <span className="font-semibold text-ink">Montréal</span> and{' '}
+            <span className="font-semibold text-ink">Laval</span>, expanding city by city. Everything else on this
+            property — score, financials and alerts — still works.
+          </p>
+        </div>
       </div>
     )
   }
@@ -2116,8 +2141,10 @@ function ZoningTab({ prop }: { prop: PropertyDetail }) {
           )}
         </div>
 
-        <ZoningExplainer prop={prop} z={z} />
+        {hasFlood ? <FloodRiskCard prop={prop} /> : <ZoningExplainer prop={prop} z={z} />}
       </div>
+
+      {hasFlood && <ZoningExplainer prop={prop} z={z} />}
 
       {prop.assessment && <OfficialRecordsCard a={prop.assessment} listedUnits={prop.unit_count} propType={prop.property_type} />}
 
