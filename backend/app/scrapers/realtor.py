@@ -312,8 +312,13 @@ class RealtorScraper(BaseScraper):
         lat = addr.get("Latitude")
         lng = addr.get("Longitude")
 
-        # Property type
-        raw_type = (prop.get("Type") or bldg.get("Type") or "").lower()
+        # Property type — Building.Type is the real structural type ("Duplex",
+        # "Triplex", ...); Property.Type is a generic top-level label that's
+        # "Single Family" on nearly every residential listing regardless of
+        # actual unit count, so it must not take priority (confirmed via live
+        # API inspection: a "1728-1730 Rue Le Caron" duplex listing has
+        # Property.Type="Single Family" and Building.Type="Duplex").
+        raw_type = (bldg.get("Type") or prop.get("Type") or "").lower()
         property_type = PROPERTY_TYPE_MAP.get(raw_type, "single_family")
 
         # Building specs
@@ -331,12 +336,24 @@ class RealtorScraper(BaseScraper):
             bldg.get("ConstructedDate") or bldg.get("YearBuilt") or ""
         )
 
-        # Unit count — present on revenue/multi-family listings
+        # Unit count — present on revenue/multi-family listings. UnitTotal is the
+        # real field name confirmed via live API inspection (TotalUnits/
+        # NumberOfUnits/TotalSuites below never actually appear — kept as a
+        # harmless fallback in case Realtor's schema varies by listing).
         units_raw = (
-            bldg.get("TotalUnits") or bldg.get("NumberOfUnits") or
+            bldg.get("UnitTotal") or bldg.get("TotalUnits") or bldg.get("NumberOfUnits") or
             bldg.get("TotalSuites") or ""
         )
         unit_count = int(str(units_raw)) if units_raw and str(units_raw).isdigit() else None
+
+        # Building.Type is sometimes blank on otherwise-complete listings (e.g. a
+        # confirmed live case: a real 4-unit property with UnitTotal=4 but no
+        # Building.Type at all, silently falling back to "single_family" above —
+        # which matters beyond labeling, since the pipeline hard-caps estimated-
+        # rent scoring for single_family/condo/townhouse). unit_count is the more
+        # reliable signal when present, so let it correct an unclassified type.
+        if property_type == "single_family" and unit_count:
+            property_type = {2: "duplex", 3: "triplex", 4: "quadruplex"}.get(unit_count, "quintuplex_plus" if unit_count >= 5 else property_type)
 
         # Lot size
         land      = r.get("Land", {})

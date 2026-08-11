@@ -4,9 +4,12 @@ Every route on this router requires an authenticated admin (see
 app.auth.deps.require_admin) — applied once at the router level so new
 routes added here are protected automatically.
 
-POST /api/admin/pipeline  — run AI pipeline on all needs_reanalysis=True properties
-POST /api/admin/scrape    — run one scrape cycle immediately
-GET  /api/admin/status    — pending count + last analyzed stats
+POST /api/admin/pipeline            — run AI pipeline on all needs_reanalysis=True properties
+POST /api/admin/scrape              — run one general scrape cycle immediately
+POST /api/admin/scrape-multiunit    — run one 4+ unit scrape cycle immediately
+GET  /api/admin/status              — pending count + last analyzed stats
+GET  /api/admin/scrape-status       — live progress for the general scrape job
+GET  /api/admin/multiunit-scrape-status — live progress for the 4+ unit scrape job
 """
 import logging
 from datetime import datetime, timezone
@@ -131,6 +134,25 @@ async def scrape_status() -> dict:
     """Live scrape progress — polled every 2s by the frontend status bar."""
     from app.scrape_state import scrape_progress
     return scrape_progress.to_dict()
+
+
+@router.post("/scrape-multiunit")
+async def run_scrape_multiunit() -> dict:
+    """Trigger one 4+ unit scrape cycle immediately (runs in background)."""
+    import asyncio
+    from app.scheduler import scrape_multiunit_job
+    from app.scrape_state import multiunit_scrape_progress
+    if multiunit_scrape_progress.running:
+        return {"status": "already running"}
+    asyncio.create_task(scrape_multiunit_job())
+    return {"status": "multi-unit scrape job started in background"}
+
+
+@router.get("/multiunit-scrape-status")
+async def multiunit_scrape_status() -> dict:
+    """Live progress for the 4+ unit scrape job — same shape as /scrape-status."""
+    from app.scrape_state import multiunit_scrape_progress
+    return multiunit_scrape_progress.to_dict()
 
 
 @router.post("/backfill-photos")

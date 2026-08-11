@@ -72,3 +72,11 @@ class ScrapeProgress:
 
 # Single shared instance — imported by scheduler and admin routes
 scrape_progress = ScrapeProgress()
+
+# Separate instance for the 4+ unit scheduler.scrape_multiunit_job() — kept apart
+# from scrape_progress so the two jobs' live status never overwrite each other.
+# No "remax" source: that job only covers Realtor.ca + Centris (see scheduler.py).
+multiunit_scrape_progress = ScrapeProgress(sources={
+    "realtor": SourceProgress(target=100),
+    "centris": SourceProgress(target=100),
+})

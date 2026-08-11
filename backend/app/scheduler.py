@@ -35,7 +35,7 @@ by GET /api/admin/scrape-status every 2 seconds from the frontend.
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
@@ -47,7 +47,7 @@ from app.scrapers.centris import CentrisScraper
 from app.scrapers.realtor import RealtorScraper, API_URL, API_HEADERS, QUEBEC_CITY_BBOXES
 from app.scrapers.deduplicator import PropertyDeduplicator
 from app.agent.pipeline import InvestmentPipeline
-from app.scrape_state import scrape_progress
+from app.scrape_state import scrape_progress, multiunit_scrape_progress, ScrapeProgress
 
 logger = logging.getLogger(__name__)
 
@@ -101,8 +101,22 @@ async def _known_remax_urls() -> set:
 
 # ── Dedup helper ───────────────────────────────────────────────────────────────
 
-async def _save(raw_list, source_key: str) -> tuple[int, int, int]:
-    """Dedup + save a batch. Returns (new, updated, errors)."""
+async def _save(raw_list, source_key: str, progress: ScrapeProgress = scrape_progress) -> tuple[int, int, int]:
+    """
+    Dedup + save a batch. Returns (new, updated, errors).
+
+    "New" vs "updated" comes straight from PropertyDeduplicator.process(), which
+    is the single dedup choke point for every scrape path (tier-1: exact MLS
+    number match, falling back to address hash / composite score / PostGIS
+    proximity — see deduplicator.py). A "duplicate" isn't just skipped: process()
+    still refreshes its fields (price, status, etc.) and flags needs_reanalysis
+    when something financially significant changed, so re-scraping a known
+    property both avoids creating a second row AND keeps its data current.
+
+    progress defaults to the general scrape_progress tracker; pass a different
+    ScrapeProgress instance (e.g. multiunit_scrape_progress) to keep a job's
+    live status separate from the general job's.
+    """
     new = updated = errors = 0
     async with AsyncSessionLocal() as session:
         dedup = PropertyDeduplicator(session)
@@ -123,14 +137,26 @@ async def _save(raw_list, source_key: str) -> tuple[int, int, int]:
                 await session.rollback()
         await session.commit()
 
-    # Update global progress
-    sp = scrape_progress.sources[source_key]
+    # Update progress
+    sp = progress.sources[source_key]
     sp.done    += new + updated
     sp.message  = f"{sp.done} saved"
-    scrape_progress.total_new     += new
-    scrape_progress.total_updated += updated
-    scrape_progress.total_errors  += errors
+    progress.total_new     += new
+    progress.total_updated += updated
+    progress.total_errors  += errors
     return new, updated, errors
+
+
+# ── 4+ unit filter ─────────────────────────────────────────────────────────────
+# Both Realtor and Centris expose unit_count/property_type on the parsed search
+# result — no need for a separate detail fetch just to check eligibility.
+MULTIUNIT_TYPES = {"quadruplex", "quintuplex_plus"}
+
+
+def _is_multiunit(raw) -> bool:
+    if raw.unit_count is not None:
+        return raw.unit_count >= 4
+    return raw.property_type in MULTIUNIT_TYPES
 
 
 # ── Scrape job ─────────────────────────────────────────────────────────────────
@@ -361,6 +387,179 @@ async def scrape_job() -> None:
     )
 
 
+# ── 4+ unit scrape job ───────────────────────────────────────────────────────────
+# Runs every 2 hours (see create_scheduler), independent of and offset from the
+# general scrape_job above. Targets quadruplex/quintuplex_plus properties only —
+# Realtor.ca via its Multi-family/Revenue category, Centris via its plex search
+# (the only category covering 4+ unit listings on that site). ReMax is skipped:
+# its sitemap-walk scraper has no type/unit info until a full detail fetch, so
+# there's no cheap way to pre-filter — general scrape_job still picks these up.
+#
+# Dedup + field-accuracy: identical machinery to scrape_job, via the shared
+# _save() helper → PropertyDeduplicator.process() (MLS-number match first,
+# falling back to address hash / composite score / proximity — see
+# deduplicator.py). A property already in the DB is never re-created; its
+# fields are refreshed instead if anything changed since the last scrape.
+
+MULTIUNIT_TARGET = 100
+
+
+async def scrape_multiunit_job() -> None:
+    if multiunit_scrape_progress.running:
+        logger.warning("Multi-unit scrape job requested but one is already running — skipping")
+        return
+
+    now = datetime.now(timezone.utc)
+    multiunit_scrape_progress.reset()
+    multiunit_scrape_progress.sources["realtor"].target = MULTIUNIT_TARGET
+    multiunit_scrape_progress.sources["centris"].target = MULTIUNIT_TARGET
+    multiunit_scrape_progress.started_at = now.isoformat()
+    logger.info(f"=== Multi-unit scrape job started (target={MULTIUNIT_TARGET} 4+ unit properties/source) ===")
+
+    keys = _api_keys()
+
+    # ── 1. Realtor.ca — Multi-family/Revenue category ──────────────────────────
+    multiunit_scrape_progress.current_source = "realtor"
+    multiunit_scrape_progress.sources["realtor"].status  = "running"
+    multiunit_scrape_progress.sources["realtor"].message = "Connecting..."
+    multiunit_scrape_progress.message = "Scraping Realtor.ca (4+ units)..."
+    logger.info("--- Realtor.ca (4+ units) ---")
+
+    try:
+        scraper = RealtorScraper(api_keys=keys)
+        realtor_new = 0
+
+        for city_name, bbox in QUEBEC_CITY_BBOXES.items():
+            if realtor_new >= MULTIUNIT_TARGET:
+                break
+
+            consecutive_empty = 0
+            page = 1
+            while (
+                realtor_new < MULTIUNIT_TARGET
+                and page <= MAX_PAGES_PER_SOURCE
+                and consecutive_empty < CONSECUTIVE_EMPTY_LIMIT
+            ):
+                multiunit_scrape_progress.sources["realtor"].message = f"{city_name} page {page}..."
+                body = scraper._build_body(
+                    bbox=bbox,
+                    page=page,
+                    records_per_page=50,
+                    property_type_group_id=3,   # Multi-family/Revenue
+                    transaction_type_id=2,
+                )
+                config = ScrapeConfig(
+                    url=API_URL, method="POST", body=body,
+                    headers=API_HEADERS, country="ca", asp=False, render_js=False,
+                )
+                result = await scraper.client.async_scrape(config)
+
+                if result.upstream_status_code != 200:
+                    logger.error(f"[realtor-multiunit] {city_name} HTTP {result.upstream_status_code}")
+                    break
+
+                data      = json.loads(result.content)
+                raw_all   = data.get("Results", [])
+                paging    = data.get("Paging", {})
+                total_pages = int(paging.get("TotalPages", 1))
+                if not raw_all:
+                    break
+
+                parsed  = [p for p in (scraper._parse_result(r) for r in raw_all) if p]
+                raw_list = [p for p in parsed if _is_multiunit(p)]
+                logger.info(
+                    f"[realtor-multiunit] {city_name} page {page}/{total_pages} — "
+                    f"{len(parsed)} results, {len(raw_list)} are 4+ units"
+                )
+                new, _, _ = await _save(raw_list, "realtor", progress=multiunit_scrape_progress)
+                realtor_new += new
+                consecutive_empty = 0 if new > 0 else consecutive_empty + 1
+
+                if page >= total_pages:
+                    break
+                page += 1
+                await asyncio.sleep(2)
+
+            logger.info(f"[realtor-multiunit] {city_name} done — running total new={realtor_new}")
+
+        if realtor_new < MULTIUNIT_TARGET:
+            logger.warning(f"[realtor-multiunit] only found {realtor_new}/{MULTIUNIT_TARGET} new 4+ unit properties across all Quebec cities")
+        multiunit_scrape_progress.sources["realtor"].status = "done"
+        await scraper.close()
+
+    except Exception as exc:
+        multiunit_scrape_progress.sources["realtor"].status  = "error"
+        multiunit_scrape_progress.sources["realtor"].message = str(exc)[:80]
+        logger.error(f"Realtor multi-unit scraper error: {exc}")
+
+    multiunit_scrape_progress.elapsed_seconds = (datetime.now(timezone.utc) - now).total_seconds()
+    await asyncio.sleep(3)
+
+    # ── 2. Centris — plex search (only category covering 4+ unit listings) ─────
+    multiunit_scrape_progress.current_source = "centris"
+    multiunit_scrape_progress.sources["centris"].status  = "running"
+    multiunit_scrape_progress.sources["centris"].message = "Connecting..."
+    multiunit_scrape_progress.message = "Scraping Centris (4+ units)..."
+    logger.info("--- Centris (4+ units) ---")
+
+    try:
+        async with CentrisScraper(api_keys=keys) as scraper:
+            centris_new = 0
+            consecutive_empty = 0
+
+            for page in range(1, MAX_PAGES_PER_SOURCE + 1):
+                if centris_new >= MULTIUNIT_TARGET or consecutive_empty >= CONSECUTIVE_EMPTY_LIMIT_CENTRIS:
+                    break
+                try:
+                    multiunit_scrape_progress.sources["centris"].message = f"plex page {page}..."
+                    parsed = await scraper.scrape_listings(category="plex", page=page)
+                    if not parsed:
+                        break
+
+                    raw_list = [p for p in parsed if _is_multiunit(p)]
+                    new, _, _ = await _save(raw_list, "centris", progress=multiunit_scrape_progress)
+                    centris_new += new
+                    consecutive_empty = 0 if new > 0 else consecutive_empty + 1
+                    logger.info(
+                        f"[centris-multiunit] plex page {page}: {len(parsed)} processed, "
+                        f"{len(raw_list)} are 4+ units, {new} new → total new={centris_new}"
+                    )
+                    await asyncio.sleep(3)
+
+                except Exception as exc:
+                    logger.error(f"[centris-multiunit] plex page {page} error: {exc}")
+                    multiunit_scrape_progress.total_errors += 1
+                    break
+
+            if centris_new < MULTIUNIT_TARGET:
+                logger.warning(f"[centris-multiunit] only found {centris_new}/{MULTIUNIT_TARGET} new 4+ unit properties")
+
+        multiunit_scrape_progress.sources["centris"].status = "done"
+
+    except Exception as exc:
+        multiunit_scrape_progress.sources["centris"].status  = "error"
+        multiunit_scrape_progress.sources["centris"].message = str(exc)[:80]
+        logger.error(f"Centris multi-unit scraper error: {exc}")
+
+    # ── Finish ────────────────────────────────────────────────────────────────
+    multiunit_scrape_progress.elapsed_seconds = (datetime.now(timezone.utc) - now).total_seconds()
+    multiunit_scrape_progress.running        = False
+    multiunit_scrape_progress.current_source = ""
+    multiunit_scrape_progress.finished_at    = datetime.now(timezone.utc).isoformat()
+    multiunit_scrape_progress.message = (
+        f"Done — {multiunit_scrape_progress.total_new} new, "
+        f"{multiunit_scrape_progress.total_updated} updated, "
+        f"{multiunit_scrape_progress.total_errors} errors"
+    )
+    logger.info(
+        "=== Multi-unit scrape job done in %.1fs — new=%d updated=%d errors=%d ===",
+        multiunit_scrape_progress.elapsed_seconds,
+        multiunit_scrape_progress.total_new,
+        multiunit_scrape_progress.total_updated,
+        multiunit_scrape_progress.total_errors,
+    )
+
+
 # ── Pipeline job ───────────────────────────────────────────────────────────────
 # Shared with the manual POST /api/admin/pipeline endpoint (admin.py), which
 # runs the same InvestmentPipeline loop independently — both check/set this
@@ -430,6 +629,19 @@ def create_scheduler() -> AsyncIOScheduler:
         trigger=IntervalTrigger(hours=interval_hours, start_date=start),
         id="pipeline_job",
         name="AI Investment Pipeline",
+        replace_existing=True,
+        misfire_grace_time=300,
+    )
+
+    # Fixed 2h interval regardless of settings.scrape_interval_hours (the general
+    # job's interval is configurable; this one was asked for at exactly 2h).
+    # Offset by 1h from the jobs above so the two schedules never fire
+    # simultaneously and compete for the same Scrapfly session/credits.
+    scheduler.add_job(
+        scrape_multiunit_job,
+        trigger=IntervalTrigger(hours=2, start_date=start + timedelta(hours=1)),
+        id="scrape_multiunit_job",
+        name="Scrape Realtor + Centris — 4+ unit properties only",
         replace_existing=True,
         misfire_grace_time=300,
     )
