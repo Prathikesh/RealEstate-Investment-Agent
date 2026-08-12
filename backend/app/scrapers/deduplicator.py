@@ -20,7 +20,7 @@ On each call:
 import hashlib
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from geoalchemy2.elements import WKTElement
@@ -240,11 +240,14 @@ class PropertyDeduplicator:
     # ── Create ────────────────────────────────────────────────────────────────
 
     def _create_property(self, raw: RawProperty, now: datetime) -> Property:
+        listed_at = self._derive_listed_at(raw, now)
         price_history = []
         if raw.asking_price:
             price_history = [{
                 "price": raw.asking_price,
-                "date":  now.date().isoformat(),
+                # Prefer the real listing date when a source gave us one (Realtor
+                # ships TimeOnRealtor → days-on-market). Falls back to scrape date.
+                "date":  (listed_at or now).date().isoformat(),
                 "source": raw.source,
                 "event": "listed",
             }]
@@ -274,6 +277,11 @@ class PropertyDeduplicator:
             price_history=price_history,
             status=PropertyStatus.ACTIVE,
             days_on_market=raw.days_on_market,
+            # Real listing date when a source provided one — lets
+            # compute_days_on_market() report true age instead of days-since-first-
+            # scraped (which caps at how long we've been scraping). NULL keeps the
+            # first_seen_at fallback (Centris, which hides the true date).
+            listed_at=listed_at,
             active_sources=[raw.source],
             primary_source=raw.source,
             listing_url=raw.source_url,
@@ -297,6 +305,26 @@ class PropertyDeduplicator:
             last_scraped_at=now,
         )
 
+    @staticmethod
+    def _derive_listed_at(raw: RawProperty, now: datetime) -> Optional[datetime]:
+        """
+        Best available real listing date, or None to fall back to first_seen_at.
+        Priority:
+          1. raw.listed_at        — an explicit ISO date from the source
+          2. now - days_on_market — Realtor's TimeOnRealtor gives real DOM, so we
+             back-calculate the list date (can be far older than our scrape history)
+        Centris hides the true date and provides neither → None → first_seen_at.
+        """
+        if raw.listed_at:
+            try:
+                dt = datetime.fromisoformat(str(raw.listed_at))
+                return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+            except (ValueError, TypeError):
+                pass
+        if raw.days_on_market and raw.days_on_market > 0:
+            return now - timedelta(days=raw.days_on_market)
+        return None
+
     # ── Update ────────────────────────────────────────────────────────────────
 
     def _update_property(
@@ -309,6 +337,14 @@ class PropertyDeduplicator:
         prop.last_seen_at = now
         prop.last_scraped_at = now
         prop.is_new = False
+
+        # Backfill a real listing date if we never had one and this source can
+        # give us one (e.g. a Realtor re-scrape of a property first seen via
+        # Centris). Only fills when currently NULL — never overwrites a known date.
+        if prop.listed_at is None:
+            derived = self._derive_listed_at(raw, now)
+            if derived is not None:
+                prop.listed_at = derived
 
         # Merge source into active_sources
         sources = list(prop.active_sources or [])

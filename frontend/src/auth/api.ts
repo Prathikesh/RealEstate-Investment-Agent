@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { http } from '../api'
 import type { ScoreWeights } from '../lib/verdict'
+import type { BuyBox } from '../lib/buybox'
 
 export interface User {
   id: string
@@ -21,6 +22,9 @@ export interface User {
   // Optional per-user override of the scoring weights (see ScoreWeights).
   // Null / absent means "use investment_strategy's preset". Drives "Your Verdict".
   custom_score_weights?: ScoreWeights | null
+  // Real-number "buy box" targets ("in numbers"). Account-synced source of truth;
+  // seeds Properties filters + anchors target-relative Your Verdict scoring.
+  custom_buy_box?: BuyBox | null
 }
 
 export interface PreferencesPayload {
@@ -34,6 +38,7 @@ export interface PreferencesPayload {
   email_alerts_enabled?: boolean
   language?: 'en' | 'fr'
   custom_score_weights?: ScoreWeights | null
+  custom_buy_box?: BuyBox | null
 }
 
 export async function updatePreferences(payload: PreferencesPayload): Promise<User> {

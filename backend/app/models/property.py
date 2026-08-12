@@ -257,6 +257,16 @@ class Property(Base):
         return f"<Property {self.full_address} score={self.score}>"
 
 
+def listing_date_is_real(prop: "Property") -> bool:
+    """
+    True when days-on-market reflects a real source listing date (listed_at, e.g.
+    ReMax's datePosted / Realtor's TimeOnRealtor), rather than the days-since-first-
+    scraped fallback. Lets the UI say "Listed X days ago" honestly vs. "tracked X
+    days" — the difference the client flagged when everything read the same ~58 days.
+    """
+    return prop.listed_at is not None
+
+
 def compute_days_on_market(prop: "Property") -> Optional[int]:
     """
     Days the listing has been on the market, computed LIVE (it grows by 1 each

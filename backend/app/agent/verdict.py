@@ -35,6 +35,53 @@ SCORE_FACTORS: tuple[str, ...] = (
     "price_history",
 )
 
+# ── Target-relative scoring ("in numbers, not percentages") ───────────────────
+# When a broker sets a real-number buy-box target for a factor, that factor's
+# sub-score is recomputed RELATIVE TO THEIR TARGET instead of the scorer's global
+# band. Their number defines what "fully satisfies me" (=100); below it scores
+# proportionally lower. This makes the client's mental model literally true:
+# "I want long-listed → set days=90 → a 90+-day listing scores 100 on that factor."
+#
+# Only these four factors support it — they each map to a real numeric metric on
+# Property AND to a buy-box target the client can type in. The other three (grm,
+# confidence, price_history) have no user-facing target and keep their stored
+# component. Keys must stay in sync with frontend lib/buybox.ts + verdict.ts.
+_TARGET_KEY: dict[str, str] = {
+    "discount":  "discount_min",         # % below comparable median
+    "cap_rate":  "cap_rate_min",         # % cap rate
+    "cash_flow": "cash_flow_min",        # $/mo cash flow
+    "dom_bonus": "days_on_market_min",   # days listed
+}
+
+
+def days_on_market_expr():
+    """
+    Live days-on-market as a SQL float, single source of truth for filter, sort,
+    and target-relative scoring. Uses the real listing date when known
+    (listed_at), else the first_seen_at fallback (always set, so never NULL).
+    """
+    return func.extract(
+        "epoch", func.now() - func.coalesce(Property.listed_at, Property.first_seen_at)
+    ) / 86400.0
+
+
+def _raw_metric_expr(factor: str):
+    """The raw, same-unit metric a target-relative factor is scored against."""
+    if factor == "discount":
+        return Property.discount_pct
+    if factor == "cap_rate":
+        return Property.cap_rate
+    if factor == "cash_flow":
+        return Property.monthly_cash_flow
+    if factor == "dom_bonus":
+        return days_on_market_expr()
+    return None
+
+
+def _target_relative_expr(raw, target: float):
+    """clamp(raw / target * 100, 0, 100) — meets-or-beats the broker's own number → 100."""
+    return func.least(100.0, func.greatest(0.0, raw / float(target) * 100.0))
+
 
 def weights_are_valid(weights: Optional[dict]) -> bool:
     """True when weights cover all 7 factors and sum to ~1.0 (backend accepts ±0.01)."""
@@ -63,18 +110,32 @@ def effective_weights(broker: Optional[Broker]) -> dict[str, float]:
     return WEIGHTS["both"]
 
 
-def weighted_score_expr(weights: dict[str, float]):
+def weighted_score_expr(weights: dict[str, float], buy_box: Optional[dict] = None):
     """
     SQLAlchemy expression computing the Your Verdict score in-DB from
     Property.score_components (JSONB, per-factor 0-100 sub-scores).
+
+    When `buy_box` carries a real-number target for a factor, that factor is scored
+    RELATIVE TO THE TARGET (see _target_relative_expr) instead of using its stored
+    global component — the client's "in numbers" request. Factors without a target
+    keep their stored component, so a broker with no buy box behaves exactly as before.
 
     Returns NULL for legacy rows that have no score_components yet, so callers can
     order_by(...).nullslast() and keep un-scored properties out of the ranking
     until the backfill populates them.
     """
+    buy_box = buy_box or {}
     total = None
     for f in SCORE_FACTORS:
-        comp = func.coalesce(cast(Property.score_components[f].astext, Float), 0.0)
+        stored = func.coalesce(cast(Property.score_components[f].astext, Float), 0.0)
+        target = buy_box.get(_TARGET_KEY[f]) if f in _TARGET_KEY else None
+        if target is not None and float(target) > 0:
+            raw = _raw_metric_expr(f)
+            # Fall back to the stored component when the raw metric is NULL (e.g. a
+            # listing with no cap_rate) so a missing value never scores a hard 0.
+            comp = case((raw.is_(None), stored), else_=_target_relative_expr(raw, float(target)))
+        else:
+            comp = stored
         term = comp * float(weights.get(f, 0.0))
         total = term if total is None else total + term
     # Data-integrity guard: when the listing's income was estimated (not disclosed),
@@ -90,19 +151,36 @@ def weighted_score_expr(weights: dict[str, float]):
 
 
 def compute_weighted_score(
-    components: Optional[dict], weights: dict[str, float]
+    components: Optional[dict],
+    weights: dict[str, float],
+    buy_box: Optional[dict] = None,
+    raw: Optional[dict] = None,
 ) -> Optional[int]:
     """
     Pure-Python twin of weighted_score_expr — the Your Verdict score for a single
     property's components. Used off the request path (alerts, backfill checks).
+
+    `buy_box` + `raw` enable target-relative scoring: `raw` supplies the same-unit
+    metric per factor (discount, cap_rate, cash_flow, dom_bonus) and, when a target
+    is set, that factor scores clamp(raw/target*100). Falls back to the stored
+    component when no target or the raw value is missing.
+
     Returns None when there are no components (mirrors the SQL NULL branch).
     """
     if not isinstance(components, dict):
         return None
-    total = sum(
-        float(components.get(f) or 0.0) * float(weights.get(f, 0.0))
-        for f in SCORE_FACTORS
-    )
+    buy_box = buy_box or {}
+    raw = raw or {}
+    total = 0.0
+    for f in SCORE_FACTORS:
+        stored = float(components.get(f) or 0.0)
+        target = buy_box.get(_TARGET_KEY[f]) if f in _TARGET_KEY else None
+        rv = raw.get(f)
+        if target is not None and float(target) > 0 and rv is not None:
+            comp = max(0.0, min(100.0, float(rv) / float(target) * 100.0))
+        else:
+            comp = stored
+        total += comp * float(weights.get(f, 0.0))
     cap = components.get("unverified_income_cap")
     if isinstance(cap, (int, float)) and cap > 0:
         total = min(total, float(cap))
