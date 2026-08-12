@@ -31,7 +31,7 @@ from app.agent.zoning_matcher import ZoningMatcher, current_units
 from app.agent.assessment_matcher import AssessmentMatcher
 from app.agent.constraint_matcher import ConstraintMatcher
 from app.agent.buildable import estimate_max_units
-from app.models.property import AnalysisConfidence, Property, ScoreCategory, compute_days_on_market
+from app.models.property import AnalysisConfidence, ListingType, Property, ScoreCategory, compute_days_on_market
 from app.models.zoning import ZoningZone
 from app.services.calc_client import analyze as calc_engine_analyze
 from app.services.address_index import geocode_address
@@ -77,6 +77,67 @@ class InvestmentPipeline:
                 lat, lng = coords
                 prop.location = WKTElement(f"POINT({lng} {lat})", srid=4326)
                 logger.info(f"  Geocoded from address index → ({lat:.5f}, {lng:.5f})")
+
+        # Rentals: asking_price is a monthly rent, not a purchase price — every
+        # stage below (comps, financial calculator, scorer) treats it as one,
+        # so running them would produce meaningless cap rate / cash flow /
+        # score numbers. Keep the physical/regulatory facts (assessment roll,
+        # development constraints, zoning) since those are just as relevant
+        # to a renter and don't depend on asking_price at all, then stop.
+        if prop.listing_type == ListingType.FOR_RENT:
+            # Clear any stale sale-oriented analysis — a property that was
+            # scraped as for_sale before (e.g. before the ReMax rental-tagging
+            # fix, or a genuine sale->rent relisting) can carry a leftover
+            # score/cap_rate/etc. from its old analysis. Left in place, the
+            # UI would show a stale "54/100" score or a nonsensical cap rate
+            # computed against the wrong price basis (confirmed live: a rental
+            # scraped before this fix, then re-tagged for_rent, still showed
+            # score=54 and cap_rate=649% until this reset was added).
+            prop.score = None
+            prop.score_category = None
+            prop.score_components = None
+            prop.analysis_confidence = None
+            prop.value_gap = None
+            prop.discount_pct = None
+            prop.cap_rate = None
+            prop.noi_annual = None
+            prop.grm = None
+            prop.monthly_cash_flow = None
+            prop.cash_on_cash_return = None
+            prop.welcome_tax = None
+            prop.down_payment_20pct = None
+            prop.monthly_mortgage = None
+            prop.comparable_count = None
+            prop.comparable_median_price = None
+            prop.comparable_mean_price = None
+            prop.comparable_ids = None
+            prop.ai_brief_en = None
+            prop.ai_brief_fr = None
+
+            try:
+                assessment = await self.assessment_matcher.match(prop)
+                if assessment:
+                    prop.assessment_data = assessment
+            except Exception as exc:
+                logger.warning(f"  Assessment match failed: {exc}")
+
+            try:
+                constraints = await self.constraint_matcher.match(prop)
+                prop.development_constraints = constraints or None
+            except Exception as exc:
+                logger.warning(f"  Constraint match failed: {exc}")
+
+            try:
+                zone = await self.zoning_matcher.match(prop)
+                if zone:
+                    prop.zoning_zone_id = zone.id
+                    logger.info(f"  Zoning: {zone.zone_code} (rental — no rebuild economics)")
+            except Exception as exc:
+                logger.warning(f"  Zoning match failed: {exc}")
+
+            prop.needs_reanalysis = False
+            logger.info(f"Pipeline done (rental — skipped financial/scoring stages): {prop.mls_number}")
+            return prop
 
         # Stage 1 — comparables
         comp_set = await self.comp_finder.find(prop)

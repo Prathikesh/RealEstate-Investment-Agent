@@ -28,7 +28,7 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.property import Property, PropertyStatus, PropertyType
+from app.models.property import ListingType, Property, PropertyStatus, PropertyType
 from app.models.snapshot import PropertySnapshot, ScraperSource
 from app.models.source import PropertySource
 from app.config import settings
@@ -57,6 +57,18 @@ PROPERTY_TYPE_MAP: dict[str, PropertyType] = {
     "condo":           PropertyType.CONDO,
     "townhouse":       PropertyType.TOWNHOUSE,
 }
+
+LISTING_TYPE_MAP: dict[str, ListingType] = {
+    "for_sale": ListingType.FOR_SALE,
+    "for_rent": ListingType.FOR_RENT,
+}
+
+# A genuine same-property match shouldn't diverge this much in price between
+# sources. Used as a hard veto on Tier 3/4 dedup matches — the bug this
+# guards against: a wrong cross-source merge (e.g. two different condo units,
+# or a rental accidentally matched to a for-sale listing) showing one
+# source's price while another source's price silently overwrites it.
+PRICE_DIVERGENCE_VETO = 0.25
 
 
 class PropertyDeduplicator:
@@ -124,7 +136,9 @@ class PropertyDeduplicator:
     # ── Find (4-tier cascade) ─────────────────────────────────────────────────
 
     async def _find_existing(self, raw: RawProperty) -> Optional[Property]:
-        # Tier 1: MLS exact match
+        # Tier 1: MLS exact match. Exempt from the listing_type gate below — a
+        # real, shared MLS number is authoritative on its own, and for-sale
+        # vs for-rent listings never collide on a real MLS number in practice.
         if raw.mls_number:
             found = (await self.session.scalars(
                 select(Property).where(Property.mls_number == raw.mls_number)
@@ -132,11 +146,14 @@ class PropertyDeduplicator:
             if found:
                 return found
 
+        raw_listing_type = LISTING_TYPE_MAP.get(raw.listing_type, ListingType.FOR_SALE)
+
         # Tier 2: Address hash exact match
         if raw.full_address:
             found = (await self.session.scalars(
                 select(Property).where(
-                    Property.address_hash == self._address_hash(raw)
+                    Property.address_hash == self._address_hash(raw),
+                    Property.listing_type == raw_listing_type,
                 )
             )).first()
             if found:
@@ -144,78 +161,111 @@ class PropertyDeduplicator:
 
         # Tier 3: Composite fingerprint (requires postal_code or agent contact)
         if raw.postal_code or raw.agent_email or raw.agent_phone or raw.agent_name:
-            candidates = await self._composite_candidates(raw)
+            candidates = await self._composite_candidates(raw, raw_listing_type)
             for candidate in candidates:
-                if self._composite_score(candidate, raw) >= 60:
+                if self._price_diverges(candidate.asking_price, raw.asking_price):
+                    continue
+                score, specificity = self._composite_score(candidate, raw)
+                # Agent-identity signals (email/phone/name/agency) alone can
+                # reach 60+ points — one agent commonly handles many units in
+                # the same building, so identity match alone isn't proof of
+                # the same property. Require real specificity corroboration
+                # (postal code, type, price, or unit count) too.
+                if score >= 60 and specificity >= 25:
                     return candidate
 
         # Tier 4: PostGIS proximity fallback (only when coordinates available)
-        found = await self._find_by_proximity(raw)
+        found = await self._find_by_proximity(raw, raw_listing_type)
         if found:
             return found
 
         return None
 
-    async def _composite_candidates(self, raw: RawProperty) -> list[Property]:
-        """Fetch candidate properties in same city+type to score against."""
+    async def _composite_candidates(self, raw: RawProperty, raw_listing_type: ListingType) -> list[Property]:
+        """Fetch candidate properties in same city+type+listing_type to score against."""
         stmt = select(Property).where(
-            func.lower(Property.city) == (raw.city or "").lower()
+            func.lower(Property.city) == (raw.city or "").lower(),
+            Property.listing_type == raw_listing_type,
         )
         raw_type = PROPERTY_TYPE_MAP.get(raw.property_type or "", None)
         if raw_type:
             stmt = stmt.where(Property.property_type == raw_type)
         return list((await self.session.scalars(stmt.limit(50))).all())
 
-    def _composite_score(self, existing: Property, raw: RawProperty) -> int:
+    def _composite_score(self, existing: Property, raw: RawProperty) -> tuple[int, int]:
         """
         Weighted confidence score for cross-site deduplication.
-        Score ≥ 60 → treat as the same property.
+        Returns (total_score, specificity_score). Match requires total >= 60
+        AND specificity >= 25 (see _find_existing) — specificity is what
+        actually distinguishes one physical unit from another; identity
+        signals alone (same listing agent) are not sufficient, since one
+        agent often manages several units in the same building.
         """
-        score = 0
+        identity = 0
+        specificity = 0
 
-        # Agent email — strongest signal (40 pts)
+        # Agent email — strongest identity signal (40 pts)
         if existing.agent_email and raw.agent_email:
             if existing.agent_email.lower().strip() == raw.agent_email.lower().strip():
-                score += 40
+                identity += 40
 
-        # Agent phone — strong signal (35 pts)
+        # Agent phone — strong identity signal (35 pts)
         if existing.agent_phone and raw.agent_phone:
             if self._normalize_phone(existing.agent_phone) == self._normalize_phone(raw.agent_phone):
-                score += 35
+                identity += 35
 
-        # Postal code (25 pts)
+        # Postal code (25 pts) — specificity
         if existing.postal_code and raw.postal_code:
             if existing.postal_code.replace(" ", "").upper() == raw.postal_code.replace(" ", "").upper():
-                score += 25
+                specificity += 25
 
-        # Property type (15 pts)
+        # Property type (15 pts) — specificity
         raw_type = PROPERTY_TYPE_MAP.get(raw.property_type or "", None)
         if raw_type and existing.property_type == raw_type:
-            score += 15
+            specificity += 15
 
-        # Price proximity ±2% (15 pts)
+        # Price proximity ±2% (15 pts) — specificity
         if existing.asking_price and raw.asking_price and existing.asking_price > 0:
             if abs(existing.asking_price - raw.asking_price) / existing.asking_price <= 0.02:
-                score += 15
+                specificity += 15
 
-        # Agent name normalized (15 pts)
+        # Agent name normalized (15 pts) — identity
         if existing.agent_name and raw.agent_name:
             if self._normalize_text(existing.agent_name) == self._normalize_text(raw.agent_name):
-                score += 15
+                identity += 15
 
-        # Agency name normalized (10 pts)
+        # Agency name normalized (10 pts) — identity
         if existing.agency_name and raw.agency_name:
             if self._normalize_text(existing.agency_name) == self._normalize_text(raw.agency_name):
-                score += 10
+                identity += 10
 
-        # Unit count (10 pts)
+        # Unit count (10 pts) — specificity
         if existing.unit_count and raw.unit_count and existing.unit_count == raw.unit_count:
-            score += 10
+            specificity += 10
 
-        return score
+        return identity + specificity, specificity
 
-    async def _find_by_proximity(self, raw: RawProperty) -> Optional[Property]:
-        """PostGIS: find property within 15 metres of coordinates + same type."""
+    @staticmethod
+    def _price_diverges(existing_price: Optional[float], raw_price: Optional[float]) -> bool:
+        """
+        True if both prices are present and diverge by more than
+        PRICE_DIVERGENCE_VETO — a hard veto on Tier 3/4 matches. Two listings
+        of the same real property don't diverge this much; this is exactly
+        the signature of a wrong cross-source merge (e.g. a rental's price
+        landing on a for-sale property, or two different condo units merged).
+        """
+        if not existing_price or not raw_price or existing_price <= 0:
+            return False
+        return abs(existing_price - raw_price) / existing_price > PRICE_DIVERGENCE_VETO
+
+    async def _find_by_proximity(self, raw: RawProperty, raw_listing_type: ListingType) -> Optional[Property]:
+        """
+        PostGIS: find property within 15 metres of coordinates + same type.
+        Excludes CONDO — a tower can have 100+ units within 15m of each
+        other, so distance alone is meaningless there. Also vetoes on price
+        divergence, since distance+type alone was the weakest of the four
+        tiers (no corroboration at all before this fix).
+        """
         lat = raw.raw_data.get("lat")
         lng = raw.raw_data.get("lng")
         if not lat or not lng:
@@ -230,12 +280,18 @@ class PropertyDeduplicator:
                 func.ST_Transform(Property.location, 3857),
                 func.ST_Transform(func.ST_GeomFromEWKT(point_wkt), 3857),
                 15,
-            )
+            ),
+            Property.listing_type == raw_listing_type,
+            Property.property_type != PropertyType.CONDO,
         )
         raw_type = PROPERTY_TYPE_MAP.get(raw.property_type or "", None)
         if raw_type:
             stmt = stmt.where(Property.property_type == raw_type)
-        return (await self.session.scalars(stmt)).first()
+
+        for candidate in (await self.session.scalars(stmt)).all():
+            if not self._price_diverges(candidate.asking_price, raw.asking_price):
+                return candidate
+        return None
 
     # ── Create ────────────────────────────────────────────────────────────────
 
@@ -251,7 +307,10 @@ class PropertyDeduplicator:
 
         return Property(
             mls_number=raw.mls_number,
-            address_hash=None if raw.mls_number else self._address_hash(raw),
+            # Always computed — previously only set when mls_number was
+            # absent, which meant Tier 2 (exact address match) could never
+            # fire for ReMax (it always sets a fake local ID as mls_number).
+            address_hash=self._address_hash(raw),
             full_address=raw.full_address or "Unknown",
             street_number=raw.street_number,
             street_name=raw.street_name,
@@ -261,6 +320,7 @@ class PropertyDeduplicator:
             province="QC",
             location=self._make_point(raw),
             property_type=self._map_type(raw.property_type),
+            listing_type=LISTING_TYPE_MAP.get(raw.listing_type, ListingType.FOR_SALE),
             unit_count=raw.unit_count,
             bedrooms_total=raw.bedrooms_total,
             bathrooms_total=raw.bathrooms_total,
@@ -314,6 +374,17 @@ class PropertyDeduplicator:
         sources = list(prop.active_sources or [])
         if raw.source not in sources:
             prop.active_sources = [*sources, raw.source]
+
+        # Listing type correction — a Tier 1 (MLS) match returns the existing
+        # row regardless of listing_type, so a row created before the ReMax
+        # for-sale/for-rent fix (or one whose listing genuinely changed from
+        # sale to rent or back) would otherwise keep a stale value forever.
+        # needs_reanalysis so the pipeline picks the right stage set next run
+        # (financial/scoring stages only run for for_sale — see pipeline.py).
+        raw_listing_type = LISTING_TYPE_MAP.get(raw.listing_type, ListingType.FOR_SALE)
+        if prop.listing_type != raw_listing_type:
+            prop.listing_type = raw_listing_type
+            prop.needs_reanalysis = True
 
         # Price change
         if "price" in changes:

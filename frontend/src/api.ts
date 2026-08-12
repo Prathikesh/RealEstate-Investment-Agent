@@ -29,6 +29,7 @@ export interface PropertyCard {
   city: string
   neighborhood: string | null
   property_type: string
+  listing_type: string  // "for_sale" | "for_rent"
   unit_count: number | null
   sqft_total: number | null
   year_built: number | null
@@ -218,6 +219,7 @@ export interface PropertyFilters {
   address?: string
   mls_number?: string
   property_type?: string
+  listing_type?: string
   score_min?: number
   score_max?: number
   price_min?: number

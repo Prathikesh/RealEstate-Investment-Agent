@@ -84,7 +84,15 @@ CONSECUTIVE_EMPTY_LIMIT_CENTRIS = 5
 
 async def _known_remax_urls() -> set:
     """Every ReMax listing URL we've already scraped (from property_sources).
-    Used to diff the ReMax sitemap so we only fetch listings new to us."""
+    Used to diff the ReMax sitemap so we only fetch listings new to us.
+
+    Excludes inactive sources (is_active=False) — a source detached by
+    scripts/fix_mismatched_sources.py, or naturally delisted, should be
+    eligible for re-discovery on the next sitemap walk rather than
+    permanently skipped. Without this, a wrongly-matched or stale ReMax
+    listing can never be re-scraped and corrected, since ReMax's sitemap
+    walk (unlike Centris/Realtor's periodic re-scans) only ever visits a
+    URL once."""
     from sqlalchemy import select
     from app.models.source import PropertySource
     from app.models.snapshot import ScraperSource
@@ -94,6 +102,7 @@ async def _known_remax_urls() -> set:
             select(PropertySource.source_url).where(
                 PropertySource.source == ScraperSource.REMAX,
                 PropertySource.source_url.isnot(None),
+                PropertySource.is_active == True,  # noqa: E712
             )
         )
         return {r[0] for r in rows}

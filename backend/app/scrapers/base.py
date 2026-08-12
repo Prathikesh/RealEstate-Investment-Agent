@@ -49,6 +49,7 @@ class RawProperty:
 
     # Property details
     property_type: Optional[str] = None             # maps to PropertyType enum values
+    listing_type: str = "for_sale"                  # "for_sale" | "for_rent" — maps to ListingType enum
     unit_count: Optional[int] = None
     bedrooms_total: Optional[int] = None
     bathrooms_total: Optional[float] = None

@@ -42,7 +42,7 @@ from app.api.schemas import (
     ScoreResultSchema, StatsResponse, FiveYearProjectionSchema, YearSnapshotSchema,
     ZoningInfo, RebuildEconomicsInfo, AssessmentInfo, ConstraintFlag,
 )
-from app.models.property import Property, PropertyStatus, PropertyType, ScoreCategory, compute_days_on_market
+from app.models.property import ListingType, Property, PropertyStatus, PropertyType, ScoreCategory, compute_days_on_market
 from app.models.source import PropertySource
 
 logger = logging.getLogger(__name__)
@@ -156,6 +156,7 @@ async def list_properties(
     address:       Optional[str] = Query(None),
     mls_number:    Optional[str] = Query(None),
     property_type: Optional[str] = Query(None),
+    listing_type:  Optional[str] = Query(None),  # "for_sale" | "for_rent"
     score_min:     int           = Query(0, ge=0, le=100),
     score_max:     int           = Query(100, ge=0, le=100),
     price_min:     Optional[float] = Query(None),
@@ -213,6 +214,12 @@ async def list_properties(
         try:
             pt = PropertyType(property_type)
             stmt = stmt.where(Property.property_type == pt)
+        except ValueError:
+            pass
+    if listing_type:
+        try:
+            lt = ListingType(listing_type)
+            stmt = stmt.where(Property.listing_type == lt)
         except ValueError:
             pass
     if score_min > 0 or score_max < 100:

@@ -48,6 +48,11 @@ export default function PropertyCardGrid({ property: p, className, rankMode }: P
   const { toggle, has, isFull } = useCompare()
   const inCompare = has(p.id)
   const photos = p.photos ?? []
+  // Rentals have no score/cap-rate/cash-flow — asking_price is the monthly
+  // rent, not a purchase price, so the whole investment-metrics section is
+  // meaningless and hidden (see InvestmentPipeline.run(), which skips the
+  // financial/scoring stages entirely for listing_type='for_rent').
+  const isRental = p.listing_type === 'for_rent'
 
   // Which verdict this card shows. In "your" mode we surface the broker's own
   // score when it exists, falling back to the AI score for un-scored (legacy)
@@ -125,6 +130,11 @@ export default function PropertyCardGrid({ property: p, className, rankMode }: P
               New
             </span>
           )}
+          {isRental && (
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-blue-600 text-white tracking-widest shadow-md uppercase">
+              For Rent
+            </span>
+          )}
           {p.status === 'price_changed' && (
             <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-500 text-white shadow-md uppercase">
               Price Drop
@@ -151,17 +161,19 @@ export default function PropertyCardGrid({ property: p, className, rankMode }: P
 
         {/* Top-right: score + compare */}
         <div className="absolute top-3 right-3 flex flex-col items-end gap-1.5">
-          <div className="flex flex-col items-center gap-0.5">
-            {showLabel && (
-              <span className={clsx(
-                'px-1.5 py-px rounded-full text-[9px] font-black tracking-wider uppercase shadow-sm',
-                yourMode ? 'bg-accent text-white' : 'bg-white/90 text-slate-500',
-              )}>
-                {yourMode ? 'You' : 'AI'}
-              </span>
-            )}
-            <ScoreBadge score={badgeScore} category={badgeCat} size="card" />
-          </div>
+          {!isRental && (
+            <div className="flex flex-col items-center gap-0.5">
+              {showLabel && (
+                <span className={clsx(
+                  'px-1.5 py-px rounded-full text-[9px] font-black tracking-wider uppercase shadow-sm',
+                  yourMode ? 'bg-accent text-white' : 'bg-white/90 text-slate-500',
+                )}>
+                  {yourMode ? 'You' : 'AI'}
+                </span>
+              )}
+              <ScoreBadge score={badgeScore} category={badgeCat} size="card" />
+            </div>
+          )}
           <button
             onClick={e => {
               e.preventDefault()
@@ -198,7 +210,9 @@ export default function PropertyCardGrid({ property: p, className, rankMode }: P
         {/* Price + type */}
         <div>
           <p className="text-2xl font-black text-ink tabular-nums leading-none">
-            {fmtCAD(p.asking_price)}
+            {fmtCAD(p.asking_price)}{isRental && p.asking_price != null && (
+              <span className="text-sm font-semibold text-muted">/mo</span>
+            )}
           </p>
           <p className="text-sm text-muted mt-1 font-medium">
             {typeLabel(p.property_type)}
@@ -245,32 +259,35 @@ export default function PropertyCardGrid({ property: p, className, rankMode }: P
         </div>
 
         {/* Divider */}
-        <div className="border-t border-surface-border" />
+        {!isRental && <div className="border-t border-surface-border" />}
 
-        {/* Metrics row */}
-        <div className="grid grid-cols-3 gap-2 text-center">
-          <div>
-            <p className={clsx('text-sm tabular-nums', capRateClass)}>
-              {p.cap_rate != null ? `${p.cap_rate.toFixed(2)}%` : '—'}
-            </p>
-            <p className="text-[10px] text-muted mt-0.5">Cap Rate</p>
+        {/* Metrics row — not applicable to rentals (no purchase price, no
+            score/cap-rate; see isRental above) */}
+        {!isRental && (
+          <div className="grid grid-cols-3 gap-2 text-center">
+            <div>
+              <p className={clsx('text-sm tabular-nums', capRateClass)}>
+                {p.cap_rate != null ? `${p.cap_rate.toFixed(2)}%` : '—'}
+              </p>
+              <p className="text-[10px] text-muted mt-0.5">Cap Rate</p>
+            </div>
+            <div>
+              <p className={clsx('text-sm tabular-nums flex items-center justify-center gap-0.5', cfClass)}>
+                <CfIcon size={11} className="shrink-0" />
+                {p.monthly_cash_flow != null ? fmtCAD(p.monthly_cash_flow) : '—'}
+              </p>
+              <p className="text-[10px] text-muted mt-0.5">Cash Flow/mo</p>
+            </div>
+            <div>
+              <p className={clsx('text-sm tabular-nums', discountClass)}>
+                {p.discount_pct != null
+                  ? `${p.discount_pct > 0 ? '↓' : '↑'}${Math.abs(p.discount_pct).toFixed(1)}%`
+                  : '—'}
+              </p>
+              <p className="text-[10px] text-muted mt-0.5">vs Market</p>
+            </div>
           </div>
-          <div>
-            <p className={clsx('text-sm tabular-nums flex items-center justify-center gap-0.5', cfClass)}>
-              <CfIcon size={11} className="shrink-0" />
-              {p.monthly_cash_flow != null ? fmtCAD(p.monthly_cash_flow) : '—'}
-            </p>
-            <p className="text-[10px] text-muted mt-0.5">Cash Flow/mo</p>
-          </div>
-          <div>
-            <p className={clsx('text-sm tabular-nums', discountClass)}>
-              {p.discount_pct != null
-                ? `${p.discount_pct > 0 ? '↓' : '↑'}${Math.abs(p.discount_pct).toFixed(1)}%`
-                : '—'}
-            </p>
-            <p className="text-[10px] text-muted mt-0.5">vs Market</p>
-          </div>
-        </div>
+        )}
 
         {/* Footer: days on market + CTA */}
         <div className="flex items-center justify-between">

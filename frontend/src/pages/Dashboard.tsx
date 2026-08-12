@@ -109,6 +109,11 @@ export default function Dashboard() {
     queryFn: () => fetchProperties({ sort_by: 'newest', page_size: 8 }),
   })
 
+  const { data: rentalListings } = useQuery({
+    queryKey: ['properties', 'rentals-dashboard'],
+    queryFn: () => fetchProperties({ listing_type: 'for_rent', sort_by: 'newest', page_size: 8 }),
+  })
+
   return (
     <div className="p-6 space-y-6 max-w-[1400px] mx-auto animate-slide-up">
 
@@ -346,6 +351,56 @@ export default function Dashboard() {
                 </Link>
               )}
             </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Rental Properties ──────────────────────────────────────────── */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="font-bold text-ink text-base">Rental Properties</h2>
+            <p className="text-xs text-muted">Recently listed for rent</p>
+          </div>
+          <Link to="/properties?listing_type=for_rent&sort_by=newest" className="flex items-center gap-1 text-sm text-accent hover:underline font-semibold">
+            View all <ChevronRight size={14} />
+          </Link>
+        </div>
+        <div className="bg-surface-card border border-surface-border rounded-2xl overflow-hidden shadow-card divide-y divide-surface-border">
+          {rentalListings?.items.map(p => (
+            <Link
+              key={p.id}
+              to={`/properties/${p.id}`}
+              className="flex items-center gap-3 px-4 py-3 hover:bg-surface-hover transition-all duration-150 group"
+            >
+              {/* Thumbnail */}
+              <div className="w-12 h-12 rounded-xl bg-surface-hover shrink-0 overflow-hidden border border-surface-border flex items-center justify-center">
+                {p.photos.length > 0
+                  ? <img src={p.photos[0]} referrerPolicy="no-referrer" alt="" className="w-full h-full object-cover" onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />
+                  : <Building2 size={14} className="text-surface-border" />
+                }
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm text-ink font-semibold truncate group-hover:text-accent transition-colors">{displayAddress(p)}</p>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <p className="text-xs text-muted">{p.city} · {p.property_type.replace(/_/g, ' ')}</p>
+                  {p.is_new && (
+                    <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-accent text-white">NEW</span>
+                  )}
+                </div>
+              </div>
+              <div className="text-right shrink-0">
+                <p className="text-sm font-mono font-bold text-ink tabular-nums">
+                  {fmtCAD(p.asking_price)}<span className="text-[10px] font-semibold text-muted">/mo</span>
+                </p>
+                <p className="text-[10px] text-muted flex items-center gap-0.5 justify-end mt-0.5">
+                  <Clock size={9} /> {timeAgo(p.first_seen_at)}
+                </p>
+              </div>
+            </Link>
+          ))}
+          {!rentalListings?.items.length && (
+            <div className="px-5 py-8 text-center text-muted text-sm">No rental listings recorded yet.</div>
           )}
         </div>
       </div>

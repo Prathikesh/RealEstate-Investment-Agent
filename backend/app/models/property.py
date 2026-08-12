@@ -48,6 +48,11 @@ class PropertyStatus(str, enum.Enum):
     EXPIRED = "expired"
 
 
+class ListingType(str, enum.Enum):
+    FOR_SALE = "for_sale"
+    FOR_RENT = "for_rent"
+
+
 class ScoreCategory(str, enum.Enum):
     STRONG_OPPORTUNITY = "strong_opportunity"   # 80-100
     WORTH_INVESTIGATING = "worth_investigating"  # 60-79
@@ -97,6 +102,15 @@ class Property(Base):
 
     # ── Property Details ──────────────────────────────────────────────────────
     property_type: Mapped[PropertyType] = mapped_column(SAEnum(PropertyType))
+    # for_sale vs for_rent — determines whether financial/scoring stages run
+    # at all (see InvestmentPipeline.run(); cap rate etc. are meaningless when
+    # asking_price is actually a monthly rent, not a purchase price).
+    listing_type: Mapped[ListingType] = mapped_column(
+        SAEnum(ListingType), nullable=False, default=ListingType.FOR_SALE,
+        server_default=ListingType.FOR_SALE.name,  # Postgres enum stores the
+        # member NAME ("FOR_SALE"), not .value — matches every other enum
+        # column in this project (e.g. propertystatus stores "ACTIVE").
+    )
     unit_count: Mapped[Optional[int]] = mapped_column(Integer)
     bedrooms_total: Mapped[Optional[int]] = mapped_column(Integer)
     bathrooms_total: Mapped[Optional[float]] = mapped_column(Float)
@@ -251,6 +265,7 @@ class Property(Base):
         Index("ix_properties_type_status", "property_type", "status"),
         Index("ix_properties_score_status", "score", "status"),
         Index("ix_properties_needs_reanalysis", "needs_reanalysis"),
+        Index("ix_properties_listing_type", "listing_type"),
     )
 
     def __repr__(self) -> str:

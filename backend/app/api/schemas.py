@@ -71,6 +71,7 @@ class PropertyCard(BaseModel):
     neighborhood:   Optional[str]
 
     property_type:  str
+    listing_type:   str = "for_sale"
     unit_count:     Optional[int]
     sqft_total:     Optional[int]
     year_built:     Optional[int]
@@ -118,7 +119,7 @@ class PropertyCard(BaseModel):
     # zoning_upside above. NOT the full ConstraintFlag list (that's on PropertyDetail).
     flood_zone: Optional[bool] = None
 
-    @field_validator("property_type", mode="before")
+    @field_validator("property_type", "listing_type", mode="before")
     @classmethod
     def extract_enum_value(cls, v: Any) -> str:
         return v.value if hasattr(v, "value") else str(v)
@@ -209,6 +210,7 @@ class PropertyDetail(BaseModel):
     province:       str
 
     property_type:   str
+    listing_type:    str = "for_sale"
     unit_count:      Optional[int]
     sqft_total:      Optional[int]
     lot_sqft:        Optional[int]
@@ -287,7 +289,7 @@ class PropertyDetail(BaseModel):
     constraints: Optional[list[ConstraintFlag]] = None
     market_benchmark: Optional[dict] = None
 
-    @field_validator("property_type", mode="before")
+    @field_validator("property_type", "listing_type", mode="before")
     @classmethod
     def extract_enum_value(cls, v: Any) -> str:
         return v.value if hasattr(v, "value") else str(v)

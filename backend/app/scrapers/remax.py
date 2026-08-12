@@ -197,13 +197,34 @@ class RemaxScraper(BaseScraper):
         # ── 1. JSON-LD RealEstateListing ──────────────────────────────────────
         ld_data = self._extract_ld_listing(soup)
 
-        # ── 2. Price ──────────────────────────────────────────────────────────
+        # ── 2. Property type, address, city & listing type from presentation ────
+        # Parsed before price below — the sale-price sanity bound only makes
+        # sense once we know whether this is a for_sale or for_rent listing
+        # (a legitimate monthly rent, e.g. $1,250, would otherwise fail a
+        # sale-oriented $50,000 floor and get wrongly dropped).
+        property_type, full_address, city, listing_type = self._parse_presentation(soup, url)
+
+        # ── 3. Price ──────────────────────────────────────────────────────────
+        # For a for_sale listing, apply the same $50,000-$50,000,000
+        # sane-sale-price bound _parse_price() already enforces on the
+        # fallback path — without it here too, a rental page whose "for
+        # rent"/"à louer" text doesn't match the listing_type regex would
+        # still let its monthly rent through unguarded as if it were a sale
+        # price. Confirmed live: this exact gap let 438 historical ReMax
+        # rentals get stored as listing_type=for_sale with nonsense
+        # triple-digit cap rates before this fix. Rentals get no such
+        # floor — a real rent is legitimately a small number.
+        def _in_sale_bounds(v: float) -> bool:
+            return listing_type == "for_rent" or 50_000 <= v <= 50_000_000
+
         asking_price: Optional[float] = None
         if ld_data:
             raw_price = (ld_data.get("offers") or {}).get("price")
             if raw_price is not None:
                 try:
-                    asking_price = float(raw_price)
+                    candidate = float(raw_price)
+                    if _in_sale_bounds(candidate):
+                        asking_price = candidate
                 except (ValueError, TypeError):
                     pass
 
@@ -211,13 +232,14 @@ class RemaxScraper(BaseScraper):
             # Fallback: parse price from presentation section text
             price_el = soup.select_one(".presentation-section__price") or soup.select_one("[class*='price']")
             if price_el:
-                asking_price = self._parse_price(price_el.get_text())
+                if listing_type == "for_rent":
+                    digits = re.sub(r"[^\d]", "", price_el.get_text().split("+")[0].split("*")[0])
+                    asking_price = float(digits) if digits else None
+                else:
+                    asking_price = self._parse_price(price_el.get_text())
 
-        # ── 3. Listing ID (ULS) ───────────────────────────────────────────────
+        # ── 4. Listing ID (ULS) ───────────────────────────────────────────────
         listing_id = self._extract_uls(url, soup)
-
-        # ── 4. Property type & address from presentation section ───────────────
-        property_type, full_address, city = self._parse_presentation(soup, url)
 
         # ── 5. Bedrooms & bathrooms ───────────────────────────────────────────
         bedrooms, bathrooms = self._parse_features(soup)
@@ -254,6 +276,7 @@ class RemaxScraper(BaseScraper):
             full_address=full_address,
             city=city,
             property_type=property_type,
+            listing_type=listing_type,
             asking_price=asking_price,
             bedrooms_total=bedrooms,
             bathrooms_total=bathrooms,
@@ -304,9 +327,10 @@ class RemaxScraper(BaseScraper):
                 return m2.group(1)
         return None
 
-    def _parse_presentation(self, soup: BeautifulSoup, url: str) -> tuple[str, Optional[str], Optional[str]]:
+    def _parse_presentation(self, soup: BeautifulSoup, url: str) -> tuple[str, Optional[str], Optional[str], str]:
         """
-        Parse property type, address, and city from the presentation section.
+        Parse property type, address, city, and listing type (for_sale/for_rent)
+        from the presentation section.
         Section text example: "$849,900 +GST/QST|ULS: 9839850|Triplex|for sale|
                                7546 - 7550 Rue Centrale, Montréal (LaSalle)"
         """
@@ -320,12 +344,21 @@ class RemaxScraper(BaseScraper):
                 property_type = mapped
                 break
 
+        # Listing type — the same presentation text that says "for sale"/
+        # "à vendre" says "for rent"/"à louer" on rental listings. ReMax's
+        # sitemap walk has no transaction-type filter, so this is the only
+        # signal distinguishing the two; without it, rentals were silently
+        # getting merged into unrelated for-sale properties downstream.
+        listing_type = "for_rent" if re.search(r"for rent|à louer|a louer", pres_text, re.IGNORECASE) else "for_sale"
+
         # Try H1 for address: "Triplex for sale 7546 - 7550 Rue Centrale, Montréal (LaSalle)"
         h1 = soup.find("h1")
         h1_text = h1.get_text(strip=True) if h1 else ""
+        if listing_type == "for_sale" and re.search(r"for rent|à louer|a louer", h1_text, re.IGNORECASE):
+            listing_type = "for_rent"
 
-        # Address is the part after "for sale" in H1
-        addr_match = re.search(r'(?:for sale|à vendre)\s*(.+)', h1_text, re.IGNORECASE)
+        # Address is the part after "for sale"/"for rent" in H1
+        addr_match = re.search(r'(?:for sale|à vendre|for rent|à louer)\s*(.+)', h1_text, re.IGNORECASE)
         if addr_match:
             full_address: Optional[str] = addr_match.group(1).strip()
         elif pres:
@@ -353,7 +386,7 @@ class RemaxScraper(BaseScraper):
         if not city and "montreal" in url.lower():
             city = "Montréal"
 
-        return property_type, full_address, city
+        return property_type, full_address, city, listing_type
 
     def _parse_features(self, soup: BeautifulSoup) -> tuple[Optional[int], Optional[float]]:
         """

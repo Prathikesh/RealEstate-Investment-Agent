@@ -81,6 +81,7 @@ export default function Properties() {
     address:       params.get('address') ?? undefined,
     mls_number:    params.get('mls_number') ?? undefined,
     property_type: params.get('property_type') ?? undefined,
+    listing_type:  params.get('listing_type') ?? undefined,
     sort_by:       (params.get('sort_by') as PropertyFilters['sort_by']) ?? 'score',
     listed_within: (params.get('listed_within') as PropertyFilters['listed_within']) ?? undefined,
     score_min:     params.get('score_min') ? Number(params.get('score_min')) : undefined,
@@ -137,7 +138,7 @@ export default function Properties() {
 
   const hasActiveFilters = !!(
     filters.city || filters.address || filters.mls_number || filters.property_type ||
-    filters.score_min || filters.multi_site || filters.has_sqft || filters.flood_zone ||
+    filters.listing_type || filters.score_min || filters.multi_site || filters.has_sqft || filters.flood_zone ||
     filters.listed_within || filters.price_min || filters.price_max
   )
 
@@ -384,6 +385,20 @@ export default function Properties() {
               {PROPERTY_TYPES.map(tp => (
                 <option key={tp.value} value={tp.value}>{tp.label}</option>
               ))}
+            </select>
+          </label>
+
+          {/* Listing type — for-sale vs for-rent (rentals have no score/cap-rate) */}
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-muted">Listing Type</span>
+            <select
+              value={filters.listing_type ?? ''}
+              onChange={e => setFilter('listing_type', e.target.value)}
+              className="select"
+            >
+              <option value="">For sale &amp; for rent</option>
+              <option value="for_sale">For sale</option>
+              <option value="for_rent">For rent</option>
             </select>
           </label>
 

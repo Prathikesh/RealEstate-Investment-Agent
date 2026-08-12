@@ -144,6 +144,14 @@ export default function PropertyPage() {
 
   const pricePerSqft = derivedPricePerSqft(prop)
 
+  // Rentals have no financial/scoring data (asking_price is a monthly rent —
+  // see InvestmentPipeline.run(), which skips comps/calculator/scorer for
+  // listing_type='for_rent'), so the Financials tab (5-year projection, cost
+  // breakdown, Score Breakdown, FinancingWorkbench) has nothing real to show.
+  const isRental = prop.listing_type === 'for_rent'
+  const visibleTabs = isRental ? TAB_KEYS.filter(k => k !== 'financials') : TAB_KEYS
+  const effectiveTab = isRental && activeTab === 'financials' ? 'aiBrief' : activeTab
+
   return (
     <div className="p-6 space-y-5 max-w-[1600px] mx-auto animate-slide-up">
 
@@ -197,36 +205,53 @@ export default function PropertyPage() {
             </div>
           </div>
 
-          <ScoreBadge score={prop.score} category={prop.score_category} size="lg" />
+          {prop.listing_type === 'for_rent' ? (
+            <span className="px-3 py-1.5 rounded-full text-xs font-black bg-blue-600 text-white tracking-widest shadow-md uppercase">
+              For Rent
+            </span>
+          ) : (
+            <ScoreBadge score={prop.score} category={prop.score_category} size="lg" />
+          )}
         </div>
 
-        {/* Key metrics */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
-          <KeyMetric label="Asking price"               value={fmtCAD(prop.asking_price)} prominent />
-          <KeyMetric
-            label="Below market"
-            value={prop.discount_pct != null
-              ? `${prop.discount_pct > 0 ? '-' : '+'}${Math.abs(prop.discount_pct).toFixed(1)}%`
-              : '—'}
-            valueClass={
-              prop.discount_pct != null && prop.discount_pct > 5 ? 'text-score-strong' :
-              prop.discount_pct != null && prop.discount_pct < 0 ? 'text-score-notrecommended' : undefined
-            }
-          />
-          <KeyMetric
-            label="Yearly return (cap rate)"
-            value={fmtPct(prop.cap_rate)}
-            valueClass={prop.cap_rate != null && prop.cap_rate >= 5 ? 'text-score-strong' : undefined}
-          />
-          <KeyMetric
-            label="Monthly profit (cash flow)"
-            value={prop.monthly_cash_flow != null ? `${fmtCAD(prop.monthly_cash_flow)}/mo` : '—'}
-            valueClass={
-              prop.monthly_cash_flow != null && prop.monthly_cash_flow >= 0
-                ? 'text-score-strong' : 'text-score-notrecommended'
-            }
-          />
-        </div>
+        {/* Key metrics — rentals have no score/cap-rate/cash-flow (asking_price
+            is the monthly rent, not a purchase price; see InvestmentPipeline.run(),
+            which skips the financial/scoring stages for listing_type='for_rent') */}
+        {prop.listing_type === 'for_rent' ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+            <KeyMetric label="Monthly rent" value={`${fmtCAD(prop.asking_price)}/mo`} prominent />
+            {prop.unit_count != null && (
+              <KeyMetric label="Units" value={String(prop.unit_count)} />
+            )}
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
+            <KeyMetric label="Asking price"               value={fmtCAD(prop.asking_price)} prominent />
+            <KeyMetric
+              label="Below market"
+              value={prop.discount_pct != null
+                ? `${prop.discount_pct > 0 ? '-' : '+'}${Math.abs(prop.discount_pct).toFixed(1)}%`
+                : '—'}
+              valueClass={
+                prop.discount_pct != null && prop.discount_pct > 5 ? 'text-score-strong' :
+                prop.discount_pct != null && prop.discount_pct < 0 ? 'text-score-notrecommended' : undefined
+              }
+            />
+            <KeyMetric
+              label="Yearly return (cap rate)"
+              value={fmtPct(prop.cap_rate)}
+              valueClass={prop.cap_rate != null && prop.cap_rate >= 5 ? 'text-score-strong' : undefined}
+            />
+            <KeyMetric
+              label="Monthly profit (cash flow)"
+              value={prop.monthly_cash_flow != null ? `${fmtCAD(prop.monthly_cash_flow)}/mo` : '—'}
+              valueClass={
+                prop.monthly_cash_flow != null && prop.monthly_cash_flow >= 0
+                  ? 'text-score-strong' : 'text-score-notrecommended'
+              }
+            />
+          </div>
+        )}
 
         {/* Cross-site price comparison */}
         {prop.cross_site_prices && prop.cross_site_prices.length > 1 && (
@@ -368,13 +393,13 @@ export default function PropertyPage() {
       {/* ── Tabs ─────────────────────────────────────────────────────────── */}
       <div className="bg-white border border-surface-border rounded-2xl overflow-hidden shadow-card">
         <nav className="flex overflow-x-auto bg-surface/50 p-1.5 gap-1">
-          {TAB_KEYS.map(key => (
+          {visibleTabs.map(key => (
             <button
               key={key}
               onClick={() => setActiveTab(key)}
               className={clsx(
                 'flex-1 px-4 py-2.5 text-sm font-semibold rounded-xl whitespace-nowrap transition-all duration-200',
-                activeTab === key
+                effectiveTab === key
                   ? 'bg-white text-accent shadow-sm border border-surface-border'
                   : 'text-muted hover:text-ink hover:bg-white/60',
               )}
@@ -386,12 +411,12 @@ export default function PropertyPage() {
       </div>
 
       {/* ── Tab content ──────────────────────────────────────────────────── */}
-      <div key={activeTab} className="tab-enter">
-        {activeTab === 'aiBrief'      && <BriefTab      prop={prop} live={liveScenario} />}
-        {activeTab === 'financials'   && <FinancialsTab prop={prop} t={t} pricePerSqft={pricePerSqft} onScenarioChange={setLiveScenario} />}
-        {activeTab === 'comparables'  && <ComparablesTab prop={prop} t={t} />}
-        {activeTab === 'priceHistory' && <PriceHistoryTab prop={prop} t={t} />}
-        {activeTab === 'zoning'       && <ZoningTab prop={prop} />}
+      <div key={effectiveTab} className="tab-enter">
+        {effectiveTab === 'aiBrief'      && <BriefTab      prop={prop} live={liveScenario} />}
+        {effectiveTab === 'financials'   && <FinancialsTab prop={prop} t={t} pricePerSqft={pricePerSqft} onScenarioChange={setLiveScenario} />}
+        {effectiveTab === 'comparables'  && <ComparablesTab prop={prop} t={t} />}
+        {effectiveTab === 'priceHistory' && <PriceHistoryTab prop={prop} t={t} />}
+        {effectiveTab === 'zoning'       && <ZoningTab prop={prop} />}
       </div>
     </div>
   )
