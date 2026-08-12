@@ -15,7 +15,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from sqlalchemy import func, select, distinct, text
+from sqlalchemy import func, select, distinct, text, cast, Float
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -27,6 +27,7 @@ from app.agent.pipeline import InvestmentPipeline
 from app.agent.scorer import WEIGHTS
 from app.agent.verdict import (
     effective_weights, weighted_score_expr, clamp_round, your_verdict_category,
+    days_on_market_expr as _dom_expr,
 )
 from app.agent.zoning_matcher import current_units as _current_units
 from app.analytics.models import EventType
@@ -42,7 +43,7 @@ from app.api.schemas import (
     ScoreResultSchema, StatsResponse, FiveYearProjectionSchema, YearSnapshotSchema,
     ZoningInfo, RebuildEconomicsInfo, AssessmentInfo, ConstraintFlag,
 )
-from app.models.property import ListingType, Property, PropertyStatus, PropertyType, ScoreCategory, compute_days_on_market
+from app.models.property import ListingType, Property, PropertyStatus, PropertyType, ScoreCategory, compute_days_on_market, listing_date_is_real
 from app.models.source import PropertySource
 
 logger = logging.getLogger(__name__)
@@ -163,6 +164,15 @@ async def list_properties(
     price_max:     Optional[float] = Query(None),
     cap_rate_min:  Optional[float] = Query(None),
     cash_flow_min: Optional[float] = Query(None),
+    # Real-number "buy box" targets (the client's "in numbers, not percentages"
+    # request): keep only listings that actually hit these thresholds.
+    discount_min:  Optional[float] = Query(None),  # % below comparable sales
+    days_on_market_min: Optional[int] = Query(None, ge=0),  # min days listed
+    # Price-drop targets — the observable motivated-seller signal the client asked
+    # for "in numbers" (a vendor who has cut their price is more motivated). Backed
+    # by price_history: original = first recorded price, current = asking_price.
+    price_drop_min:     Optional[float] = Query(None, ge=0),  # min $ cut since listing
+    price_drop_pct_min: Optional[float] = Query(None, ge=0),  # min % cut since listing
     your_score_min: Optional[int] = Query(None, ge=0, le=100),  # Your Verdict threshold
     status:        Optional[str] = Query(None),
     multi_site:    Optional[bool] = Query(None),
@@ -170,7 +180,7 @@ async def list_properties(
     flood_zone:    Optional[bool] = Query(None),
     listed_within: Optional[str] = Query(None),  # 24h | 48h | 7d | 30d
     # Sorting. "your_verdict" ranks by the logged-in broker's own metrics.
-    sort_by: Literal["score", "your_verdict", "price", "price_asc", "price_desc", "newest", "discount"] = Query("score"),
+    sort_by: Literal["score", "your_verdict", "price", "price_asc", "price_desc", "newest", "discount", "days_listed"] = Query("score"),
     # Pagination
     page:      int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -178,10 +188,34 @@ async def list_properties(
     user: Optional[Broker] = Depends(get_current_user_optional),
 ) -> PropertyListResponse:
 
+    # The active "buy box": the real-number targets in effect for THIS request.
+    # These come straight from the query params (seeded from the broker's saved
+    # custom_buy_box on the client, but tweakable on the page), so the SAME numbers
+    # that filter the list also anchor the Your Verdict scoring below — keeping
+    # "only show me X" and "score X relative to my target" perfectly consistent.
+    active_buy_box = {
+        "cash_flow_min":      cash_flow_min,
+        "cap_rate_min":       cap_rate_min,
+        "discount_min":       discount_min,
+        "days_on_market_min": days_on_market_min,
+    }
+
     # Your Verdict — only meaningful for a logged-in broker. When present we
-    # compute their personalized score in-DB (from stored score_components) so we
-    # can both surface it on every card AND rank the whole set by it.
-    your_expr = weighted_score_expr(effective_weights(user)) if user is not None else None
+    # compute their personalized score in-DB (from stored score_components, plus
+    # target-relative overrides from the active buy box) so we can both surface it
+    # on every card AND rank the whole set by it.
+    your_expr = (
+        weighted_score_expr(effective_weights(user), active_buy_box)
+        if user is not None else None
+    )
+
+    # Days-on-market as a queryable SQL expression — the single source of truth
+    # shared with verdict scoring (verdict.days_on_market_expr). Uses the real
+    # listing date (listed_at) when known, else the first_seen_at fallback (always
+    # set, so never NULL). The per-row display helper compute_days_on_market() can
+    # additionally read a price_history "listed" event, but that isn't cleanly
+    # queryable, so filter/sort use this consistent COALESCE form.
+    days_on_market_expr = _dom_expr()
 
     if your_expr is not None:
         stmt = select(Property, your_expr.label("your_score")).where(Property.asking_price.isnot(None))
@@ -236,6 +270,27 @@ async def list_properties(
         stmt = stmt.where(Property.cap_rate.isnot(None)).where(Property.cap_rate >= cap_rate_min)
     if cash_flow_min is not None:
         stmt = stmt.where(Property.monthly_cash_flow.isnot(None)).where(Property.monthly_cash_flow >= cash_flow_min)
+    if discount_min is not None:
+        stmt = stmt.where(Property.discount_pct.isnot(None)).where(Property.discount_pct >= discount_min)
+    if days_on_market_min is not None:
+        stmt = stmt.where(days_on_market_expr >= days_on_market_min)
+    if price_drop_min is not None or price_drop_pct_min is not None:
+        # original list price = first price_history entry; current = asking_price.
+        # Requires a history with a starting price and a known current price.
+        original_price = cast(Property.price_history[0]["price"].astext, Float)
+        drop_abs = original_price - Property.asking_price
+        stmt = stmt.where(Property.asking_price.isnot(None)).where(original_price.isnot(None))
+        # Data-quality guard: some price_history[0] values are junk from dedup merges
+        # (e.g. a rent or typo), producing absurd "95%+ drops". Real motivated-seller
+        # cuts are well under 60%, so ignore anything where the current price is below
+        # 40% of the original — that's a data error, not a price reduction.
+        stmt = stmt.where(Property.asking_price >= original_price * 0.4)
+        if price_drop_min is not None:
+            stmt = stmt.where(drop_abs >= price_drop_min)
+        if price_drop_pct_min is not None:
+            stmt = stmt.where(original_price > 0).where(
+                drop_abs / original_price * 100.0 >= price_drop_pct_min
+            )
     if your_score_min is not None and your_expr is not None:
         stmt = stmt.where(your_expr >= your_score_min)
     if status:
@@ -288,6 +343,9 @@ async def list_properties(
         stmt = stmt.order_by(Property.first_seen_at.desc())
     elif sort_by == "discount":
         stmt = stmt.order_by(Property.discount_pct.desc().nullslast())
+    elif sort_by == "days_listed":
+        # Longest-listed first — the client's "vendor is more motivated" signal.
+        stmt = stmt.order_by(days_on_market_expr.desc().nullslast())
 
     # Paginate + eager load sources + zoning_zone (3 queries total, no N+1 —
     # selectinload batches one IN-query per relationship regardless of page size)
@@ -310,6 +368,7 @@ async def list_properties(
         src_name, src_price = _lowest_price_source(p.sources)
         card = PropertyCard.model_validate(p)
         card.days_on_market      = compute_days_on_market(p)
+        card.days_on_market_is_real = listing_date_is_real(p)
         card.multi_site_count    = len([s for s in p.sources if s.is_active])
         card.lowest_price_source = src_name
         card.lowest_price        = src_price
@@ -335,6 +394,8 @@ async def list_properties(
                 "score_max": score_max if score_max < 100 else None,
                 "price_min": price_min, "price_max": price_max,
                 "cap_rate_min": cap_rate_min, "cash_flow_min": cash_flow_min,
+                "discount_min": discount_min, "days_on_market_min": days_on_market_min,
+                "price_drop_min": price_drop_min, "price_drop_pct_min": price_drop_pct_min,
                 "your_score_min": your_score_min, "status": status,
                 "multi_site": multi_site, "has_sqft": has_sqft, "listed_within": listed_within,
                 "sort_by": sort_by if sort_by != "score" else None,
@@ -545,6 +606,7 @@ async def get_property(
     # broker's own strategy (which may differ from how the stored score was built).
     detail.ai_weights            = WEIGHTS.get("both")
     detail.days_on_market       = compute_days_on_market(prop)
+    detail.days_on_market_is_real = listing_date_is_real(prop)
     detail.cross_site_prices    = _build_cross_site_prices(prop.sources)
     detail.multi_site_count     = len([s for s in prop.sources if s.is_active])
     detail.lowest_price_source  = src_name

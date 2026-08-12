@@ -91,7 +91,17 @@ export default function VerdictCompare({
   const base = componentsForProperty(prop)
   const components = live ? withLiveFinancials(base, live) : base
 
-  const yourScore = computeWeightedScore(components, weights)
+  // Target-relative scoring: when the broker has buy-box targets, score those
+  // factors relative to their own numbers (matches the server-side ranking on the
+  // Properties page). Raw metrics use live financing values when present.
+  const buyBox = user?.custom_buy_box ?? undefined
+  const raw = {
+    discount:  prop.discount_pct,
+    cap_rate:  live?.capRatePct ?? prop.cap_rate,
+    cash_flow: live?.monthlyCashFlow ?? prop.monthly_cash_flow,
+    dom_bonus: prop.days_on_market,
+  }
+  const yourScore = computeWeightedScore(components, weights, buyBox, raw)
   const yourCategory = categoryForScore(yourScore)
 
   const aiScore = prop.score

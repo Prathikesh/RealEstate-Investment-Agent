@@ -83,6 +83,15 @@ class Broker(Base):
     # personalized "Your Verdict" score shown alongside the AI verdict.
     custom_score_weights: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
+    # Real-number "buy box" targets (the client's "in numbers, not percentages"
+    # request): a listing must meet these minimums to pass the broker's criteria.
+    # Account-synced (unlike the earlier localStorage prototype) so it follows the
+    # user across devices. Keys mirror frontend lib/buybox.ts BuyBox:
+    #   cash_flow_min, cap_rate_min, discount_min, days_on_market_min,
+    #   price_drop_min ($), price_drop_pct_min (%), price_max.
+    # Null / absent keys mean "no target for that factor".
+    custom_buy_box: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+
     # ── Notification Preferences ──────────────────────────────────────────────
     email_alerts_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     # Only alert when score >= this threshold (40-90)

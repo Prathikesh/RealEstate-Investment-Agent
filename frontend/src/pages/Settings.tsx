@@ -15,6 +15,7 @@ import {
   type ScoreFactor, type ScoreWeights,
 } from '../lib/verdict'
 import { InfoModal } from '../components/InfoModal'
+import { type BuyBox, loadBuyBox, cacheBuyBox, cleanBuyBox } from '../lib/buybox'
 
 // Short investor-facing descriptions for each scoring factor (My Scoring Criteria).
 const FACTOR_DESC: Record<ScoreFactor, string> = {
@@ -38,6 +39,24 @@ const FACTOR_UNIT_HINT: Record<ScoreFactor, string> = {
   confidence:    'less comp data → low  ·  more → high',
   dom_bonus:     '<7 days → low  ·  90+ days → high',
   price_history: 'price ↑ → low  ·  repeat drops → high',
+}
+
+// ── "Buy box" real-number targets ────────────────────────────────────────────
+// The client's "in numbers, not percentages" request: alongside the weight for
+// each factor, let him set a real-world minimum a listing must hit to show up.
+// Five factors map to a real-number target the client can type in. Four of them
+// (discount, cap_rate, cash_flow, dom_bonus) also drive target-relative scoring;
+// price_history maps to a price-drop filter (the observable motivated-seller
+// signal). GRM + Confidence stay weight-only. Persistence + typing live in
+// lib/buybox.ts (shared with the Properties page).
+const FACTOR_TARGET: Partial<Record<ScoreFactor, {
+  key: keyof BuyBox; prefix?: string; suffix: string; step: number; placeholder: string
+}>> = {
+  discount:      { key: 'discount_min',       suffix: '% below market or more', step: 1,   placeholder: '5' },
+  cap_rate:      { key: 'cap_rate_min',        suffix: '% cap rate or more',     step: 0.5, placeholder: '5' },
+  cash_flow:     { key: 'cash_flow_min', prefix: '$', suffix: '/mo cash flow or more', step: 100, placeholder: '200' },
+  dom_bonus:     { key: 'days_on_market_min',  suffix: ' days listed or more',   step: 7,   placeholder: '30' },
+  price_history: { key: 'price_drop_min', prefix: '$', suffix: '+ price cut since listing', step: 5000, placeholder: '10000' },
 }
 
 // A representative example listing for the "How this works" popup — not a
@@ -160,6 +179,11 @@ export default function Settings() {
   const [weightPoints, setWeightPoints] = useState<Record<ScoreFactor, number>>(
     pointsFromWeights(user?.custom_score_weights ?? STRATEGY_WEIGHTS[user?.investment_strategy ?? 'both']),
   )
+  // Buy-box real-number targets (client's "in numbers" request). Account-synced:
+  // seed from the user's saved custom_buy_box, falling back to the localStorage
+  // cache before the user object has loaded. Applied both as filters AND as the
+  // target-relative scoring anchors on the Properties page.
+  const [buyBox, setBuyBox] = useState<BuyBox>(user?.custom_buy_box ?? loadBuyBox())
   // delivery/trigger extras — local until the alert engine + fields land server-side
   const [newListings, setNewListings]     = useState<boolean>(d0.newListings ?? true)
   const [priceDrops, setPriceDrops]       = useState<boolean>(d0.priceDrops ?? true)
@@ -169,6 +193,9 @@ export default function Settings() {
   const [saved, setSaved]   = useState(false)
   const [saving, setSaving] = useState(false)
   const [showScoringHelp, setShowScoringHelp] = useState(false)
+  // Numbers-first: the weight sliders are secondary ("advanced ranking"), collapsed
+  // by default so the real-number buy box leads (the client's explicit request).
+  const [showWeights, setShowWeights] = useState(false)
 
   // Re-seed if the account arrives/changes after mount.
   useEffect(() => {
@@ -181,6 +208,7 @@ export default function Settings() {
     setMinScore(user.min_score_for_alert ?? 60)
     setEmailAlerts(user.email_alerts_enabled ?? true)
     setWeightPoints(pointsFromWeights(user.custom_score_weights ?? STRATEGY_WEIGHTS[user.investment_strategy ?? 'both']))
+    if (user.custom_buy_box) setBuyBox(user.custom_buy_box)
   }, [user?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // weightPoints IS the displayed percentage — it always sums to exactly 100,
@@ -268,6 +296,7 @@ export default function Settings() {
       email_alerts_enabled: emailAlerts,
       language: lang,
       custom_score_weights: normalizedWeights(),
+      custom_buy_box: cleanBuyBox(buyBox),
     }
   }
 
@@ -278,6 +307,7 @@ export default function Settings() {
       const updated = await updatePreferences(accountPayload())
       setUser(updated as User)
       localStorage.setItem(DELIVERY_KEY, JSON.stringify({ newListings, priceDrops, smsAlerts, whatsappAlerts, phone }))
+      cacheBuyBox(buyBox)  // update the localStorage cache (account is source of truth)
       setSaved(true)
       setTimeout(() => setSaved(false), 2500)
     } catch {
@@ -424,7 +454,7 @@ export default function Settings() {
         <SectionCard
           icon={<Gauge size={15} />}
           title="My Scoring Criteria"
-          desc="Weight the factors behind your own verdict. Every property shows your score next to the AI's."
+          desc="Set your buy box in real numbers. Properties that meet your targets are shown first and scored against your own numbers."
           action={
             <button
               type="button" onClick={() => setShowScoringHelp(true)}
@@ -434,6 +464,58 @@ export default function Settings() {
             </button>
           }
         >
+          {/* ── Buy box (real numbers) — the primary interaction ─────────────── */}
+          <div className="flex items-center gap-2 mb-3">
+            <CircleDollarSign size={15} className="text-accent" />
+            <h4 className="text-sm font-bold text-ink">Your buy box</h4>
+            <span className="text-[11px] text-muted">— in numbers, not percentages</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2.5">
+            {SCORE_FACTORS.filter(f => FACTOR_TARGET[f]).map(f => {
+              const tgt = FACTOR_TARGET[f]!
+              return (
+                <div key={f} className="flex items-center gap-2 flex-wrap py-1">
+                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: FACTOR_COLOR[f] }} />
+                  <span className="text-sm font-semibold text-ink w-28 shrink-0">{FACTOR_LABEL[f]}</span>
+                  <span className="text-[11px] text-muted">Only show</span>
+                  {tgt.prefix && <span className="text-[11px] text-muted -mr-1">{tgt.prefix}</span>}
+                  <input
+                    type="number"
+                    step={tgt.step}
+                    min={0}
+                    placeholder={tgt.placeholder}
+                    value={buyBox[tgt.key] ?? ''}
+                    onChange={e => {
+                      const raw = e.target.value
+                      const v = raw === '' ? undefined : Number(raw)
+                      setBuyBox(prev => ({ ...prev, [tgt.key]: v }))
+                    }}
+                    className="input w-16 !py-1 !px-2 text-xs tabular-nums"
+                    aria-label={`${FACTOR_LABEL[f]} minimum`}
+                  />
+                  <span className="text-[11px] text-muted">{tgt.suffix}</span>
+                </div>
+              )
+            })}
+          </div>
+          <p className="text-[11px] text-muted/70 mt-2.5">
+            Leave a target blank to ignore it. Targets you set both filter the Properties list and
+            raise a listing's score the more it beats your number.
+          </p>
+
+          {/* ── Advanced: ranking weights (secondary, collapsed by default) ──── */}
+          <button
+            type="button"
+            onClick={() => setShowWeights(v => !v)}
+            className="mt-5 w-full flex items-center gap-2 text-left text-xs font-semibold text-muted hover:text-ink transition-colors border-t border-surface-border pt-4"
+            aria-expanded={showWeights}
+          >
+            <ChevronDown size={14} className={clsx('transition-transform', showWeights && 'rotate-180')} />
+            Advanced — fine-tune how factors are weighted when ranking
+          </button>
+
+          {showWeights && (
+          <div className="mt-4">
           {/* Preset chips — one tap to start, then fine-tune below */}
           <div className="flex flex-wrap items-center gap-2">
             {WEIGHT_PRESETS.map(p => {
@@ -509,6 +591,8 @@ export default function Settings() {
               ))}
             </div>
           </div>
+          </div>
+          )}
         </SectionCard>
       </div>
 

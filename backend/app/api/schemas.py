@@ -101,6 +101,8 @@ class PropertyCard(BaseModel):
 
     status:          str
     days_on_market:  Optional[int]
+    # True when days_on_market is a real source list date, not days-since-scraped.
+    days_on_market_is_real: bool = False
     is_new:          bool
 
     first_seen_at:   datetime
@@ -226,6 +228,7 @@ class PropertyDetail(BaseModel):
 
     status:          str
     days_on_market:  Optional[int]
+    days_on_market_is_real: bool = False
     listed_at:       Optional[datetime]
 
     active_sources:  Optional[list[str]]

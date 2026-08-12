@@ -54,6 +54,8 @@ export interface PropertyCard {
   active_sources: string[] | null
   status: string
   days_on_market: number | null
+  // True when days_on_market is a real source list date, not days-since-scraped.
+  days_on_market_is_real?: boolean
   is_new: boolean
   first_seen_at: string
   last_seen_at: string
@@ -226,9 +228,13 @@ export interface PropertyFilters {
   price_max?: number
   cap_rate_min?: number
   cash_flow_min?: number
+  discount_min?: number
+  days_on_market_min?: number
+  price_drop_min?: number
+  price_drop_pct_min?: number
   your_score_min?: number
   status?: string
-  sort_by?: 'score' | 'your_verdict' | 'price' | 'newest' | 'discount' | 'price_asc' | 'price_desc'
+  sort_by?: 'score' | 'your_verdict' | 'price' | 'newest' | 'discount' | 'price_asc' | 'price_desc' | 'days_listed'
   listed_within?: '24h' | '48h' | '7d' | '30d'
   page?: number
   page_size?: number

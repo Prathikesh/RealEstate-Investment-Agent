@@ -263,6 +263,12 @@ class RemaxScraper(BaseScraper):
         # ── 8. Agent info ─────────────────────────────────────────────────────
         agent_name, agent_phone, agent_email, agency_name = self._parse_agent(ld_data)
 
+        # ── 9. Real listing date ──────────────────────────────────────────────
+        # ReMax's JSON-LD RealEstateListing carries a real "datePosted" — unlike
+        # Centris (which hides it entirely). This lets compute_days_on_market()
+        # report true age instead of days-since-first-scraped.
+        listed_at = self._extract_listed_at(ld_data)
+
         # Skip if essential data is missing
         if not asking_price and not full_address:
             self.logger.debug(f"[remax] Skipping page — no price or address: {url}")
@@ -286,6 +292,7 @@ class RemaxScraper(BaseScraper):
             agent_phone=agent_phone,
             agent_email=agent_email,
             agency_name=agency_name,
+            listed_at=listed_at,
             raw_data={
                 "source_url": url,
                 "mls": listing_id,
@@ -312,6 +319,23 @@ class RemaxScraper(BaseScraper):
             elif isinstance(data, dict) and data.get("@type") == "RealEstateListing":
                 return data
         return None
+
+    @staticmethod
+    def _extract_listed_at(ld_data: Optional[dict]) -> Optional[str]:
+        """
+        Real listing date from the JSON-LD "datePosted" (schema.org RealEstateListing),
+        returned as a normalized ISO date string (YYYY-MM-DD) or None.
+
+        Example source value: "2026-08-11T04:00:00.000000Z". The deduplicator turns
+        this into Property.listed_at so days-on-market reflects the true list date.
+        """
+        if not ld_data:
+            return None
+        raw = ld_data.get("datePosted") or ld_data.get("datePublished")
+        if not raw or not isinstance(raw, str):
+            return None
+        m = re.match(r"(\d{4}-\d{2}-\d{2})", raw)
+        return m.group(1) if m else None
 
     def _extract_uls(self, url: str, soup: BeautifulSoup) -> Optional[str]:
         """Extract ULS (listing ID) from URL slug or page text."""

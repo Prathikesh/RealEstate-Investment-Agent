@@ -13,6 +13,7 @@ import {
 } from '../api'
 import { useLang } from '../context/LanguageContext'
 import { useAuth } from '../auth/AuthContext'
+import { loadBuyBox, BUYBOX_KEYS } from '../lib/buybox'
 import { Sparkles, SlidersHorizontal as SlidersIcon } from 'lucide-react'
 import ScoreBadge from '../components/ScoreBadge'
 import PropertyCardGrid from '../components/PropertyCardGrid'
@@ -51,6 +52,7 @@ const SORT_OPTIONS = [
   { value: 'price_asc',  label: 'Lowest price first' },
   { value: 'price_desc', label: 'Highest price first' },
   { value: 'newest',     label: 'Newest listings first' },
+  { value: 'days_listed', label: 'Longest listed first' },
 ]
 
 // ── Format helpers ────────────────────────────────────────────────────────────
@@ -76,6 +78,25 @@ export default function Properties() {
   const [suggestOpen, setSuggestOpen] = useState(false)
   const [debouncedAddress, setDebouncedAddress] = useState('')
 
+  // Seed the buy-box targets (set on Settings → My Scoring Criteria) into the
+  // filters ONCE on first mount — only when the URL carries no buy-box params
+  // yet, so it never fights a link the user followed or filters they cleared.
+  useEffect(() => {
+    const hasBuyBoxParam = BUYBOX_KEYS.some(k => params.has(k))
+    if (hasBuyBoxParam) return
+    // Account is the source of truth (syncs across devices); fall back to the
+    // localStorage cache before `user` has loaded.
+    const bb = user?.custom_buy_box ?? loadBuyBox()
+    const entries = BUYBOX_KEYS
+      .filter(k => bb[k] != null && bb[k] !== 0)
+      .map(k => [k, String(bb[k])] as [string, string])
+    if (entries.length === 0) return
+    const next = new URLSearchParams(params)
+    entries.forEach(([k, v]) => next.set(k, v))
+    setParams(next, { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id])
+
   const filters: PropertyFilters = {
     city:          params.get('city') ?? undefined,
     address:       params.get('address') ?? undefined,
@@ -87,6 +108,13 @@ export default function Properties() {
     score_min:     params.get('score_min') ? Number(params.get('score_min')) : undefined,
     price_min:     params.get('price_min') ? Number(params.get('price_min')) : undefined,
     price_max:     params.get('price_max') ? Number(params.get('price_max')) : undefined,
+    // Real-number "buy box" targets — the client's "in numbers" request.
+    cash_flow_min:      params.get('cash_flow_min') ? Number(params.get('cash_flow_min')) : undefined,
+    cap_rate_min:       params.get('cap_rate_min') ? Number(params.get('cap_rate_min')) : undefined,
+    discount_min:       params.get('discount_min') ? Number(params.get('discount_min')) : undefined,
+    days_on_market_min: params.get('days_on_market_min') ? Number(params.get('days_on_market_min')) : undefined,
+    price_drop_min:     params.get('price_drop_min') ? Number(params.get('price_drop_min')) : undefined,
+    price_drop_pct_min: params.get('price_drop_pct_min') ? Number(params.get('price_drop_pct_min')) : undefined,
     page:          params.get('page') ? Number(params.get('page')) : 1,
     page_size:     view === 'grid' ? 24 : 30,
     multi_site:    params.get('multi_site') === 'true' ? true : undefined,
@@ -139,7 +167,9 @@ export default function Properties() {
   const hasActiveFilters = !!(
     filters.city || filters.address || filters.mls_number || filters.property_type ||
     filters.listing_type || filters.score_min || filters.multi_site || filters.has_sqft || filters.flood_zone ||
-    filters.listed_within || filters.price_min || filters.price_max
+    filters.listed_within || filters.price_min || filters.price_max ||
+    filters.cash_flow_min || filters.cap_rate_min || filters.discount_min || filters.days_on_market_min ||
+    filters.price_drop_min || filters.price_drop_pct_min
   )
 
   // Rank-by mode: "your" ranks the whole set by the broker's own metrics
@@ -156,7 +186,11 @@ export default function Properties() {
         <div>
           <h1 className="text-xl font-bold text-ink">{lang === 'fr' ? 'Propriétés' : 'Properties'}</h1>
           <p className="text-sm text-muted">
-            {data?.total != null ? `${data.total.toLocaleString()} listings found` : 'Loading…'}
+            {data?.total != null ? (
+              hasActiveFilters
+                ? `${data.total.toLocaleString()} of ${(stats?.total_properties ?? data.total).toLocaleString()} listings match your criteria`
+                : `${data.total.toLocaleString()} listings found`
+            ) : 'Loading…'}
             {rankMode === 'your' && (
               <span className="text-accent font-semibold">
                 {' · '}{lang === 'fr' ? 'classées selon vos critères' : 'ranked by your metrics'}
@@ -467,6 +501,69 @@ export default function Properties() {
               onChange={e => setFilter('price_max', e.target.value)}
               className="input w-36"
             />
+          </label>
+
+          {/* ── Buy-box targets (real numbers, the client's request) ────────── */}
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-muted">Min cash flow ($/mo)</span>
+            <input
+              type="number"
+              step="100"
+              placeholder="e.g. 200"
+              value={filters.cash_flow_min ?? ''}
+              onChange={e => setFilter('cash_flow_min', e.target.value)}
+              className="input w-36"
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-muted">Min cap rate (%)</span>
+            <input
+              type="number"
+              step="0.5"
+              placeholder="e.g. 5"
+              value={filters.cap_rate_min ?? ''}
+              onChange={e => setFilter('cap_rate_min', e.target.value)}
+              className="input w-36"
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-muted">Min below-market (%)</span>
+            <input
+              type="number"
+              step="1"
+              placeholder="e.g. 5"
+              value={filters.discount_min ?? ''}
+              onChange={e => setFilter('discount_min', e.target.value)}
+              className="input w-36"
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-muted">Min days listed</span>
+            <input
+              type="number"
+              step="7"
+              placeholder="e.g. 30"
+              value={filters.days_on_market_min ?? ''}
+              onChange={e => setFilter('days_on_market_min', e.target.value)}
+              className="input w-36"
+            />
+            <span className="text-[10px] text-muted/70 leading-tight max-w-[9rem]">
+              Days since we first tracked it — most sources hide the true list date.
+            </span>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-muted">Min price cut ($)</span>
+            <input
+              type="number"
+              step="5000"
+              placeholder="e.g. 10000"
+              value={filters.price_drop_min ?? ''}
+              onChange={e => setFilter('price_drop_min', e.target.value)}
+              className="input w-36"
+            />
+            <span className="text-[10px] text-muted/70 leading-tight max-w-[9rem]">
+              Vendor has cut the price this much since listing — a motivated-seller signal.
+            </span>
           </label>
 
           {/* Multi-site only */}

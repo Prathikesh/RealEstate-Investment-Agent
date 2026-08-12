@@ -289,10 +289,20 @@ export default function PropertyCardGrid({ property: p, className, rankMode }: P
           </div>
         )}
 
-        {/* Footer: days on market + CTA */}
+        {/* Footer: days on market (real vs tracked) + CTA */}
         <div className="flex items-center justify-between">
           <p className="text-[10px] text-muted/60">
-            {p.days_on_market != null ? `${p.days_on_market}d on market` : ''}
+            {p.days_on_market != null && (
+              p.days_on_market_is_real ? (
+                <span title="Real listing date from the source">
+                  Listed {p.days_on_market}d ago
+                </span>
+              ) : (
+                <span title="Days since PlexAI first tracked this listing — this source hides the true list date">
+                  {p.days_on_market}d tracked
+                </span>
+              )
+            )}
             {p.days_on_market != null && p.primary_source ? ' · ' : ''}
             {p.primary_source ? p.primary_source.charAt(0).toUpperCase() + p.primary_source.slice(1) : ''}
           </p>

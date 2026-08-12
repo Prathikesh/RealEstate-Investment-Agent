@@ -97,7 +97,11 @@ export default function Compare() {
     const weights: ScoreWeights = customValid
       ? (user!.custom_score_weights as ScoreWeights)
       : STRATEGY_WEIGHTS[strategy]
-    const yourScore = (p: PropertyDetail) => computeWeightedScore(componentsForProperty(p), weights)
+    const buyBox = user?.custom_buy_box ?? undefined
+    const yourScore = (p: PropertyDetail) => computeWeightedScore(
+      componentsForProperty(p), weights, buyBox,
+      { discount: p.discount_pct, cap_rate: p.cap_rate, cash_flow: p.monthly_cash_flow, dom_bonus: p.days_on_market },
+    )
     const yourRow: Row = {
       group: 'Returns', label: 'Your Verdict', higherIsBetter: true,
       getValue: p => `${yourScore(p)}/100`,

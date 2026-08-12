@@ -84,6 +84,9 @@ class UserResponse(BaseModel):
     # Optional override of the strategy's preset scoring weights — see
     # app/agent/scorer.py WEIGHTS. Null means "use investment_strategy's preset".
     custom_score_weights: Optional[dict[str, float]] = None
+    # Real-number "buy box" targets ("in numbers, not percentages"). See
+    # BUY_BOX_KEYS. Null / absent keys mean "no target for that factor".
+    custom_buy_box:       Optional[dict[str, float]] = None
 
     @field_validator("role", "investment_strategy", "language", mode="before")
     @classmethod
@@ -103,6 +106,15 @@ class PreferencesUpdate(BaseModel):
     email_alerts_enabled: Optional[bool]      = None
     language:             Optional[str]       = None
     custom_score_weights: Optional[dict[str, float]] = None
+    custom_buy_box:       Optional[dict[str, float]] = None
+
+
+# The real-number targets a broker can set on their buy box. Mirrors frontend
+# lib/buybox.ts BUYBOX_KEYS + the query params the properties route accepts.
+BUY_BOX_KEYS = {
+    "cash_flow_min", "cap_rate_min", "discount_min", "days_on_market_min",
+    "price_drop_min", "price_drop_pct_min", "price_max",
+}
 
 
 # ── Cookie helpers ────────────────────────────────────────────────────────────
@@ -242,6 +254,16 @@ async def update_me(
         valid_keys = set(WEIGHTS["both"].keys())
         if set(weights.keys()) != valid_keys or abs(sum(weights.values()) - 1.0) > 0.01:
             raise HTTPException(status_code=400, detail="custom_score_weights must cover all scoring factors and sum to 1.0")
+    if "custom_buy_box" in data and data["custom_buy_box"] is not None:
+        # Keep only recognised targets with a positive numeric value — a blank / 0
+        # entry means "no target", so we drop it rather than store a filter that
+        # excludes everything. An empty result stores {} ("no targets set").
+        raw_box = data["custom_buy_box"]
+        clean_box: dict[str, float] = {}
+        for k, v in raw_box.items():
+            if k in BUY_BOX_KEYS and isinstance(v, (int, float)) and v > 0:
+                clean_box[k] = float(v)
+        data["custom_buy_box"] = clean_box
 
     for key, value in data.items():
         setattr(user, key, value)

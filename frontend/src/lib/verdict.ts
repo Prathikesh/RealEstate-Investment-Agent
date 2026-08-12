@@ -32,6 +32,21 @@ export type ScoreFactor = (typeof SCORE_FACTORS)[number]
 /** Weight per factor (0-1). Must sum to 1.0. Matches backend WEIGHTS. */
 export type ScoreWeights = Record<ScoreFactor, number>
 
+// ── Target-relative scoring ("in numbers") ────────────────────────────────────
+// Mirrors backend verdict.py _TARGET_KEY. When a broker sets a real-number buy-box
+// target for one of these factors, that factor scores clamp(raw / target * 100)
+// instead of its stored global component — their number defines "fully satisfies
+// me" (=100). Keys must match lib/buybox.ts BuyBox + backend verdict.py.
+export const FACTOR_TARGET_KEY: Partial<Record<ScoreFactor, string>> = {
+  discount:  'discount_min',        // % below comparable median
+  cap_rate:  'cap_rate_min',        // % cap rate
+  cash_flow: 'cash_flow_min',       // $/mo cash flow
+  dom_bonus: 'days_on_market_min',  // days listed
+}
+
+/** Same-unit raw metric per target-relative factor, for a single property. */
+export type RawMetrics = Partial<Record<ScoreFactor, number | null | undefined>>
+
 /**
  * Per-factor normalized 0-100 sub-scores from the backend. Also carries the
  * post-weighting modifier fields the backend records; those are informational
@@ -112,9 +127,21 @@ export function cashFlowComponent(monthlyCashFlow: number | null | undefined): n
 export function computeWeightedScore(
   components: ScoreComponents,
   weights: ScoreWeights,
+  buyBox?: Record<string, number | undefined> | null,
+  raw?: RawMetrics | null,
 ): number {
   let total = 0
   for (const factor of SCORE_FACTORS) {
+    const targetKey = FACTOR_TARGET_KEY[factor]
+    const target = targetKey && buyBox ? buyBox[targetKey] : undefined
+    const rawVal = raw ? raw[factor] : undefined
+    // Target-relative: the broker's own number defines "fully satisfies me" (=100).
+    // Falls back to the stored component when there's no target or no raw value —
+    // so a broker with no buy box scores identically to before.
+    if (target != null && target > 0 && rawVal != null) {
+      total += clamp((rawVal / target) * 100) * weights[factor]
+      continue
+    }
     const c = components[factor]
     if (c != null) total += c * weights[factor]
   }
