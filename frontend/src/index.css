@@ -240,4 +240,16 @@
     opacity: 0.4;
     cursor: not-allowed;
   }
+
+  /* Inert numeric inputs — no up/down spinner arrows (they overlay and clip the
+     number). Matches the Financials inputs. Applied to the buy-box + budget fields. */
+  .no-spinner::-webkit-outer-spin-button,
+  .no-spinner::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  .no-spinner {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
 }

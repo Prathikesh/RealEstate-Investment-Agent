@@ -370,7 +370,7 @@ export default function Settings() {
                     <span className="pl-3 text-sm text-muted">$</span>
                     <input type="number" min={0} step={25000} placeholder="Any" value={customMin ?? ''}
                       onChange={e => setCustomMin(e.target.value === '' ? undefined : Number(e.target.value))}
-                      className="w-full py-2.5 px-2 text-sm text-ink tabular-nums bg-transparent focus:outline-none" />
+                      className="no-spinner w-full py-2.5 px-2 text-sm text-ink tabular-nums bg-transparent focus:outline-none" />
                   </div>
                 </label>
                 <label className="block">
@@ -379,7 +379,7 @@ export default function Settings() {
                     <span className="pl-3 text-sm text-muted">$</span>
                     <input type="number" min={0} step={25000} placeholder="Any" value={customMax ?? ''}
                       onChange={e => setCustomMax(e.target.value === '' ? undefined : Number(e.target.value))}
-                      className="w-full py-2.5 px-2 text-sm text-ink tabular-nums bg-transparent focus:outline-none" />
+                      className="no-spinner w-full py-2.5 px-2 text-sm text-ink tabular-nums bg-transparent focus:outline-none" />
                   </div>
                 </label>
               </div>

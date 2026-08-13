@@ -68,7 +68,7 @@ export function ValueSlider({
             aria-label={`${label} target`}
             style={{ width: `${inputCh}ch` }}
             className={clsx(
-              'py-1.5 px-1.5 text-sm font-semibold tabular-nums text-right bg-transparent',
+              'no-spinner py-1.5 px-1.5 text-sm font-semibold tabular-nums text-right bg-transparent',
               'focus:outline-none placeholder:text-muted/60 placeholder:font-normal',
               active ? 'text-ink' : 'text-muted',
             )}
