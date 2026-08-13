@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useLang } from '../context/LanguageContext'
 import { displayAddress } from '../lib/address'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
@@ -137,6 +138,7 @@ function alertLink(rule: AlertRule): string {
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function MarketAlerts() {
+  const { t } = useLang()
   const [rules, setRules]       = useState<AlertRule[]>(loadRules)
   const [showForm, setShowForm] = useState(false)
   const [form, setForm]         = useState<{ metric: AlertMetric; value: number; city: string }>(
@@ -195,8 +197,8 @@ export default function MarketAlerts() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-ink">Market Alerts</h1>
-          <p className="text-sm text-muted mt-0.5">Track deals that match your criteria</p>
+          <h1 className="text-2xl font-bold text-ink">{t('nav_marketAlerts')}</h1>
+          <p className="text-sm text-muted mt-0.5">{t('ma_subtitle')}</p>
         </div>
         <button onClick={() => setShowForm(v => !v)} className="btn-primary shadow-md">
           <Plus size={14} /> New Alert
@@ -223,14 +225,14 @@ export default function MarketAlerts() {
       {showForm && (
         <div className="card border-accent/30 space-y-5">
           <div className="flex items-center justify-between">
-            <h2 className="font-bold text-ink">Create Alert</h2>
+            <h2 className="font-bold text-ink">{t('ma_create')}</h2>
             <button onClick={() => setShowForm(false)} className="text-muted hover:text-ink transition-colors p-1 rounded-lg hover:bg-surface-hover">
               <X size={16} />
             </button>
           </div>
 
           <div>
-            <p className="text-xs font-bold text-muted uppercase tracking-wider mb-2">Alert me based on</p>
+            <p className="text-xs font-bold text-muted uppercase tracking-wider mb-2">{t('ma_basedOn')}</p>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               {(Object.entries(METRIC_META) as [AlertMetric, MetricMeta][]).map(([metric, meta]) => (
                 <button
@@ -325,8 +327,8 @@ export default function MarketAlerts() {
             <Bell size={28} className="text-accent" />
           </div>
           <div>
-            <p className="font-bold text-ink text-lg">No alerts yet</p>
-            <p className="text-sm text-muted mt-1">Create alerts and get notified when great deals appear.</p>
+            <p className="font-bold text-ink text-lg">{t('ma_empty')}</p>
+            <p className="text-sm text-muted mt-1">{t('ma_emptyHint')}</p>
           </div>
           <button onClick={() => setShowForm(true)} className="btn-primary mx-auto">
             <Plus size={14} /> Create your first alert
@@ -351,7 +353,7 @@ export default function MarketAlerts() {
 
       {/* Tips */}
       <div className="card bg-surface/50 space-y-4">
-        <p className="text-xs font-bold text-muted uppercase tracking-wider">Pro Tips</p>
+        <p className="text-xs font-bold text-muted uppercase tracking-wider">{t('ma_proTips')}</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {[
             { dot: 'bg-score-strong', title: 'Score 80+ deals are rare', desc: 'Set an alert to catch them the moment they appear — they move fast' },

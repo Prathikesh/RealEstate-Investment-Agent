@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { displayAddress } from '../lib/address'
 import { Link } from 'react-router-dom'
 import { Bookmark, Trash2, Building2, MapPin } from 'lucide-react'
+import { useLang } from '../context/LanguageContext'
 import clsx from 'clsx'
 import ScoreBadge from '../components/ScoreBadge'
 
@@ -42,6 +43,7 @@ function fmtCAD(v: number | null | undefined): string {
 }
 
 export default function SavedProperties() {
+  const { t } = useLang()
   const [saved, setSaved] = useState<Record<string, SavedProp>>(loadSaved)
 
   useEffect(() => {
@@ -64,7 +66,7 @@ export default function SavedProperties() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-ink">Saved Properties</h1>
+          <h1 className="text-2xl font-bold text-ink">{t('nav_savedProperties')}</h1>
           <p className="text-sm text-muted mt-0.5">
             {props.length} {props.length === 1 ? 'property' : 'properties'} saved
           </p>
@@ -86,7 +88,7 @@ export default function SavedProperties() {
             <Bookmark size={28} className="text-accent" />
           </div>
           <div>
-            <p className="font-bold text-ink text-lg">No saved properties yet</p>
+            <p className="font-bold text-ink text-lg">{t('sav_empty')}</p>
             <p className="text-sm text-muted mt-1 max-w-xs mx-auto">
               Click the bookmark icon on any property to save it here for later.
             </p>
@@ -132,7 +134,7 @@ export default function SavedProperties() {
               <button
                 onClick={() => remove(p.id)}
                 className="absolute top-2 right-2 w-8 h-8 rounded-lg bg-white/90 backdrop-blur flex items-center justify-center shadow text-muted hover:text-red-500 hover:bg-white transition-all opacity-0 group-hover:opacity-100"
-                title="Remove from saved"
+                title={t('sav_remove')}
               >
                 <Trash2 size={13} />
               </button>
