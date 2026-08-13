@@ -524,6 +524,9 @@ const TRANSLATIONS = {
     ma_empty:           'No alerts yet',
     ma_emptyHint:       'Create alerts and get notified when great deals appear.',
     ma_proTips:         'Pro Tips',
+    card_cashFlowMo:    'Cash Flow/mo',
+    card_realDate:      'Real listing date from the source',
+    card_trackedDate:   'Days since PlexAI first tracked this listing — this source hides the true list date',
   },
   fr: {
     // Nav
@@ -1048,6 +1051,9 @@ const TRANSLATIONS = {
     ma_empty:           'Aucune alerte pour l\'instant',
     ma_emptyHint:       'Créez des alertes et soyez averti quand de bonnes affaires apparaissent.',
     ma_proTips:         'Conseils',
+    card_cashFlowMo:    'Flux/mois',
+    card_realDate:      'Date d\'affichage réelle de la source',
+    card_trackedDate:   'Jours depuis le premier suivi par PlexAI — cette source masque la vraie date d\'affichage',
   },
 } as const
 
