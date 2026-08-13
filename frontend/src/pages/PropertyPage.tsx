@@ -110,12 +110,13 @@ function useSaved(prop: PropertyDetail | undefined) {
 const TAB_KEYS = ['aiBrief', 'financials', 'comparables', 'priceHistory', 'zoning'] as const
 type TabKey = typeof TAB_KEYS[number]
 
+// Values are translation keys (see LanguageContext); rendered via t().
 const TAB_LABELS: Record<TabKey, string> = {
-  aiBrief:      'AI Verdict',
-  financials:   'Financials',
-  comparables:  'Comparable Sales',
-  priceHistory: 'Price History',
-  zoning:       'Zoning',
+  aiBrief:      'pp_tab_verdict',
+  financials:   'financials',
+  comparables:  'pp_tab_comparables',
+  priceHistory: 'priceHistory',
+  zoning:       'pp_tab_zoning',
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
@@ -256,7 +257,7 @@ export default function PropertyPage() {
         {/* Cross-site price comparison */}
         {prop.cross_site_prices && prop.cross_site_prices.length > 1 && (
           <div className="pt-1 border-t border-surface-border">
-            <p className="text-xs text-muted font-medium mb-2">Same property listed on multiple sites</p>
+            <p className="text-xs text-muted font-medium mb-2">{t('pp_multiSiteBanner')}</p>
             <div className="flex flex-wrap gap-2">
               {prop.cross_site_prices.map(s => (
                 <a
@@ -404,7 +405,7 @@ export default function PropertyPage() {
                   : 'text-muted hover:text-ink hover:bg-white/60',
               )}
             >
-              {TAB_LABELS[key]}
+              {t(TAB_LABELS[key])}
             </button>
           ))}
         </nav>
@@ -462,7 +463,14 @@ function ConfidencePill({ confidence, t }: { confidence: string; t: (k: string) 
 
 // ── Verdict Banner ────────────────────────────────────────────────────────────
 
+// English metric id (used as a stable lookup key) → its display translation key.
+const METRIC_LABEL_KEY: Record<string, string> = {
+  'Cap Rate': 'pp_m_capRate', 'Below Market': 'pp_m_belowMarket', 'Monthly Cash Flow': 'pp_m_cashFlow',
+  'GRM': 'pp_m_grm', 'Annual NOI': 'pp_m_noi', 'Comparables': 'pp_m_comparables',
+}
+
 function VerdictBanner({ prop }: { prop: PropertyDetail }) {
+  const { t } = useLang()
   const category = prop.score_category
   const score = prop.score
   if (!category || score == null) return null
@@ -473,26 +481,26 @@ function VerdictBanner({ prop }: { prop: PropertyDetail }) {
     badgeBg: string; badgeText: string; badgeBorder: string
   }> = {
     strong_opportunity: {
-      label: 'Strong Buy',
-      headline: 'This property merits serious consideration by investor clients.',
+      label: t('pp_verdict_strong'),
+      headline: t('pp_verdict_strong_h'),
       bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200',
       accent: '#059669', badgeBg: 'bg-emerald-100', badgeText: 'text-emerald-700', badgeBorder: 'border-emerald-200',
     },
     worth_investigating: {
-      label: 'Worth Investigating',
-      headline: 'Good potential — thorough due diligence is recommended before committing.',
+      label: t('pp_verdict_worth'),
+      headline: t('pp_verdict_worth_h'),
       bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200',
       accent: '#2563EB', badgeBg: 'bg-blue-100', badgeText: 'text-blue-700', badgeBorder: 'border-blue-200',
     },
     market_price: {
-      label: 'Fairly Priced',
-      headline: 'Priced at market value — limited discount, limited upside at this price.',
+      label: t('pp_verdict_fair'),
+      headline: t('pp_verdict_fair_h'),
       bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200',
       accent: '#D97706', badgeBg: 'bg-amber-100', badgeText: 'text-amber-700', badgeBorder: 'border-amber-200',
     },
     not_recommended: {
-      label: 'Not Recommended',
-      headline: 'Challenges outweigh the opportunity at the current asking price.',
+      label: t('pp_verdict_not'),
+      headline: t('pp_verdict_not_h'),
       bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200',
       accent: '#DC2626', badgeBg: 'bg-red-100', badgeText: 'text-red-700', badgeBorder: 'border-red-200',
     },
@@ -547,18 +555,9 @@ function VerdictBanner({ prop }: { prop: PropertyDetail }) {
       </div>
 
       {/* Key metric cards — tap any card to see how the math works */}
-      <p className="text-xs text-muted">Tap a card to see how it's calculated</p>
+      <p className="text-xs text-muted">{t('pp_tapCard')}</p>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         {(() => {
-          const price = prop.asking_price ?? 0
-          const compMedian = prop.comparable_median_price ?? 0
-          const rent = prop.rental_income_monthly ?? 0
-          const mortgage = prop.monthly_mortgage ?? 0
-          const muniTax = (prop.municipal_taxes_annual ?? 0) / 12
-          const schoolTax = (prop.school_taxes_annual ?? 0) / 12
-          const maint = (price * 0.01) / 12
-          const noi = prop.noi_annual ?? 0
-
           type StatusKey = 'great' | 'ok' | 'neutral' | 'bad' | 'null'
           const colors: Record<StatusKey, { bg: string; border: string; val: string; badge: string; ring: string }> = {
             great:   { bg: 'bg-emerald-50', border: 'border-emerald-200', val: 'text-emerald-700', badge: 'bg-emerald-100 text-emerald-700', ring: 'ring-emerald-400' },
@@ -569,74 +568,43 @@ function VerdictBanner({ prop }: { prop: PropertyDetail }) {
           }
 
           const metrics: {
-            label: string; value: string; status: StatusKey; sub: string
-            formula: string; breakdown: string; meaning: string
+            label: string; labelKey: string; value: string; status: StatusKey; sub: string
           }[] = [
             {
-              label: 'Cap Rate',
+              label: 'Cap Rate', labelKey: 'pp_m_capRate',
               value: prop.cap_rate != null ? `${prop.cap_rate.toFixed(2)}%` : '—',
               status: prop.cap_rate == null ? 'null' : prop.cap_rate >= 6 ? 'great' : prop.cap_rate >= 4.5 ? 'ok' : 'bad',
-              sub: prop.cap_rate == null ? '' : prop.cap_rate >= 6 ? 'Above benchmark' : prop.cap_rate >= 4.5 ? 'Acceptable' : 'Below floor',
-              formula: 'NOI ÷ Asking Price × 100',
-              breakdown: price > 0 && noi !== 0
-                ? `${fmtCAD(noi)} NOI ÷ ${fmtCAD(price)} = ${prop.cap_rate?.toFixed(2) ?? '—'}%`
-                : 'No data yet — run analysis first',
-              meaning: 'Target: ≥6% strong buy · ≥4.5% acceptable · <4.5% below floor',
+              sub: prop.cap_rate == null ? '' : prop.cap_rate >= 6 ? t('pp_sub_aboveBench') : prop.cap_rate >= 4.5 ? t('pp_sub_acceptable') : t('pp_sub_belowFloor'),
             },
             {
-              label: 'Below Market',
+              label: 'Below Market', labelKey: 'pp_m_belowMarket',
               value: prop.discount_pct != null ? `${prop.discount_pct > 0 ? '-' : '+'}${Math.abs(prop.discount_pct).toFixed(1)}%` : '—',
               status: prop.discount_pct == null ? 'null' : prop.discount_pct >= 10 ? 'great' : prop.discount_pct >= 3 ? 'ok' : prop.discount_pct >= -2 ? 'neutral' : 'bad',
-              sub: prop.discount_pct == null ? '' : prop.discount_pct >= 10 ? 'Big discount' : prop.discount_pct >= 3 ? 'Modest discount' : prop.discount_pct >= -2 ? 'Market price' : 'Above market',
-              formula: '(Comp Median − Asking Price) ÷ Comp Median × 100',
-              breakdown: compMedian > 0 && price > 0
-                ? `(${fmtCAD(compMedian)} − ${fmtCAD(price)}) ÷ ${fmtCAD(compMedian)} = ${prop.discount_pct?.toFixed(1) ?? '—'}%`
-                : 'Not enough comparable sales yet',
-              meaning: '≥10% = big discount · ≥3% = modest · negative = priced above market',
+              sub: prop.discount_pct == null ? '' : prop.discount_pct >= 10 ? t('pp_sub_bigDiscount') : prop.discount_pct >= 3 ? t('pp_sub_modestDiscount') : prop.discount_pct >= -2 ? t('pp_sub_marketPrice') : t('pp_sub_aboveMarket'),
             },
             {
-              label: 'Monthly Cash Flow',
+              label: 'Monthly Cash Flow', labelKey: 'pp_m_cashFlow',
               value: prop.monthly_cash_flow != null ? `${fmtCAD(prop.monthly_cash_flow)}/mo` : '—',
               status: prop.monthly_cash_flow == null ? 'null' : prop.monthly_cash_flow > 500 ? 'great' : prop.monthly_cash_flow > 0 ? 'ok' : prop.monthly_cash_flow > -300 ? 'neutral' : 'bad',
-              sub: prop.monthly_cash_flow == null ? '' : prop.monthly_cash_flow > 500 ? 'Strong surplus' : prop.monthly_cash_flow > 0 ? 'Break-even' : prop.monthly_cash_flow > -300 ? 'Manageable' : 'Top-up needed',
-              formula: 'Monthly Rent − Mortgage − Taxes − Maintenance',
-              breakdown: rent > 0
-                ? `${fmtCAD(rent)} − ${fmtCAD(mortgage)} − ${fmtCAD(muniTax + schoolTax)} − ${fmtCAD(maint)} = ${fmtCAD(prop.monthly_cash_flow ?? 0)}/mo`
-                : 'No rental income data yet',
-              meaning: 'Positive = rent pays itself. Negative = you cover the gap monthly',
+              sub: prop.monthly_cash_flow == null ? '' : prop.monthly_cash_flow > 500 ? t('pp_sub_strongSurplus') : prop.monthly_cash_flow > 0 ? t('pp_sub_breakEven') : prop.monthly_cash_flow > -300 ? t('pp_sub_manageable') : t('pp_sub_topUp'),
             },
             {
-              label: 'GRM',
+              label: 'GRM', labelKey: 'pp_m_grm',
               value: prop.grm != null ? `${prop.grm.toFixed(1)}x` : '—',
               status: prop.grm == null ? 'null' : prop.grm <= 12 ? 'great' : prop.grm <= 15 ? 'ok' : 'bad',
-              sub: prop.grm == null ? '' : prop.grm <= 12 ? 'Excellent' : prop.grm <= 15 ? 'Acceptable' : 'Elevated',
-              formula: 'Asking Price ÷ Annual Gross Rent',
-              breakdown: rent > 0 && price > 0
-                ? `${fmtCAD(price)} ÷ ${fmtCAD(rent * 12)} = ${prop.grm?.toFixed(1) ?? '—'}x`
-                : 'No rental income data yet',
-              meaning: '≤12x excellent · ≤15x acceptable · >15x you overpay per rent dollar',
+              sub: prop.grm == null ? '' : prop.grm <= 12 ? t('pp_sub_excellent') : prop.grm <= 15 ? t('pp_sub_acceptable') : t('pp_sub_elevated'),
             },
             {
-              label: 'Annual NOI',
+              label: 'Annual NOI', labelKey: 'pp_m_noi',
               value: prop.noi_annual != null ? fmtCAD(prop.noi_annual) : '—',
               status: prop.noi_annual == null ? 'null' : prop.noi_annual > 40000 ? 'great' : prop.noi_annual > 20000 ? 'ok' : prop.noi_annual > 0 ? 'neutral' : 'bad',
-              sub: prop.noi_annual == null ? '' : prop.noi_annual > 40000 ? 'Strong income' : prop.noi_annual > 20000 ? 'Moderate' : prop.noi_annual > 0 ? 'Thin margin' : 'Negative',
-              formula: 'Annual Rent − Taxes − Maintenance (before mortgage)',
-              breakdown: rent > 0
-                ? `${fmtCAD(rent * 12)} − ${fmtCAD((prop.municipal_taxes_annual ?? 0) + (prop.school_taxes_annual ?? 0))} − ${fmtCAD(price * 0.01)} = ${fmtCAD(noi)}`
-                : 'No rental income data yet',
-              meaning: 'Net operating income — what the property earns before your loan payment',
+              sub: prop.noi_annual == null ? '' : prop.noi_annual > 40000 ? t('pp_sub_strongIncome') : prop.noi_annual > 20000 ? t('pp_sub_moderate') : prop.noi_annual > 0 ? t('pp_sub_thinMargin') : t('pp_sub_negative'),
             },
             {
-              label: 'Comparables',
-              value: prop.comparable_count != null ? `${prop.comparable_count} sales` : '—',
+              label: 'Comparables', labelKey: 'pp_m_comparables',
+              value: prop.comparable_count != null ? `${prop.comparable_count} ${t('pp_sales')}` : '—',
               status: prop.comparable_count == null ? 'null' : prop.comparable_count >= 7 ? 'great' : prop.comparable_count >= 3 ? 'ok' : 'bad',
-              sub: prop.comparable_count == null ? '' : prop.comparable_count >= 7 ? 'High confidence' : prop.comparable_count >= 3 ? 'Moderate' : 'Low confidence',
-              formula: 'Similar properties sold within 1.5km, past 12 months',
-              breakdown: compMedian > 0
-                ? `${prop.comparable_count ?? 0} matched → Median sale price: ${fmtCAD(compMedian)}`
-                : 'No comparable sales found in area',
-              meaning: 'More comps = more reliable market value estimate',
+              sub: prop.comparable_count == null ? '' : prop.comparable_count >= 7 ? t('pp_sub_highConf') : prop.comparable_count >= 3 ? t('pp_sub_moderate') : t('pp_sub_lowConf'),
             },
           ]
 
@@ -653,7 +621,7 @@ function VerdictBanner({ prop }: { prop: PropertyDetail }) {
                   isActive && `ring-2 ${col.ring}`,
                 )}
               >
-                <p className="text-xs font-semibold text-muted uppercase tracking-wide">{m.label}</p>
+                <p className="text-xs font-semibold text-muted uppercase tracking-wide">{t(m.labelKey)}</p>
                 <p className={clsx('text-2xl font-black font-mono leading-none', col.val)}>{m.value}</p>
                 {m.sub && (
                   <span className={clsx('inline-block text-[10px] font-bold px-1.5 py-0.5 rounded-full', col.badge)}>
@@ -677,32 +645,32 @@ function VerdictBanner({ prop }: { prop: PropertyDetail }) {
         const maint = (price * 0.01) / 12
         const noi = prop.noi_annual ?? 0
         const explanations: Record<string, { formula: string; breakdown: string; meaning: string }> = {
-          'Cap Rate':          { formula: 'NOI ÷ Asking Price × 100', breakdown: price > 0 && noi !== 0 ? `${fmtCAD(noi)} NOI ÷ ${fmtCAD(price)} = ${prop.cap_rate?.toFixed(2) ?? '—'}%` : 'No data yet', meaning: 'Target: ≥6% strong buy · ≥4.5% acceptable · <4.5% below floor' },
-          'Below Market':      { formula: '(Comp Median − Asking Price) ÷ Comp Median × 100', breakdown: compMedian > 0 ? `(${fmtCAD(compMedian)} − ${fmtCAD(price)}) ÷ ${fmtCAD(compMedian)} = ${prop.discount_pct?.toFixed(1) ?? '—'}%` : 'Not enough comparable sales', meaning: '≥10% = big discount · ≥3% = modest · negative = above market' },
-          'Monthly Cash Flow': { formula: 'Monthly Rent − Mortgage − Taxes − Maintenance', breakdown: rent > 0 ? `${fmtCAD(rent)} − ${fmtCAD(mortgage)} − ${fmtCAD(muniTax + schoolTax)} − ${fmtCAD(maint)} = ${fmtCAD(prop.monthly_cash_flow ?? 0)}/mo` : 'No rental income data', meaning: 'Positive = self-sustaining · Negative = you top up monthly' },
-          'GRM':               { formula: 'Asking Price ÷ Annual Gross Rent', breakdown: rent > 0 ? `${fmtCAD(price)} ÷ ${fmtCAD(rent * 12)} = ${prop.grm?.toFixed(1) ?? '—'}x` : 'No rental income data', meaning: '≤12x excellent · ≤15x acceptable · >15x expensive per rent dollar' },
-          'Annual NOI':        { formula: 'Annual Rent − Taxes − Maintenance (before mortgage)', breakdown: rent > 0 ? `${fmtCAD(rent * 12)} − ${fmtCAD((prop.municipal_taxes_annual ?? 0) + (prop.school_taxes_annual ?? 0))} − ${fmtCAD(price * 0.01)} = ${fmtCAD(noi)}` : 'No rental income data', meaning: 'Net operating income — what the building earns before your loan payment' },
-          'Comparables':       { formula: 'Similar properties sold within 1.5km, past 12 months', breakdown: compMedian > 0 ? `${prop.comparable_count ?? 0} matched → Median sale: ${fmtCAD(compMedian)}` : 'No comparable sales found', meaning: 'More comps = higher confidence in the market value' },
+          'Cap Rate':          { formula: 'NOI ÷ Asking Price × 100', breakdown: price > 0 && noi !== 0 ? `${fmtCAD(noi)} NOI ÷ ${fmtCAD(price)} = ${prop.cap_rate?.toFixed(2) ?? '—'}%` : t('pp_noData'), meaning: t('pp_mean_capRate') },
+          'Below Market':      { formula: '(Comp Median − Asking Price) ÷ Comp Median × 100', breakdown: compMedian > 0 ? `(${fmtCAD(compMedian)} − ${fmtCAD(price)}) ÷ ${fmtCAD(compMedian)} = ${prop.discount_pct?.toFixed(1) ?? '—'}%` : t('pp_notEnoughComps'), meaning: t('pp_mean_below') },
+          'Monthly Cash Flow': { formula: 'Monthly Rent − Mortgage − Taxes − Maintenance', breakdown: rent > 0 ? `${fmtCAD(rent)} − ${fmtCAD(mortgage)} − ${fmtCAD(muniTax + schoolTax)} − ${fmtCAD(maint)} = ${fmtCAD(prop.monthly_cash_flow ?? 0)}/mo` : t('pp_noRentalData'), meaning: t('pp_mean_cashFlow') },
+          'GRM':               { formula: 'Asking Price ÷ Annual Gross Rent', breakdown: rent > 0 ? `${fmtCAD(price)} ÷ ${fmtCAD(rent * 12)} = ${prop.grm?.toFixed(1) ?? '—'}x` : t('pp_noRentalData'), meaning: t('pp_mean_grm') },
+          'Annual NOI':        { formula: 'Annual Rent − Taxes − Maintenance (before mortgage)', breakdown: rent > 0 ? `${fmtCAD(rent * 12)} − ${fmtCAD((prop.municipal_taxes_annual ?? 0) + (prop.school_taxes_annual ?? 0))} − ${fmtCAD(price * 0.01)} = ${fmtCAD(noi)}` : t('pp_noRentalData'), meaning: t('pp_mean_noi') },
+          'Comparables':       { formula: 'Similar properties sold within 1.5km, past 12 months', breakdown: compMedian > 0 ? `${prop.comparable_count ?? 0} matched → Median sale: ${fmtCAD(compMedian)}` : t('pp_noComps'), meaning: t('pp_mean_comps') },
         }
         const ex = explanations[activeMetric]
         if (!ex) return null
         return (
           <div className="rounded-xl border border-surface-border bg-white p-4 space-y-2.5 shadow-sm">
             <div className="flex items-center justify-between">
-              <p className="text-sm font-bold text-ink">{activeMetric} — How it's calculated</p>
+              <p className="text-sm font-bold text-ink">{t(METRIC_LABEL_KEY[activeMetric] ?? '')} — {t('pp_howCalc')}</p>
               <button onClick={() => setActiveMetric(null)} className="text-muted hover:text-ink text-lg leading-none">×</button>
             </div>
             <div className="space-y-1.5">
               <div className="flex items-start gap-2">
-                <span className="text-[10px] font-bold text-muted uppercase tracking-wide pt-0.5 shrink-0 w-20">Formula</span>
+                <span className="text-[10px] font-bold text-muted uppercase tracking-wide pt-0.5 shrink-0 w-20">{t('pp_formula')}</span>
                 <span className="text-sm font-mono text-blue-700 font-semibold">{ex.formula}</span>
               </div>
               <div className="flex items-start gap-2">
-                <span className="text-[10px] font-bold text-muted uppercase tracking-wide pt-0.5 shrink-0 w-20">This property</span>
+                <span className="text-[10px] font-bold text-muted uppercase tracking-wide pt-0.5 shrink-0 w-20">{t('pp_thisProperty')}</span>
                 <span className="text-sm font-mono text-ink">{ex.breakdown}</span>
               </div>
               <div className="flex items-start gap-2">
-                <span className="text-[10px] font-bold text-muted uppercase tracking-wide pt-0.5 shrink-0 w-20">Benchmarks</span>
+                <span className="text-[10px] font-bold text-muted uppercase tracking-wide pt-0.5 shrink-0 w-20">{t('pp_benchmarks')}</span>
                 <span className="text-sm text-muted">{ex.meaning}</span>
               </div>
             </div>
@@ -794,6 +762,7 @@ function buildScoreFactors(prop: PropertyDetail) {
 // ── Investment Report (main data-driven section) ──────────────────────────────
 
 function InvestmentReport({ prop }: { prop: PropertyDetail }) {
+  const { t } = useLang()
   const projection = buildProjection(prop)
   const pieData    = buildPieData(prop)
   const factors    = buildScoreFactors(prop)
@@ -842,7 +811,7 @@ function InvestmentReport({ prop }: { prop: PropertyDetail }) {
             <p className="text-sm font-semibold text-muted">{fmtCAD(totalReturn$)}</p>
           </div>
           <div className="rounded-xl border border-surface-border p-5 text-center space-y-1">
-            <p className="text-xs font-semibold text-muted uppercase tracking-widest">Annual Average ROI</p>
+            <p className="text-xs font-semibold text-muted uppercase tracking-widest">{t('pp_h_roi')}</p>
             <p className="text-4xl font-black font-mono text-ink">{roiAvgPct.toFixed(2)}%</p>
             <p className="text-sm font-semibold text-muted">{fmtCAD(roiAvg$)}/yr</p>
           </div>
@@ -911,7 +880,7 @@ function InvestmentReport({ prop }: { prop: PropertyDetail }) {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-surface-border" style={{ backgroundColor: '#1E3A8A' }}>
-                <th className="px-4 py-3 text-left font-bold text-white text-xs uppercase tracking-wide">Metric</th>
+                <th className="px-4 py-3 text-left font-bold text-white text-xs uppercase tracking-wide">{t('pp_col_metric')}</th>
                 {projYrs.map(r => (
                   <th key={r.year} className="px-4 py-3 text-right font-bold text-white text-xs">{r.year}</th>
                 ))}
@@ -919,9 +888,9 @@ function InvestmentReport({ prop }: { prop: PropertyDetail }) {
             </thead>
             <tbody className="divide-y divide-surface-border">
               {([
-                { label: 'Cashflow',       key: 'cashflow'       as const, color: CF_COLOR  },
-                { label: 'Appreciation',   key: 'appreciation'   as const, color: APP_COLOR },
-                { label: 'Capitalization', key: 'capitalization' as const, color: CAP_COLOR },
+                { label: t('pp_roi_cashflow'),       key: 'cashflow'       as const, color: CF_COLOR  },
+                { label: t('pp_roi_appreciation'),   key: 'appreciation'   as const, color: APP_COLOR },
+                { label: t('pp_roi_capitalization'), key: 'capitalization' as const, color: CAP_COLOR },
               ] as const).map((row, i) => (
                 <tr key={row.label} className={i % 2 === 0 ? 'bg-white' : 'bg-surface/40'}>
                   <td className="px-4 py-3 font-bold text-ink flex items-center gap-2">
@@ -934,7 +903,7 @@ function InvestmentReport({ prop }: { prop: PropertyDetail }) {
                 </tr>
               ))}
               <tr className="font-bold" style={{ backgroundColor: '#F8FAFC' }}>
-                <td className="px-4 py-3 font-bold text-ink border-t-2 border-surface-border">Total</td>
+                <td className="px-4 py-3 font-bold text-ink border-t-2 border-surface-border">{t('pp_col_total')}</td>
                 {projYrs.map(yr => (
                   <td key={yr.year} className="px-4 py-3 text-right font-mono tabular-nums font-bold text-ink border-t-2 border-surface-border">{fmtCAD(yr.returnTotal)}</td>
                 ))}
@@ -950,8 +919,8 @@ function InvestmentReport({ prop }: { prop: PropertyDetail }) {
         {/* Annual cost breakdown pie */}
         <div className="card p-6 space-y-5">
           <div>
-            <h3 className="text-base font-bold text-ink">Annual Cost Breakdown</h3>
-            <p className="text-sm text-muted mt-0.5">Where each rental dollar goes</p>
+            <h3 className="text-base font-bold text-ink">{t('pp_h_costBreakdown')}</h3>
+            <p className="text-sm text-muted mt-0.5">{t('pp_h_costSub')}</p>
           </div>
           {pieData.length > 0 ? (
             <>
@@ -1010,7 +979,7 @@ function InvestmentReport({ prop }: { prop: PropertyDetail }) {
         <div className="card p-6 space-y-5">
           <div className="flex items-start justify-between">
             <div>
-              <h3 className="text-base font-bold text-ink">Score Breakdown</h3>
+              <h3 className="text-base font-bold text-ink">{t('pp_h_scoreBreakdown')}</h3>
               <p className="text-sm text-muted mt-0.5">Each factor's points (sub-score × weight) add up to the score</p>
             </div>
             {prop.score != null && (
@@ -1055,7 +1024,7 @@ function InvestmentReport({ prop }: { prop: PropertyDetail }) {
           {/* Arithmetic footer — the contributions sum to the base score, so the
               total is never a black box: it's the sum of the +pts above. */}
           <div className="pt-3 mt-1 border-t border-surface-border flex items-center justify-between">
-            <span className="text-xs text-muted">Sum of factor points (before risk adjustments)</span>
+            <span className="text-xs text-muted">{t('pp_h_scoreSum')}</span>
             <span className="text-sm font-black font-mono text-accent">
               {factors.reduce((s, f) => s + f.contribution, 0).toFixed(1)} pts
             </span>
@@ -1079,6 +1048,7 @@ function InvestmentReport({ prop }: { prop: PropertyDetail }) {
 // ── Rule-based Investment Insights (no API required) ─────────────────────────
 
 function InvestmentInsights({ prop }: { prop: PropertyDetail }) {
+  const { t } = useLang()
   type Insight = { text: string; good: boolean | null }
   const insights: Insight[] = []
 
@@ -1140,7 +1110,7 @@ function InvestmentInsights({ prop }: { prop: PropertyDetail }) {
   return (
     <div className="card p-5 space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-base font-bold text-ink">Investment Signals</h3>
+        <h3 className="text-base font-bold text-ink">{t('pp_h_signals')}</h3>
         {prop.last_analyzed_at && (
           <span className="text-xs text-muted">Updated {new Date(prop.last_analyzed_at).toLocaleDateString('en-CA')}</span>
         )}
@@ -1370,7 +1340,7 @@ function FinancialsTab({ prop, t, pricePerSqft, onScenarioChange }: {
       {prop.asking_price != null && prop.comparable_median_price != null && (
         <div className="card space-y-4">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-ink">Price vs Comparable Market</h3>
+            <h3 className="text-sm font-bold text-ink">{t('pp_h_priceVsMarket')}</h3>
             {prop.analysis_confidence && <ConfidencePill confidence={prop.analysis_confidence} t={t} />}
           </div>
           <div className="space-y-3">

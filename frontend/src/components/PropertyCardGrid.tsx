@@ -44,7 +44,7 @@ interface Props {
 }
 
 export default function PropertyCardGrid({ property: p, className, rankMode }: Props) {
-  const { lang } = useLang()
+  const { lang, t } = useLang()
   const { toggle, has, isFull } = useCompare()
   const inCompare = has(p.id)
   const photos = p.photos ?? []
@@ -269,14 +269,14 @@ export default function PropertyCardGrid({ property: p, className, rankMode }: P
               <p className={clsx('text-sm tabular-nums', capRateClass)}>
                 {p.cap_rate != null ? `${p.cap_rate.toFixed(2)}%` : '—'}
               </p>
-              <p className="text-[10px] text-muted mt-0.5">Cap Rate</p>
+              <p className="text-[10px] text-muted mt-0.5">{t('factor_cap_rate')}</p>
             </div>
             <div>
               <p className={clsx('text-sm tabular-nums flex items-center justify-center gap-0.5', cfClass)}>
                 <CfIcon size={11} className="shrink-0" />
                 {p.monthly_cash_flow != null ? fmtCAD(p.monthly_cash_flow) : '—'}
               </p>
-              <p className="text-[10px] text-muted mt-0.5">Cash Flow/mo</p>
+              <p className="text-[10px] text-muted mt-0.5">{t('card_cashFlowMo')}</p>
             </div>
             <div>
               <p className={clsx('text-sm tabular-nums', discountClass)}>
@@ -294,11 +294,11 @@ export default function PropertyCardGrid({ property: p, className, rankMode }: P
           <p className="text-[10px] text-muted/60">
             {p.days_on_market != null && (
               p.days_on_market_is_real ? (
-                <span title="Real listing date from the source">
+                <span title={t('card_realDate')}>
                   Listed {p.days_on_market}d ago
                 </span>
               ) : (
-                <span title="Days since PlexAI first tracked this listing — this source hides the true list date">
+                <span title={t('card_trackedDate')}>
                   {p.days_on_market}d tracked
                 </span>
               )

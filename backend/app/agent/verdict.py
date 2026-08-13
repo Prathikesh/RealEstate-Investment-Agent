@@ -35,6 +35,15 @@ SCORE_FACTORS: tuple[str, ...] = (
     "price_history",
 )
 
+# The yield factors that are derived from the listing's rental income. When rent
+# is only ESTIMATED (not disclosed), these can't be trusted as a positive signal,
+# so Your Verdict clamps each of them to a neutral ceiling instead of hard-capping
+# the whole score. That way a broker's discount- or days-listed-driven verdict is
+# free to exceed 59, while fabricated rent still can't inflate the yield factors.
+# (The AI score keeps its own global 59 cap in scorer.py — unchanged.)
+INCOME_FACTORS: frozenset[str] = frozenset({"cap_rate", "cash_flow", "grm"})
+UNVERIFIED_INCOME_FACTOR_CEILING: float = 50.0
+
 # ── Target-relative scoring ("in numbers, not percentages") ───────────────────
 # When a broker sets a real-number buy-box target for a factor, that factor's
 # sub-score is recomputed RELATIVE TO THEIR TARGET instead of the scorer's global
@@ -125,6 +134,13 @@ def weighted_score_expr(weights: dict[str, float], buy_box: Optional[dict] = Non
     until the backfill populates them.
     """
     buy_box = buy_box or {}
+    # Data-integrity guard flag: unverified_income_cap > 0 means the listing's rent
+    # was estimated, not disclosed. We clamp only the yield factors below (not the
+    # whole score) so fabricated rent can't inflate cap_rate/cash_flow/grm while a
+    # discount- or days-listed-driven verdict is still free to exceed 59.
+    income_estimated = (
+        func.coalesce(cast(Property.score_components["unverified_income_cap"].astext, Float), 0.0) > 0
+    )
     total = None
     for f in SCORE_FACTORS:
         stored = func.coalesce(cast(Property.score_components[f].astext, Float), 0.0)
@@ -136,16 +152,14 @@ def weighted_score_expr(weights: dict[str, float], buy_box: Optional[dict] = Non
             comp = case((raw.is_(None), stored), else_=_target_relative_expr(raw, float(target)))
         else:
             comp = stored
+        # Neutralize a yield factor when income is only estimated — see INCOME_FACTORS.
+        if f in INCOME_FACTORS:
+            comp = case(
+                (income_estimated, func.least(comp, UNVERIFIED_INCOME_FACTOR_CEILING)),
+                else_=comp,
+            )
         term = comp * float(weights.get(f, 0.0))
         total = term if total is None else total + term
-    # Data-integrity guard: when the listing's income was estimated (not disclosed),
-    # the AI hard-caps the score (unverified_income_cap = 59) so fabricated cap_rate/
-    # cash_flow can't top the ranking. Your Verdict honours the SAME cap — it's not a
-    # weighting preference, it's protection from fake numbers — so it stays in sync
-    # with the frontend compute_weighted_score() and never surfaces estimated-income
-    # listings above disclosed-income ones just because a broker weighted yield high.
-    cap = cast(Property.score_components["unverified_income_cap"].astext, Float)
-    total = case((cap > 0, func.least(total, cap)), else_=total)
     # NULL when there's no breakdown at all (legacy, pre-score_components rows).
     return case((Property.score_components.is_(None), None), else_=total)
 
@@ -171,6 +185,8 @@ def compute_weighted_score(
         return None
     buy_box = buy_box or {}
     raw = raw or {}
+    cap = components.get("unverified_income_cap")
+    income_estimated = isinstance(cap, (int, float)) and cap > 0
     total = 0.0
     for f in SCORE_FACTORS:
         stored = float(components.get(f) or 0.0)
@@ -180,10 +196,10 @@ def compute_weighted_score(
             comp = max(0.0, min(100.0, float(rv) / float(target) * 100.0))
         else:
             comp = stored
+        # Neutralize a yield factor when income is only estimated — see INCOME_FACTORS.
+        if f in INCOME_FACTORS and income_estimated:
+            comp = min(comp, UNVERIFIED_INCOME_FACTOR_CEILING)
         total += comp * float(weights.get(f, 0.0))
-    cap = components.get("unverified_income_cap")
-    if isinstance(cap, (int, float)) and cap > 0:
-        total = min(total, float(cap))
     return clamp_round(total)
 
 

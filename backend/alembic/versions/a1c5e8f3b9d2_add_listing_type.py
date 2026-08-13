@@ -1,7 +1,7 @@
 """add_listing_type
 
 Revision ID: a1c5e8f3b9d2
-Revises: e2f1a9c7b3d5
+Revises: f3a7c1d9e6b2
 Create Date: 2026-08-11 00:00:00.000000
 
 Adds Property.listing_type (for_sale/for_rent) so rental listings (currently
@@ -16,7 +16,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "a1c5e8f3b9d2"
-down_revision: Union[str, None] = "e2f1a9c7b3d5"
+down_revision: Union[str, None] = "f3a7c1d9e6b2"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

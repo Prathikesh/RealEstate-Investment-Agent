@@ -13,11 +13,11 @@ import CompareBar from './CompareBar'
 import { QuartisIcon } from './QuartisLogo'
 
 const NAV = [
-  { to: '/dashboard',  Icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/properties', Icon: Building2,        label: 'Properties' },
-  { to: '/alerts',     Icon: Bell,             label: 'Market Alerts' },
-  { to: '/searches',   Icon: Search,           label: 'Saved Searches' },
-  { to: '/reports',    Icon: FileBarChart2,    label: 'Reports' },
+  { to: '/dashboard',  Icon: LayoutDashboard, labelKey: 'dashboard' },
+  { to: '/properties', Icon: Building2,        labelKey: 'properties' },
+  { to: '/alerts',     Icon: Bell,             labelKey: 'nav_marketAlerts' },
+  { to: '/searches',   Icon: Search,           labelKey: 'nav_savedSearches' },
+  { to: '/reports',    Icon: FileBarChart2,    labelKey: 'nav_reports' },
 ]
 
 // ── Sidebar link (icon + label; label reveals when the rail expands) ──────────
@@ -48,7 +48,7 @@ function SideLink({ to, Icon, label }: { to: string; Icon: typeof Bookmark; labe
 // ── Layout ────────────────────────────────────────────────────────────────────
 
 export default function Layout() {
-  const { lang, setLang } = useLang()
+  const { lang, setLang, t } = useLang()
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -84,14 +84,14 @@ export default function Layout() {
 
           {/* Primary nav */}
           <nav className="flex-1 py-2 space-y-1">
-            {NAV.map(item => <SideLink key={item.to} {...item} />)}
+            {NAV.map(item => <SideLink key={item.to} to={item.to} Icon={item.Icon} label={t(item.labelKey)} />)}
           </nav>
 
           {/* Utility nav */}
           <div className="py-2 space-y-1 border-t border-surface-border">
-            <SideLink to="/watching" Icon={Bookmark} label="Saved Properties" />
-            {user?.role === 'admin' && <SideLink to="/admin" Icon={ShieldCheck} label="Admin Dashboard" />}
-            <SideLink to="/settings" Icon={Settings} label="Settings" />
+            <SideLink to="/watching" Icon={Bookmark} label={t('nav_savedProperties')} />
+            {user?.role === 'admin' && <SideLink to="/admin" Icon={ShieldCheck} label={t('nav_adminDashboard')} />}
+            <SideLink to="/settings" Icon={Settings} label={t('settings')} />
           </div>
 
           {/* Account */}
@@ -109,7 +109,7 @@ export default function Layout() {
             <button onClick={handleLogout}
               className="w-full flex items-center h-10 text-muted hover:text-ink hover:bg-surface-hover transition-colors">
               <span className="grid place-items-center w-[76px] shrink-0"><LogOut size={20} /></span>
-              <span className="text-sm font-semibold whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200">Logout</span>
+              <span className="text-sm font-semibold whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200">{t('logout')}</span>
             </button>
 
             <div className="flex items-center">
@@ -153,39 +153,39 @@ export default function Layout() {
         <div className="md:hidden fixed inset-0 z-30 pt-14">
           <div className="absolute inset-0 bg-black/20" onClick={() => setMobileOpen(false)} />
           <div className="relative bg-white w-56 h-full shadow-xl p-3 space-y-0.5">
-            {NAV.map(({ to, Icon, label }) => (
+            {NAV.map(({ to, Icon, labelKey }) => (
               <NavLink key={to} to={to} onClick={() => setMobileOpen(false)}
                 className={({ isActive }) =>
                   clsx('flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all',
                     isActive ? 'bg-accent text-white' : 'text-muted hover:text-ink hover:bg-surface-hover')
                 }
               >
-                <Icon size={16} />{label}
+                <Icon size={16} />{t(labelKey)}
               </NavLink>
             ))}
             <div className="pt-3 border-t border-surface-border mt-3 space-y-0.5">
               <NavLink to="/watching" onClick={() => setMobileOpen(false)}
                 className={({ isActive }) => clsx('flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all', isActive ? 'bg-accent text-white' : 'text-muted hover:text-ink hover:bg-surface-hover')}
               >
-                <Bookmark size={16} /> Saved Properties
+                <Bookmark size={16} /> {t('nav_savedProperties')}
               </NavLink>
               <NavLink to="/settings" onClick={() => setMobileOpen(false)}
                 className={({ isActive }) => clsx('flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all', isActive ? 'bg-accent text-white' : 'text-muted hover:text-ink hover:bg-surface-hover')}
               >
-                <Settings size={16} /> Settings
+                <Settings size={16} /> {t('settings')}
               </NavLink>
               {user?.role === 'admin' && (
                 <NavLink to="/admin" onClick={() => setMobileOpen(false)}
                   className={({ isActive }) => clsx('flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all', isActive ? 'bg-accent text-white' : 'text-muted hover:text-ink hover:bg-surface-hover')}
                 >
-                  <ShieldCheck size={16} /> Admin Dashboard
+                  <ShieldCheck size={16} /> {t('nav_adminDashboard')}
                 </NavLink>
               )}
               <button
                 onClick={() => { setMobileOpen(false); handleLogout() }}
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-muted hover:text-ink hover:bg-surface-hover transition-all"
               >
-                <LogOut size={16} /> Logout
+                <LogOut size={16} /> {t('logout')}
               </button>
             </div>
           </div>

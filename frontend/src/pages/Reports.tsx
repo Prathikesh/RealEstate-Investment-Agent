@@ -5,6 +5,7 @@ import {
   Zap, Activity, ArrowDownCircle, BarChart2, ArrowRight,
 } from 'lucide-react'
 import { fetchStats, fetchProperties } from '../api'
+import { useLang } from '../context/LanguageContext'
 import { useAuth } from '../auth/AuthContext'
 import PropertyCardGrid from '../components/PropertyCardGrid'
 
@@ -56,6 +57,7 @@ function Metric({ label, value, sublabel, icon, iconColor, iconBg, to }: MetricP
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function Reports() {
+  const { t } = useLang()
   const { user } = useAuth()
   // "Best deals" ranks by the broker's own criteria once they've set them.
   const rankMode: 'ai' | 'your' = user?.custom_score_weights ? 'your' : 'ai'
@@ -92,7 +94,7 @@ export default function Reports() {
       {/* ── Header ──────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-ink">Reports</h1>
+          <h1 className="text-2xl font-bold text-ink">{t('nav_reports')}</h1>
           <p className="text-sm text-muted mt-0.5">
             Market summary · {new Date().toLocaleDateString('en-CA', { year: 'numeric', month: 'long', day: 'numeric' })}
           </p>
@@ -118,7 +120,7 @@ export default function Reports() {
       {stats && total > 0 && (
         <div className="card space-y-4">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-ink">Score Distribution</h3>
+            <h3 className="text-sm font-bold text-ink">{t('rep_scoreDistribution')}</h3>
             <span className="text-xs text-muted">{total.toLocaleString()} properties scored</span>
           </div>
 
@@ -171,7 +173,7 @@ export default function Reports() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <TrendingUp size={16} className="text-score-strong" />
-            <h2 className="font-bold text-ink text-base">Best Deals</h2>
+            <h2 className="font-bold text-ink text-base">{t('rep_bestDeals')}</h2>
             <span className="text-xs px-2 py-0.5 bg-score-strong/10 text-score-strong rounded-full font-semibold">
               {rankMode === 'your' ? 'Your score 50+' : 'Score 50+'}
             </span>
@@ -199,7 +201,7 @@ export default function Reports() {
       {/* ── New Listings + Biggest Discounts ────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <ListPanel
-          title="New Listings"
+          title={t('newListings')}
           icon={<Home size={13} className="text-accent" />}
           iconBg="bg-accent/10"
           to="/properties?sort_by=newest"
@@ -213,7 +215,7 @@ export default function Reports() {
           }))}
         />
         <ListPanel
-          title="Biggest Discounts"
+          title={t('rep_biggestDiscounts')}
           icon={<ArrowDownCircle size={13} className="text-red-500" />}
           iconBg="bg-red-50"
           to="/properties?sort_by=discount"
@@ -236,7 +238,7 @@ export default function Reports() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <MapPin size={15} className="text-muted" />
-              <h3 className="font-bold text-sm text-ink">Active Markets</h3>
+              <h3 className="font-bold text-sm text-ink">{t('rep_activeMarkets')}</h3>
             </div>
             <Link to="/properties" className="text-xs text-accent hover:underline font-medium flex items-center gap-0.5">
               {stats.cities.length} cities <ChevronRight size={11} />
@@ -289,6 +291,7 @@ function ListPanel({
   to: string
   items: ListItem[]
 }) {
+  const { t } = useLang()
   return (
     <div className="card p-0 overflow-hidden">
       <div className="flex items-center justify-between px-5 py-4 border-b border-surface-border">
@@ -302,7 +305,7 @@ function ListPanel({
       </div>
       <div className="divide-y divide-surface-border">
         {items.length === 0 ? (
-          <p className="text-xs text-muted py-8 text-center">No data yet</p>
+          <p className="text-xs text-muted py-8 text-center">{t('rep_noData')}</p>
         ) : items.map(p => (
           <Link
             key={p.id}

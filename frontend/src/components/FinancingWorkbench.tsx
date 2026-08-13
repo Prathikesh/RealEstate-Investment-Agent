@@ -1,5 +1,6 @@
 import { useMemo, useState, useEffect } from 'react'
 import clsx from 'clsx'
+import { useLang } from '../context/LanguageContext'
 import { ShieldCheck, SlidersHorizontal, RotateCcw, Landmark, FileText, Percent, ClipboardList } from 'lucide-react'
 import type { PropertyDetail } from '../api'
 import VerdictCompare from './VerdictCompare'
@@ -51,25 +52,27 @@ const toNum = (s: string) => parseFloat(s.replace(/[^0-9.\-]/g, '')) || 0
 // ── Provenance tags (SVG icons, consistent stroke — no symbols/emoji) ─────────
 
 function SourceTag({ kind }: { kind: 'centris' | 'assumption' }) {
+  const { t } = useLang()
   return kind === 'centris' ? (
-    <span title="From the Centris listing — read-only" className="inline-flex shrink-0" aria-label="From the Centris listing">
+    <span title={t('fw_fromCentris')} className="inline-flex shrink-0" aria-label={t('fw_fromCentrisShort')}>
       <ShieldCheck size={12} strokeWidth={2} style={{ color: TEAL }} />
     </span>
   ) : (
-    <span title="Broker assumption — adjustable" className="inline-flex shrink-0" aria-label="Broker assumption">
+    <span title={t('fw_brokerAssumption')} className="inline-flex shrink-0" aria-label={t('fw_brokerAssumptionShort')}>
       <SlidersHorizontal size={12} strokeWidth={2} className="text-slate-400" />
     </span>
   )
 }
 
 function Legend() {
+  const { t } = useLang()
   return (
     <div className="flex items-center gap-4">
       <span className="inline-flex items-center gap-1.5 text-[11px] text-slate-500">
-        <ShieldCheck size={12} strokeWidth={2} style={{ color: TEAL }} /> Centris listing
+        <ShieldCheck size={12} strokeWidth={2} style={{ color: TEAL }} /> {t('fw_fromCentrisShort')}
       </span>
       <span className="inline-flex items-center gap-1.5 text-[11px] text-slate-500">
-        <SlidersHorizontal size={12} strokeWidth={2} className="text-slate-400" /> Your assumption
+        <SlidersHorizontal size={12} strokeWidth={2} className="text-slate-400" /> {t('fw_brokerAssumptionShort')}
       </span>
     </div>
   )
@@ -173,6 +176,7 @@ export default function FinancingWorkbench({ prop, pricePerSqft, onScenarioChang
    *  tab's verdict too (undefined = user is at listing defaults). */
   onScenarioChange?: (live: FinancingLive | undefined) => void
 }) {
+  const { t } = useLang()
   const listPrice   = prop.asking_price ?? 0
   const hasRentData = prop.rental_income_monthly != null && prop.rental_income_monthly > 0
   const estUnits    = prop.unit_count ?? UNITS_BY_TYPE[prop.property_type] ?? 2
@@ -288,7 +292,7 @@ export default function FinancingWorkbench({ prop, pricePerSqft, onScenarioChang
       {/* Title bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 px-5 sm:px-6 py-4 border-b-2" style={{ borderColor: TEAL }}>
         <div>
-          <h3 className="text-base font-bold" style={{ color: INK_TEAL }}>Financing Analysis</h3>
+          <h3 className="text-base font-bold" style={{ color: INK_TEAL }}>{t("fw_analysis")}</h3>
           <p className="text-xs text-slate-500 mt-0.5">Adjust the terms — every figure recalculates as you type</p>
         </div>
         <div className="flex items-center gap-4">
@@ -319,44 +323,44 @@ export default function FinancingWorkbench({ prop, pricePerSqft, onScenarioChang
         {/* ── Left column: listing data + scenario ── */}
         <div className="lg:col-span-2 space-y-4">
 
-          <Section icon={ShieldCheck} title="Listing data — Centris"
-                   aside={<span className="text-[10px] font-medium text-slate-400 uppercase tracking-wide">Read-only</span>}>
+          <Section icon={ShieldCheck} title={t("fw_listingData")}
+                   aside={<span className="text-[10px] font-medium text-slate-400 uppercase tracking-wide">{t("fw_readOnly")}</span>}>
             <div className="divide-y divide-slate-100">
-              <Line label="Asking price" value={listPrice > 0 ? fmt$(listPrice) : '—'} />
-              <Line label="Gross rent" value={hasRentData ? `${fmt$(prop.rental_income_monthly!)} / month` : 'not listed'} />
-              <Line label="Municipal tax" value={prop.municipal_taxes_annual != null ? `${fmt$(prop.municipal_taxes_annual)} / year` : 'not listed'} />
-              <Line label="School tax" value={prop.school_taxes_annual != null ? `${fmt$(prop.school_taxes_annual)} / year` : 'not listed'} />
-              <Line label="Transfer tax (droits de mutation)" value={transferTax != null ? fmt$(transferTax) : 'not listed'} />
+              <Line label={t("fw_askingPrice")} value={listPrice > 0 ? fmt$(listPrice) : '—'} />
+              <Line label={t("fw_grossRent")} value={hasRentData ? `${fmt$(prop.rental_income_monthly!)} / month` : 'not listed'} />
+              <Line label={t("fw_municipalTax")} value={prop.municipal_taxes_annual != null ? `${fmt$(prop.municipal_taxes_annual)} / year` : 'not listed'} />
+              <Line label={t("fw_schoolTax")} value={prop.school_taxes_annual != null ? `${fmt$(prop.school_taxes_annual)} / year` : 'not listed'} />
+              <Line label={t("fw_transferTaxLong")} value={transferTax != null ? fmt$(transferTax) : 'not listed'} />
               {prop.condo_fees_monthly != null && (
-                <Line label="Condo fees" value={`${fmt$(prop.condo_fees_monthly)} / month`} />
+                <Line label={t("fw_condoFees")} value={`${fmt$(prop.condo_fees_monthly)} / month`} />
               )}
               {pricePerSqft != null && (
-                <Line label="Price per sqft" value={fmt$(pricePerSqft)} />
+                <Line label={t("fw_pricePerSqft")} value={fmt$(pricePerSqft)} />
               )}
             </div>
           </Section>
 
-          <Section icon={Landmark} title="Financing terms">
+          <Section icon={Landmark} title={t("fw_financingTerms")}>
             <div className="divide-y divide-slate-100">
-              <InputLine label="Offer price" source={null}>
-                <Field label="Offer price" value={offer} onChange={setOffer} suffix="$" width="w-32" />
+              <InputLine label={t("fw_offerPrice")} source={null}>
+                <Field label={t("fw_offerPrice")} value={offer} onChange={setOffer} suffix="$" width="w-32" />
               </InputLine>
-              <InputLine label="Down payment" sub={fmt$(dAmt)} source={null}>
-                <Field label="Down payment percent" value={downPctS} onChange={setDownPctS} suffix="%" width="w-20" />
+              <InputLine label={t("fw_downPayment")} sub={fmt$(dAmt)} source={null}>
+                <Field label={t("fw_downPayment")} value={downPctS} onChange={setDownPctS} suffix="%" width="w-20" />
               </InputLine>
-              <InputLine label="Interest rate" source={null}>
-                <Field label="Interest rate" value={rate} onChange={setRate} suffix="%" width="w-20" />
+              <InputLine label={t("fw_interestRate")} source={null}>
+                <Field label={t("fw_interestRate")} value={rate} onChange={setRate} suffix="%" width="w-20" />
               </InputLine>
-              <InputLine label="Amortization" source={null}>
-                <select value={amort} onChange={e => setAmort(Number(e.target.value))} className={selectCls} aria-label="Amortization">
+              <InputLine label={t("fw_amortization")} source={null}>
+                <select value={amort} onChange={e => setAmort(Number(e.target.value))} className={selectCls} aria-label={t("fw_amortization")}>
                   {[20, 25, 30].map(y => <option key={y} value={y}>{y} years</option>)}
                 </select>
               </InputLine>
-              <InputLine label="Payment frequency" source={null}>
-                <select value={freq} onChange={e => setFreq(e.target.value as Frequency)} className={selectCls} aria-label="Payment frequency">
-                  <option value="monthly">Monthly</option>
-                  <option value="biweekly">Bi-weekly</option>
-                  <option value="weekly">Weekly</option>
+              <InputLine label={t("fw_paymentFreq")} source={null}>
+                <select value={freq} onChange={e => setFreq(e.target.value as Frequency)} className={selectCls} aria-label={t("fw_paymentFreq")}>
+                  <option value="monthly">{t("fw_monthly")}</option>
+                  <option value="biweekly">{t("fw_biweekly")}</option>
+                  <option value="weekly">{t("fw_weekly")}</option>
                 </select>
               </InputLine>
             </div>
@@ -367,25 +371,25 @@ export default function FinancingWorkbench({ prop, pricePerSqft, onScenarioChang
             )}
           </Section>
 
-          <Section icon={SlidersHorizontal} title="Operating assumptions"
-                   aside={<span className="text-[10px] font-medium text-slate-400 uppercase tracking-wide">Editable</span>}>
+          <Section icon={SlidersHorizontal} title={t("fw_operatingAssumptions")}
+                   aside={<span className="text-[10px] font-medium text-slate-400 uppercase tracking-wide">{t("fw_editable")}</span>}>
             <div className="divide-y divide-slate-100">
               {!hasRentData && (
-                <InputLine label="Gross rent (not on listing)" sub={`est. $${DEFAULT_RENT_PER_UNIT.toLocaleString()}/unit × ${estUnits}`}>
-                  <Field label="Gross rent per month" value={rentEst} onChange={setRentEst} suffix="$" width="w-28" />
+                <InputLine label={t("fw_grossRentNotListed")} sub={`est. $${DEFAULT_RENT_PER_UNIT.toLocaleString()}/unit × ${estUnits}`}>
+                  <Field label={t("fw_grossRentNotListed")} value={rentEst} onChange={setRentEst} suffix="$" width="w-28" />
                 </InputLine>
               )}
-              <InputLine label="Vacancy allowance">
-                <Field label="Vacancy allowance" value={vacancyPct} onChange={setVacancyPct} suffix="%" width="w-20" />
+              <InputLine label={t("fw_vacancy")}>
+                <Field label={t("fw_vacancy")} value={vacancyPct} onChange={setVacancyPct} suffix="%" width="w-20" />
               </InputLine>
-              <InputLine label="Management fee">
-                <Field label="Management fee" value={mgmtPct} onChange={setMgmtPct} suffix="%" width="w-20" />
+              <InputLine label={t("fw_mgmtFee")}>
+                <Field label={t("fw_mgmtFee")} value={mgmtPct} onChange={setMgmtPct} suffix="%" width="w-20" />
               </InputLine>
-              <InputLine label="Insurance, per year">
-                <Field label="Insurance per year" value={insurance} onChange={setInsurance} suffix="$" width="w-28" />
+              <InputLine label={t("fw_insuranceYr")}>
+                <Field label={t("fw_insuranceYr")} value={insurance} onChange={setInsurance} suffix="$" width="w-28" />
               </InputLine>
-              <InputLine label="Maintenance, % of price">
-                <Field label="Maintenance percent of price" value={maintPct} onChange={setMaintPct} suffix="%" width="w-20" />
+              <InputLine label={t("fw_maintPct")}>
+                <Field label={t("fw_maintPct")} value={maintPct} onChange={setMaintPct} suffix="%" width="w-20" />
               </InputLine>
             </div>
           </Section>
@@ -394,7 +398,7 @@ export default function FinancingWorkbench({ prop, pricePerSqft, onScenarioChang
         {/* ── Right column: results ── */}
         <div className="lg:col-span-3 space-y-4">
 
-          <Section icon={FileText} title="Mortgage">
+          <Section icon={FileText} title={t("fw_mortgage")}>
             <div className="flex items-baseline justify-between py-3 -mx-4 px-4 border-b border-slate-100"
                  style={{ backgroundColor: TEAL_TINT }}>
               <span className="text-sm font-medium" style={{ color: INK_TEAL }}>Payment, {freqNoun}</span>
@@ -403,40 +407,40 @@ export default function FinancingWorkbench({ prop, pricePerSqft, onScenarioChang
             <div className="divide-y divide-slate-100">
               <Line label={`Loan amount${cmhcPrem > 0 ? ' (incl. CMHC premium)' : ''}`} value={fmt$(loan)} />
               <Line label={`Down payment (${dPct.toFixed(1)}%)`} value={fmt$(dAmt)} />
-              <Line label="Transfer tax" source="centris" value={transferTax != null ? fmt$(transferTax) : '—'} />
-              <Line label="Cash required to close" value={fmt$(cashToClose)} bold />
+              <Line label={t("fw_transferTax")} source="centris" value={transferTax != null ? fmt$(transferTax) : '—'} />
+              <Line label={t("fw_cashToClose")} value={fmt$(cashToClose)} bold />
             </div>
           </Section>
 
-          <Section icon={ClipboardList} title="Annual operating statement" aside={<Legend />}>
+          <Section icon={ClipboardList} title={t("fw_annualStatement")} aside={<Legend />}>
             <div className="divide-y divide-slate-100">
-              <Line label="Gross rental income" source={hasRentData ? 'centris' : 'assumption'} value={hasRent ? fmt$(grossAnnual) : '—'} />
+              <Line label={t("fw_grossIncome")} source={hasRentData ? 'centris' : 'assumption'} value={hasRent ? fmt$(grossAnnual) : '—'} />
               <Line label={`Vacancy allowance, ${toNum(vacancyPct).toFixed(1)}%`} source="assumption" value={hasRent ? fmt$(vacancyLoss) : '—'} negative indent />
-              <Line label="Municipal tax" source="centris" value={prop.municipal_taxes_annual != null ? fmt$(muniTax) : 'not listed'} negative={prop.municipal_taxes_annual != null} indent />
-              <Line label="School tax" source="centris" value={prop.school_taxes_annual != null ? fmt$(schoolTax) : 'not listed'} negative={prop.school_taxes_annual != null} indent />
-              <Line label="Insurance" source="assumption" value={fmt$(insuranceN)} negative indent />
+              <Line label={t("fw_municipalTax")} source="centris" value={prop.municipal_taxes_annual != null ? fmt$(muniTax) : 'not listed'} negative={prop.municipal_taxes_annual != null} indent />
+              <Line label={t("fw_schoolTax")} source="centris" value={prop.school_taxes_annual != null ? fmt$(schoolTax) : 'not listed'} negative={prop.school_taxes_annual != null} indent />
+              <Line label={t("fw_insurance")} source="assumption" value={fmt$(insuranceN)} negative indent />
               <Line label={`Maintenance, ${toNum(maintPct).toFixed(2)}% of price`} source="assumption" value={fmt$(maintenance)} negative indent />
               {toNum(mgmtPct) > 0 && (
                 <Line label={`Management, ${toNum(mgmtPct).toFixed(1)}%`} source="assumption" value={fmt$(mgmtFee)} negative indent />
               )}
-              <Line label="Net operating income" value={hasRent ? fmt$(noi) : '—'} bold red={hasRent && noi < 0} />
+              <Line label={t("fw_noi")} value={hasRent ? fmt$(noi) : '—'} bold red={hasRent && noi < 0} />
               <Line
-                label="Cash flow, annual"
+                label={t("fw_cashFlowAnnual")}
                 value={hasRent ? `${fmt$(annualCF)}${monthlyCF !== 0 ? `  ·  ${fmt$(monthlyCF)}/mo` : ''}` : '—'}
                 bold red={hasRent && annualCF < 0}
               />
             </div>
           </Section>
 
-          <Section icon={Percent} title="Key ratios">
+          <Section icon={Percent} title={t("fw_keyRatios")}>
             <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-slate-100 -mx-4">
               {[
-                { label: 'Cap rate',     value: hasRent ? `${capRate.toFixed(2)}%` : '—', red: hasRent && capRate < 4.5,
-                  formula: 'Net operating income ÷ purchase price' },
-                { label: 'Cash-on-cash', value: hasRent ? `${coc.toFixed(1)}%` : '—', red: hasRent && coc < 0,
-                  formula: 'Annual cash flow ÷ cash required to close' },
-                { label: 'GRM',          value: grm != null ? `${grm.toFixed(1)}×` : '—', red: false,
-                  formula: 'Purchase price ÷ gross annual rent' },
+                { label: t("fw_capRate"), value: hasRent ? `${capRate.toFixed(2)}%` : '—', red: hasRent && capRate < 4.5,
+                  formula: t("fw_f_capRate") },
+                { label: t("fw_coc"), value: hasRent ? `${coc.toFixed(1)}%` : '—', red: hasRent && coc < 0,
+                  formula: t("fw_f_coc") },
+                { label: t("fw_grm"), value: grm != null ? `${grm.toFixed(1)}×` : '—', red: false,
+                  formula: t("fw_f_grm") },
               ].map(m => (
                 <div key={m.label} className="px-4 py-3">
                   <p className="text-xs text-slate-500">{m.label}</p>
@@ -453,11 +457,7 @@ export default function FinancingWorkbench({ prop, pricePerSqft, onScenarioChang
 
       {/* Footer */}
       <div className="px-5 sm:px-6 py-3 border-t border-slate-200" style={{ backgroundColor: '#F8FAFC' }}>
-        <p className="text-[11px] text-slate-500 leading-relaxed">
-          The transfer tax is Centris's own calculation for this property. Amounts in parentheses are deductions.
-          Payments compound semi-annually per the Interest Act (RSC 1985, c I-15, s 6).
-          For illustration only — verify rates and terms with the lender.
-        </p>
+        <p className="text-[11px] text-slate-500 leading-relaxed">{t('fw_footer')}</p>
       </div>
     </div>
   )

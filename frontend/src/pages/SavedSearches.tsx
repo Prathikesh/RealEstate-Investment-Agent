@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useLang } from '../context/LanguageContext'
 import { Link } from 'react-router-dom'
 import {
   Search, TrendingUp, Zap, ArrowDownCircle, Globe, Building2,
@@ -135,6 +136,7 @@ function PresetIcon({ icon, cls }: { icon: string; cls: string }) {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function SavedSearches() {
+  const { t } = useLang()
   const [saved, setSaved] = useState<SavedSearch[]>(loadSaved)
 
   const savedIds = new Set(saved.map(s => s.id))
@@ -163,8 +165,8 @@ export default function SavedSearches() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-ink">Saved Searches</h1>
-          <p className="text-sm text-muted mt-0.5">Quick access to your frequent searches</p>
+          <h1 className="text-2xl font-bold text-ink">{t('nav_savedSearches')}</h1>
+          <p className="text-sm text-muted mt-0.5">{t('ss_subtitle')}</p>
         </div>
         <Link to="/properties" className="btn-primary shadow-md">
           <Search size={14} /> Browse Properties
@@ -176,7 +178,7 @@ export default function SavedSearches() {
         <div className="space-y-3">
           <div className="flex items-center gap-2">
             <BookmarkCheck size={15} className="text-accent" />
-            <h2 className="font-bold text-ink text-base">Pinned Searches</h2>
+            <h2 className="font-bold text-ink text-base">{t('ss_pinned')}</h2>
             <span className="text-xs text-muted bg-surface border border-surface-border px-2 py-0.5 rounded-full font-medium">{saved.length}</span>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
@@ -213,8 +215,8 @@ export default function SavedSearches() {
       <div className="space-y-3">
         <div className="flex items-center gap-2">
           <Search size={15} className="text-muted" />
-          <h2 className="font-bold text-ink text-base">Quick Searches</h2>
-          <span className="text-xs text-muted">Bookmark searches you use often</span>
+          <h2 className="font-bold text-ink text-base">{t('ss_quick')}</h2>
+          <span className="text-xs text-muted">{t('ss_bookmarkHint')}</span>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
           {PRESETS.map(p => {
@@ -264,7 +266,7 @@ export default function SavedSearches() {
       {saved.length === 0 && (
         <div className="card bg-accent/5 border-accent/20 py-8 text-center space-y-2">
           <Bookmark size={20} className="text-accent/50 mx-auto" />
-          <p className="text-sm text-muted">Click the bookmark icon on any search to pin it here for quick access.</p>
+          <p className="text-sm text-muted">{t('ss_clickBookmark')}</p>
         </div>
       )}
     </div>

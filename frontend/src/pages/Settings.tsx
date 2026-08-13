@@ -4,75 +4,46 @@ import {
   Bell, MapPin, Home, TrendingUp, Globe, CheckCircle2, ShieldCheck,
   Smartphone, MessageCircle, Wrench, Building2, Mail, SlidersHorizontal,
   ChevronDown, Check, Search, Layers, Gauge, RotateCcw, Scale, CircleDollarSign,
-  HelpCircle,
+  HelpCircle, X, Plus,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useLang } from '../context/LanguageContext'
 import { useAuth } from '../auth/AuthContext'
 import { updatePreferences, type PreferencesPayload, type User } from '../auth/api'
 import {
-  SCORE_FACTORS, STRATEGY_WEIGHTS, FACTOR_LABEL,
+  SCORE_FACTORS, STRATEGY_WEIGHTS,
   type ScoreFactor, type ScoreWeights,
 } from '../lib/verdict'
 import { InfoModal } from '../components/InfoModal'
-import { type BuyBox, loadBuyBox, cacheBuyBox, cleanBuyBox } from '../lib/buybox'
+import { ValueSlider } from '../components/ValueSlider'
+import { type BuyBox, BUYBOX_FIELDS, loadBuyBox, cacheBuyBox, cleanBuyBox } from '../lib/buybox'
 
-// Short investor-facing descriptions for each scoring factor (My Scoring Criteria).
-const FACTOR_DESC: Record<ScoreFactor, string> = {
-  discount:      'How far below comparable sales it is priced',
-  cap_rate:      'Annual return — net income vs. purchase price',
-  cash_flow:     'Monthly profit after mortgage, taxes & expenses',
-  grm:           'Price relative to gross rent (lower is better)',
-  confidence:    'How much comparable data backs the numbers',
-  dom_bonus:     'Days on market — longer means more leverage',
-  price_history: 'Past price cuts signal a motivated seller',
+// Factor → translation-key maps (labels + descriptions) for the advanced sliders
+// and the buy box, so both localize. See LanguageContext factor_* / fdesc_* keys.
+const FACTOR_LABEL_KEY: Record<ScoreFactor, string> = {
+  discount: 'factor_discount', cap_rate: 'factor_cap_rate', cash_flow: 'factor_cash_flow',
+  grm: 'factor_grm', confidence: 'factor_confidence', dom_bonus: 'factor_dom_bonus',
+  price_history: 'factor_price_history',
+}
+const FACTOR_DESC_KEY: Record<ScoreFactor, string> = {
+  discount: 'fdesc_discount', cap_rate: 'fdesc_cap_rate', cash_flow: 'fdesc_cash_flow',
+  grm: 'fdesc_grm', confidence: 'fdesc_confidence', dom_bonus: 'fdesc_dom_bonus',
+  price_history: 'fdesc_price_cut',
+}
+// Buy-box field key → translation keys (fields come from lib/buybox.ts).
+const BUYBOX_LABEL_KEY: Record<string, string> = {
+  cash_flow_min: 'factor_cash_flow', cap_rate_min: 'factor_cap_rate', discount_min: 'factor_discount',
+  days_on_market_min: 'factor_dom_bonus', price_drop_min: 'factor_price_cut',
+}
+const BUYBOX_DESC_KEY: Record<string, string> = {
+  cash_flow_min: 'fdesc_cash_flow', cap_rate_min: 'fdesc_cap_rate', discount_min: 'fdesc_discount',
+  days_on_market_min: 'fdesc_dom_bonus', price_drop_min: 'fdesc_price_cut',
 }
 
-// Compact real-unit hint shown directly under each slider (not just in the
-// popup) — this is what actually shows the $ / days figures the client asked
-// for, right where he's looking, instead of behind a separate click.
-const FACTOR_UNIT_HINT: Record<ScoreFactor, string> = {
-  discount:      'at market → low  ·  20%+ off → high',
-  cap_rate:      '1% return → low  ·  6%+ → high',
-  cash_flow:     '–$3,000/mo → low  ·  +$500/mo → high',
-  grm:           '18× rent → low  ·  10× → high',
-  confidence:    'less comp data → low  ·  more → high',
-  dom_bonus:     '<7 days → low  ·  90+ days → high',
-  price_history: 'price ↑ → low  ·  repeat drops → high',
-}
-
-// ── "Buy box" real-number targets ────────────────────────────────────────────
-// The client's "in numbers, not percentages" request: alongside the weight for
-// each factor, let him set a real-world minimum a listing must hit to show up.
-// Five factors map to a real-number target the client can type in. Four of them
-// (discount, cap_rate, cash_flow, dom_bonus) also drive target-relative scoring;
-// price_history maps to a price-drop filter (the observable motivated-seller
-// signal). GRM + Confidence stay weight-only. Persistence + typing live in
-// lib/buybox.ts (shared with the Properties page).
-const FACTOR_TARGET: Partial<Record<ScoreFactor, {
-  key: keyof BuyBox; prefix?: string; suffix: string; step: number; placeholder: string
-}>> = {
-  discount:      { key: 'discount_min',       suffix: '% below market or more', step: 1,   placeholder: '5' },
-  cap_rate:      { key: 'cap_rate_min',        suffix: '% cap rate or more',     step: 0.5, placeholder: '5' },
-  cash_flow:     { key: 'cash_flow_min', prefix: '$', suffix: '/mo cash flow or more', step: 100, placeholder: '200' },
-  dom_bonus:     { key: 'days_on_market_min',  suffix: ' days listed or more',   step: 7,   placeholder: '30' },
-  price_history: { key: 'price_drop_min', prefix: '$', suffix: '+ price cut since listing', step: 5000, placeholder: '10000' },
-}
-
-// A representative example listing for the "How this works" popup — not a
-// real property. Each score is back-solved from a realistic raw value using
-// the SAME normalization the backend scorer uses (see backend/app/agent/
-// scorer.py), so "14.6% below comps -> 82" etc. is mathematically real, not
-// made up, and the spread of scores (38 to 82) exercises all three bar colors.
-const EXAMPLE_ROW: Record<ScoreFactor, { value: string; score: number }> = {
-  discount:      { value: '14.6% below comps',       score: 82 },
-  cap_rate:      { value: '3.8%',                     score: 56 },
-  cash_flow:     { value: '-$1,670/mo',                score: 38 },
-  grm:           { value: '12.3x',                    score: 71 },
-  confidence:    { value: '5 comparable sales',        score: 50 },
-  dom_bonus:     { value: '60 days on market',         score: 55 },
-  price_history: { value: '3 price drops, -9.2% total', score: 78 },
-}
+// The buy-box real-number targets — the client's "in numbers, not percentages"
+// request, now the PRIMARY control (each factor is a real-value slider + linked
+// number box, see ValueSlider). Config is shared with the Properties filter panel
+// via lib/buybox.ts BUYBOX_FIELDS so the two surfaces never drift apart.
 
 // Distinct colour per factor — ties the weight donut to its slider row.
 const FACTOR_COLOR: Record<ScoreFactor, string> = {
@@ -87,11 +58,11 @@ const FACTOR_COLOR: Record<ScoreFactor, string> = {
 
 // One-tap starting points. The three strategy presets mirror the backend's
 // weight sets; "Cash-flow" is an income-first tilt for buy-and-hold investors.
-const WEIGHT_PRESETS: { id: string; label: string; icon: typeof Scale; weights: ScoreWeights }[] = [
-  { id: 'balanced', label: 'Balanced',     icon: Scale,           weights: STRATEGY_WEIGHTS.both },
-  { id: 'cashflow', label: 'Cash-flow',    icon: CircleDollarSign, weights: { discount: 0.12, cap_rate: 0.28, cash_flow: 0.30, grm: 0.10, confidence: 0.08, dom_bonus: 0.07, price_history: 0.05 } },
-  { id: 'income',   label: 'Buy & Hold',   icon: TrendingUp,      weights: STRATEGY_WEIGHTS.buy_and_hold },
-  { id: 'value',    label: 'Value / Flip', icon: Wrench,          weights: STRATEGY_WEIGHTS.buy_fix_sell },
+const WEIGHT_PRESETS: { id: string; labelKey: string; icon: typeof Scale; weights: ScoreWeights }[] = [
+  { id: 'balanced', labelKey: 'preset_balanced', icon: Scale,           weights: STRATEGY_WEIGHTS.both },
+  { id: 'cashflow', labelKey: 'preset_cashflow', icon: CircleDollarSign, weights: { discount: 0.12, cap_rate: 0.28, cash_flow: 0.30, grm: 0.10, confidence: 0.08, dom_bonus: 0.07, price_history: 0.05 } },
+  { id: 'income',   labelKey: 'preset_buyhold',  icon: TrendingUp,      weights: STRATEGY_WEIGHTS.buy_and_hold },
+  { id: 'value',    labelKey: 'preset_value',    icon: Wrench,          weights: STRATEGY_WEIGHTS.buy_fix_sell },
 ]
 
 // Seed slider points from stored fractional weights (×100). Points are a
@@ -114,36 +85,52 @@ function pointsFromWeights(w: ScoreWeights): Record<ScoreFactor, number> {
 
 // ── Option data ──────────────────────────────────────────────────────────────
 const PROPERTY_TYPES = [
-  { value: 'duplex',          label: 'Duplex',        sub: '2 units' },
-  { value: 'triplex',         label: 'Triplex',       sub: '3 units' },
-  { value: 'quadruplex',      label: 'Quadruplex',    sub: '4 units' },
-  { value: 'quintuplex_plus', label: 'Quintuplex+',   sub: '5+ units' },
-  { value: 'single_family',   label: 'Single Family', sub: 'house' },
-  { value: 'condo',           label: 'Condo',         sub: 'apartment' },
+  { value: 'duplex',          labelKey: 'type_duplex',        subKey: 'units_2' },
+  { value: 'triplex',         labelKey: 'type_triplex',       subKey: 'units_3' },
+  { value: 'quadruplex',      labelKey: 'type_quadruplex',    subKey: 'units_4' },
+  { value: 'quintuplex_plus', labelKey: 'type_quintuplex',    subKey: 'units_5plus' },
+  { value: 'single_family',   labelKey: 'type_single_family', subKey: 'unit_house' },
+  { value: 'condo',           labelKey: 'type_condo',         subKey: 'unit_apartment' },
 ]
 
 const GOALS = [
-  { value: 'buy_and_hold', icon: TrendingUp, label: 'Buy & Hold',        desc: 'Monthly rental income from tenants' },
-  { value: 'buy_fix_sell', icon: Wrench,     label: 'Flip (Fix & Sell)', desc: 'Buy cheap, renovate, sell for profit' },
+  { value: 'buy_and_hold', icon: TrendingUp, labelKey: 'goal_hold_label', descKey: 'goal_hold_desc', infoKey: 'goal_hold_info' },
+  { value: 'buy_fix_sell', icon: Wrench,     labelKey: 'goal_flip_label', descKey: 'goal_flip_desc', infoKey: 'goal_flip_info' },
 ]
 
 const BUDGETS = [
-  { value: '0-300000',       label: 'Under $300K',   min: undefined, max: 300000 },
-  { value: '300000-500000',  label: '$300K – $500K', min: 300000,    max: 500000 },
-  { value: '500000-750000',  label: '$500K – $750K', min: 500000,    max: 750000 },
-  { value: '750000-1000000', label: '$750K – $1M',   min: 750000,    max: 1000000 },
-  { value: '1000000+',       label: 'Over $1M',      min: 1000000,   max: undefined },
+  { value: '0-300000',       labelKey: 'set_budget_under',  min: undefined, max: 300000 },
+  { value: '300000-500000',  labelKey: 'set_budget_300500', min: 300000,    max: 500000 },
+  { value: '500000-750000',  labelKey: 'set_budget_500750', min: 500000,    max: 750000 },
+  { value: '750000-1000000', labelKey: 'set_budget_7501m',  min: 750000,    max: 1000000 },
+  { value: '1000000+',       labelKey: 'set_budget_over1m', min: 1000000,   max: undefined },
 ]
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const digits = (s: string) => s.replace(/\D/g, '')
 const DELIVERY_KEY = 'plexa.delivery'
 
-// account price range -> budget bucket, and back
+// account price range -> budget bucket, and back. A set range that matches no
+// preset resolves to the "custom" option so the exact numbers are preserved.
 function bucketFromRange(min?: number | null, max?: number | null): string {
+  if (min == null && max == null) return ''
   const b = BUDGETS.find(x => (x.min ?? null) === (min ?? null) && (x.max ?? null) === (max ?? null))
-  return b?.value ?? ''
+  return b?.value ?? 'custom'
 }
+// Seed the multi-city list from the account: prefer the new location_cities list,
+// fall back to the legacy single location_city.
+function citiesFromUser(u?: User | null): string[] {
+  if (u?.location_cities?.length) return u.location_cities
+  if (u?.location_city) return [u.location_city]
+  return []
+}
+// Common Québec target cities offered in the multi-select (users can also type
+// any other city name).
+const QUEBEC_CITIES = [
+  'Montréal', 'Laval', 'Longueuil', 'Québec City', 'Gatineau', 'Sherbrooke',
+  'Trois-Rivières', 'Brossard', 'Terrebonne', 'Saint-Jean-sur-Richelieu',
+  'Lévis', 'Repentigny', 'Drummondville', 'Saint-Jérôme', 'Granby',
+]
 function goalsFromStrategy(s?: string | null): string[] {
   if (s === 'buy_and_hold') return ['buy_and_hold']
   if (s === 'buy_fix_sell') return ['buy_fix_sell']
@@ -161,14 +148,16 @@ function loadDelivery() {
 
 export default function Settings() {
   const { user, setUser } = useAuth()
-  const { lang, setLang } = useLang()
+  const { lang, setLang, t } = useLang()
   const navigate = useNavigate()
 
   // ── State, seeded from the account ──
   const d0 = loadDelivery()
-  const [city, setCity]               = useState(user?.location_city ?? '')
+  const [cities, setCities]           = useState<string[]>(citiesFromUser(user))
   const [radius, setRadius]           = useState(user?.location_radius_km ?? 25)
   const [budget, setBudget]           = useState(bucketFromRange(user?.price_min, user?.price_max))
+  const [customMin, setCustomMin]     = useState<number | undefined>(user?.price_min ?? undefined)
+  const [customMax, setCustomMax]     = useState<number | undefined>(user?.price_max ?? undefined)
   const [types, setTypes]             = useState<string[]>(user?.property_types ?? ['triplex', 'duplex'])
   const [goals, setGoals]             = useState<string[]>(goalsFromStrategy(user?.investment_strategy))
   const [minScore, setMinScore]       = useState(user?.min_score_for_alert ?? 60)
@@ -200,9 +189,11 @@ export default function Settings() {
   // Re-seed if the account arrives/changes after mount.
   useEffect(() => {
     if (!user) return
-    setCity(user.location_city ?? '')
+    setCities(citiesFromUser(user))
     setRadius(user.location_radius_km ?? 25)
     setBudget(bucketFromRange(user.price_min, user.price_max))
+    setCustomMin(user.price_min ?? undefined)
+    setCustomMax(user.price_max ?? undefined)
     setTypes(user.property_types ?? ['triplex', 'duplex'])
     setGoals(goalsFromStrategy(user.investment_strategy))
     setMinScore(user.min_score_for_alert ?? 60)
@@ -211,13 +202,18 @@ export default function Settings() {
     if (user.custom_buy_box) setBuyBox(user.custom_buy_box)
   }, [user?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // weightPoints IS the displayed percentage — it always sums to exactly 100,
-  // so the slider position and the label next to it are the same number.
-  // Used directly by the donut and preset-matching.
-  const pctMap = weightPoints
-  // Highlight whichever preset the current mix matches (±1pt), else "Custom".
+  // Each importance slider is INDEPENDENT (0-100) — dragging one never moves the
+  // others (that live proportional redistribution was the "sliders jump / can't
+  // hit a value" bug from the client's Loom). We normalize to shares only for
+  // display + on save, so the handle position always equals its own value.
+  const totalPoints = SCORE_FACTORS.reduce((s, f) => s + weightPoints[f], 0)
+  const sharePct = (f: ScoreFactor) =>
+    totalPoints > 0 ? Math.round((weightPoints[f] / totalPoints) * 100) : 0
+  // Normalized share map for the donut + preset matching.
+  const pctMap = Object.fromEntries(SCORE_FACTORS.map(f => [f, sharePct(f)])) as Record<ScoreFactor, number>
+  // Highlight whichever preset the current mix matches (±2pt share), else "Custom".
   const activePreset = WEIGHT_PRESETS.find(p =>
-    SCORE_FACTORS.every(f => Math.abs(pctMap[f] - Math.round((p.weights[f] ?? 0) * 100)) <= 1),
+    SCORE_FACTORS.every(f => Math.abs(pctMap[f] - Math.round((p.weights[f] ?? 0) * 100)) <= 2),
   )?.id ?? null
 
   function applyPreset(weights: ScoreWeights) {
@@ -227,33 +223,10 @@ export default function Settings() {
     setWeightPoints(pointsFromWeights(STRATEGY_WEIGHTS[strategyFromGoals(goals)]))
   }
 
-  // Drag factor `f` to `nextValue` (0-100): it takes that exact share, and the
-  // remaining 100-nextValue is redistributed across the other 6 factors in
-  // proportion to their current relative weights (so an existing tilt is
-  // preserved, just rescaled) — never just re-normalized after the fact. This
-  // is what keeps the slider position and its displayed % identical, and keeps
-  // every value on the track reachable (no dead zones from a drifting total).
+  // Set one factor's importance directly — no redistribution, so nothing else moves.
   function adjustWeight(f: ScoreFactor, nextValue: number) {
-    setWeightPoints(prev => {
-      const P = Math.max(0, Math.min(100, Math.round(nextValue)))
-      const others = SCORE_FACTORS.filter(x => x !== f)
-      const remainder = 100 - P
-      const othersTotal = others.reduce((s, x) => s + prev[x], 0)
-      const next = { ...prev, [f]: P }
-      let acc = 0
-      others.forEach((x, i) => {
-        const isLast = i === others.length - 1
-        if (isLast) {
-          next[x] = Math.max(0, remainder - acc)
-        } else {
-          const share = othersTotal > 0 ? prev[x] / othersTotal : 1 / others.length
-          const v = Math.round(share * remainder)
-          next[x] = v
-          acc += v
-        }
-      })
-      return next
-    })
+    const P = Math.max(0, Math.min(100, Math.round(nextValue)))
+    setWeightPoints(prev => ({ ...prev, [f]: P }))
   }
 
   const phoneNeeded = (smsAlerts || whatsappAlerts) && digits(phone).length < 10
@@ -264,18 +237,20 @@ export default function Settings() {
     setTypes(prev => prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v])
   }
 
-  // Convert the slider points (already 0-100, summing to exactly 100) to
-  // fractions summing to 1.0, as the backend requires (see auth/routes.py
-  // custom_score_weights validation). The last factor absorbs rounding drift
-  // so the sum is exactly 1.0.
+  // Convert the independent slider points to fractions summing to exactly 1.0,
+  // as the backend requires (see auth/routes.py custom_score_weights validation).
+  // Divide each by the running total; the last factor absorbs rounding drift.
+  // If every slider is 0, fall back to the strategy preset so we never save all-zero.
   function normalizedWeights(): ScoreWeights {
+    const sum = SCORE_FACTORS.reduce((s, f) => s + weightPoints[f], 0)
+    if (sum <= 0) return STRATEGY_WEIGHTS[strategyFromGoals(goals)]
     const w = {} as ScoreWeights
     let acc = 0
     SCORE_FACTORS.forEach((f, i) => {
       if (i === SCORE_FACTORS.length - 1) {
         w[f] = Math.round((1 - acc) * 1000) / 1000
       } else {
-        const v = Math.round((weightPoints[f] / 100) * 1000) / 1000
+        const v = Math.round((weightPoints[f] / sum) * 1000) / 1000
         w[f] = v
         acc += v
       }
@@ -283,13 +258,22 @@ export default function Settings() {
     return w
   }
 
-  function accountPayload(): PreferencesPayload {
+  // Resolve the selected budget (preset bucket OR the custom min/max inputs).
+  function budgetRange(): { min: number | null; max: number | null } {
+    if (budget === 'custom') return { min: customMin ?? null, max: customMax ?? null }
     const b = BUDGETS.find(x => x.value === budget)
+    return { min: b?.min ?? null, max: b?.max ?? null }
+  }
+
+  function accountPayload(): PreferencesPayload {
+    const range = budgetRange()
+    const cleanCities = cities.map(c => c.trim()).filter(Boolean)
     return {
-      location_city: city.trim() || null,
+      location_cities: cleanCities,
+      location_city: cleanCities[0] ?? null,
       location_radius_km: radius,
-      price_min: b?.min ?? null,
-      price_max: b?.max ?? null,
+      price_min: range.min,
+      price_max: range.max,
       property_types: types,
       investment_strategy: strategyFromGoals(goals),
       min_score_for_alert: minScore,
@@ -320,11 +304,12 @@ export default function Settings() {
   function applyToSearch() {
     // Browse filter = location + budget + type. Min deal quality is an ALERT
     // threshold (not a browse filter), so it's intentionally left out here.
-    const b = BUDGETS.find(x => x.value === budget)
+    const range = budgetRange()
     const p = new URLSearchParams()
-    if (city.trim()) p.set('city', city.trim())
-    if (b?.min != null) p.set('price_min', String(b.min))
-    if (b?.max != null) p.set('price_max', String(b.max))
+    // The Properties city filter is single-select; use the first chosen city.
+    if (cities[0]?.trim()) p.set('city', cities[0].trim())
+    if (range.min != null) p.set('price_min', String(range.min))
+    if (range.max != null) p.set('price_max', String(range.max))
     if (types.length === 1) p.set('property_type', types[0])
     navigate(p.toString() ? `/properties?${p}` : '/properties')
   }
@@ -334,174 +319,181 @@ export default function Settings() {
       {/* ── Header ── */}
       <div className="flex items-start justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-2xl font-extrabold text-ink tracking-tight">Settings</h1>
+          <h1 className="text-2xl font-extrabold text-ink tracking-tight">{t('settings')}</h1>
           <p className="text-sm text-muted mt-1 flex items-center gap-1.5">
             <ShieldCheck size={15} className="text-score-strong" />
-            Your investment preferences, saved to your account.
+            {t('set_headerSubtitle')}
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <button onClick={applyToSearch} className="btn-ghost" title="Open the Properties list filtered by these preferences">
-            <Search size={15} /> Apply to search
+          <button onClick={applyToSearch} className="btn-ghost">
+            <Search size={15} /> {t('set_applyToSearch')}
           </button>
           <button onClick={handleSave} disabled={!canSave || saving} className="btn-primary disabled:opacity-40 disabled:cursor-not-allowed min-w-[150px] justify-center">
-            {saved ? <><CheckCircle2 size={15} /> Saved</> : saving ? 'Saving…' : 'Save preferences'}
+            {saved ? <><CheckCircle2 size={15} /> {t('set_saved')}</> : saving ? t('set_saving') : t('set_save')}
           </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
-        {/* LEFT — investment preferences */}
-        <div className="xl:col-span-2 space-y-5">
-          <SectionCard icon={<MapPin size={15} />} title="Search location" desc="Where you're hunting for deals.">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
+          <SectionCard icon={<MapPin size={15} />} title={t('set_location_title')} desc={t('set_location_desc')}>
+            <div className="space-y-4">
+              <div>
+                <span className="block text-xs font-semibold text-muted uppercase tracking-wider mb-2">{t('set_targetCities')}</span>
+                <CityMultiSelect selected={cities} onChange={setCities} />
+              </div>
               <label className="block">
-                <span className="block text-xs font-semibold text-muted uppercase tracking-wider mb-2">Target city</span>
-                <input value={city} onChange={e => setCity(e.target.value)} placeholder="e.g. Montréal, Laval, Québec City" className="input" />
-              </label>
-              <label className="block">
-                <div className="flex items-center justify-between mb-2"><span className="text-xs font-semibold text-muted uppercase tracking-wider">Search radius</span><span className="text-sm font-bold font-mono text-accent">{radius} km</span></div>
+                <div className="flex items-center justify-between mb-2"><span className="text-xs font-semibold text-muted uppercase tracking-wider">{t('set_searchRadius')}</span><span className="text-sm font-bold font-mono text-accent">{radius} km</span></div>
                 <input type="range" min={5} max={100} step={5} value={radius} onChange={e => setRadius(Number(e.target.value))} className="w-full accent-accent" />
                 <div className="flex justify-between text-[10px] text-muted mt-1.5"><span>5 km</span><span>50 km</span><span>100 km</span></div>
               </label>
             </div>
           </SectionCard>
 
-          <SectionCard icon={<TrendingUp size={15} />} title="Budget range" desc="The price band you invest in.">
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+          <SectionCard icon={<TrendingUp size={15} />} title={t('set_budget_title')} desc={t('set_budget_desc')}>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               {BUDGETS.map(b => (
                 <button key={b.value} onClick={() => setBudget(budget === b.value ? '' : b.value)}
                   className={clsx('px-3 py-2.5 rounded-xl border text-xs font-semibold text-center transition-all',
                     budget === b.value ? 'border-accent bg-accent/10 text-accent ring-1 ring-accent/20' : 'border-surface-border text-muted hover:border-accent/40 hover:text-ink bg-white')}>
-                  {b.label}
+                  {t(b.labelKey)}
                 </button>
               ))}
+              <button onClick={() => setBudget(budget === 'custom' ? '' : 'custom')}
+                className={clsx('px-3 py-2.5 rounded-xl border text-xs font-semibold text-center transition-all',
+                  budget === 'custom' ? 'border-accent bg-accent/10 text-accent ring-1 ring-accent/20' : 'border-surface-border text-muted hover:border-accent/40 hover:text-ink bg-white')}>
+                {t('set_budget_custom')}
+              </button>
             </div>
+            {budget === 'custom' && (
+              <div className="grid grid-cols-2 gap-3 mt-3 animate-fade-in">
+                <label className="block">
+                  <span className="block text-[11px] font-semibold text-muted uppercase tracking-wider mb-1.5">{t('set_minPrice')}</span>
+                  <div className="flex items-center rounded-xl border border-surface-border bg-white">
+                    <span className="pl-3 text-sm text-muted">$</span>
+                    <input type="number" min={0} step={25000} placeholder={t('set_any')} value={customMin ?? ''}
+                      onChange={e => setCustomMin(e.target.value === '' ? undefined : Number(e.target.value))}
+                      className="no-spinner w-full py-2.5 px-2 text-sm text-ink tabular-nums bg-transparent focus:outline-none" />
+                  </div>
+                </label>
+                <label className="block">
+                  <span className="block text-[11px] font-semibold text-muted uppercase tracking-wider mb-1.5">{t('set_maxPrice')}</span>
+                  <div className="flex items-center rounded-xl border border-surface-border bg-white">
+                    <span className="pl-3 text-sm text-muted">$</span>
+                    <input type="number" min={0} step={25000} placeholder={t('set_any')} value={customMax ?? ''}
+                      onChange={e => setCustomMax(e.target.value === '' ? undefined : Number(e.target.value))}
+                      className="no-spinner w-full py-2.5 px-2 text-sm text-ink tabular-nums bg-transparent focus:outline-none" />
+                  </div>
+                </label>
+              </div>
+            )}
           </SectionCard>
 
-          <SectionCard icon={<Building2 size={15} />} title="Property types" desc="Pick every type you'd consider.">
+          <SectionCard icon={<Building2 size={15} />} title={t('set_types_title')} desc={t('set_types_desc')}>
             <div className="flex flex-wrap gap-2">
               {PROPERTY_TYPES.map(tp => (
                 <button key={tp.value} onClick={() => toggleType(tp.value)}
                   className={clsx('px-4 py-2.5 rounded-xl border text-sm transition-all text-left',
                     types.includes(tp.value) ? 'bg-accent/10 text-accent border-accent/40 ring-1 ring-accent/20' : 'bg-white text-muted border-surface-border hover:border-accent/40 hover:text-ink')}>
-                  <span className="block font-semibold">{tp.label}</span>
-                  <span className="text-[10px] font-normal opacity-60">{tp.sub}</span>
+                  <span className="block font-semibold">{t(tp.labelKey)}</span>
+                  <span className="text-[10px] font-normal opacity-60">{t(tp.subKey)}</span>
                 </button>
               ))}
             </div>
           </SectionCard>
 
-          <SectionCard icon={<Home size={15} />} title="Investment goal" desc="Choose one or more strategies.">
-            <GoalDropdown selected={goals} onChange={setGoals} />
+          <SectionCard icon={<Home size={15} />} title={t('set_goal_title')} desc={t('set_goal_desc')}>
+            <GoalCards selected={goals} onChange={setGoals} />
           </SectionCard>
 
-        </div>
-
-        {/* RIGHT — alerts + language */}
-        <div className="space-y-5">
-          <SectionCard icon={<Bell size={15} />} title="Alert triggers" desc="What should trigger a notification.">
+          <SectionCard icon={<Bell size={15} />} title={t('set_alerts_title')} desc={t('set_alerts_desc')}>
             <div className="space-y-2.5">
-              <ToggleRow label="New listings" sub="A property matching your criteria appears" value={newListings} onChange={setNewListings} />
-              <ToggleRow label="Price drops" sub="A listing you'd want drops in price" value={priceDrops} onChange={setPriceDrops} />
+              <ToggleRow label={t('set_newListings')} sub={t('set_newListings_sub')} value={newListings} onChange={setNewListings} />
+              <ToggleRow label={t('set_priceDrops')} sub={t('set_priceDrops_sub')} value={priceDrops} onChange={setPriceDrops} />
             </div>
             <div className="pt-4 mt-2 border-t border-surface-border">
-              <div className="flex items-center justify-between mb-2"><span className="text-xs font-semibold text-muted uppercase tracking-wider">Min deal quality</span><span className="text-sm font-bold font-mono text-accent">{minScore}/100</span></div>
+              <div className="flex items-center justify-between mb-2"><span className="text-xs font-semibold text-muted uppercase tracking-wider">{t('set_minQuality')}</span><span className="text-sm font-bold font-mono text-accent">{minScore}/100</span></div>
               <input type="range" min={40} max={90} step={5} value={minScore} onChange={e => setMinScore(Number(e.target.value))} className="w-full accent-accent" />
-              <div className="flex justify-between text-[10px] text-muted mt-1.5"><span>Any</span><span>Good</span><span>Top</span><span>Best</span></div>
+              <div className="flex justify-between text-[10px] text-muted mt-1.5"><span>{t('set_qualityAny')}</span><span>{t('set_qualityGood')}</span><span>{t('set_qualityTop')}</span><span>{t('set_qualityBest')}</span></div>
             </div>
           </SectionCard>
 
-          <SectionCard icon={<SlidersHorizontal size={15} />} title="Delivery channels" desc="How we reach you.">
+          <SectionCard icon={<SlidersHorizontal size={15} />} title={t('set_delivery_title')} desc={t('set_delivery_desc')}>
             <div className="space-y-4">
-              <ToggleRow label="Email alerts" sub={user?.email ? `Sent to ${user.email}` : 'Sent to your account email'} value={emailAlerts} onChange={setEmailAlerts} icon={<Mail size={14} className="text-accent" />} />
+              <ToggleRow label={t('set_emailAlerts')} sub={user?.email ? `${t('set_sentTo')} ${user.email}` : t('set_sentToAccount')} value={emailAlerts} onChange={setEmailAlerts} icon={<Mail size={14} className="text-accent" />} />
 
               <div className="pt-3 border-t border-surface-border space-y-3">
                 <div className="flex items-center gap-1.5 text-[11px] font-semibold text-muted">
-                  <Layers size={12} /> SMS &amp; WhatsApp
-                  <span className="ml-auto text-[10px] font-bold text-accent bg-accent/10 px-2 py-0.5 rounded-full">Coming soon</span>
+                  <Layers size={12} /> {t('set_smsWhatsapp')}
+                  <span className="ml-auto text-[10px] font-bold text-accent bg-accent/10 px-2 py-0.5 rounded-full">{t('set_comingSoon')}</span>
                 </div>
                 <label className="block">
-                  <span className="block text-xs font-semibold text-muted uppercase tracking-wider mb-2">Phone number</span>
+                  <span className="block text-xs font-semibold text-muted uppercase tracking-wider mb-2">{t('set_phoneNumber')}</span>
                   <div className="flex gap-2">
                     <div className="flex items-center px-3 py-2 border border-surface-border bg-surface rounded-xl text-sm text-muted shrink-0">+1</div>
                     <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="514-555-1234" className="input flex-1" />
                   </div>
                 </label>
-                <ToggleRow label="SMS" sub="Works on any phone" value={smsAlerts} onChange={setSmsAlerts} icon={<Smartphone size={14} className="text-muted" />} />
-                <ToggleRow label="WhatsApp" sub="Rich messages with photos" value={whatsappAlerts} onChange={setWhatsapp} icon={<MessageCircle size={14} className="text-green-500" />} />
-                {phoneNeeded && <p className="text-xs text-score-market bg-score-market/10 border border-score-market/30 rounded-lg px-3 py-2">Enter a valid phone number to enable SMS/WhatsApp.</p>}
+                <ToggleRow label={t('set_sms')} sub={t('set_sms_sub')} value={smsAlerts} onChange={setSmsAlerts} icon={<Smartphone size={14} className="text-muted" />} />
+                <ToggleRow label={t('set_whatsapp')} sub={t('set_whatsapp_sub')} value={whatsappAlerts} onChange={setWhatsapp} icon={<MessageCircle size={14} className="text-green-500" />} />
+                {phoneNeeded && <p className="text-xs text-score-market bg-score-market/10 border border-score-market/30 rounded-lg px-3 py-2">{t('set_phoneNeeded')}</p>}
               </div>
             </div>
           </SectionCard>
 
-          <SectionCard icon={<Globe size={15} />} title="Language" desc="Interface language.">
-            <div className="grid grid-cols-2 gap-2">
-              {(['fr', 'en'] as const).map(l => (
-                <button key={l} onClick={() => setLang(l)}
-                  className={clsx('py-2.5 rounded-xl border text-sm font-semibold transition-all',
-                    lang === l ? 'bg-accent/10 text-accent border-accent/40 ring-1 ring-accent/20' : 'border-surface-border text-muted hover:border-accent/40 hover:text-ink bg-white')}>
-                  {l === 'fr' ? 'Français' : 'English'}
-                </button>
-              ))}
-            </div>
-          </SectionCard>
-        </div>
-      </div>
+          <div className="lg:col-span-2">
+            <SectionCard icon={<Globe size={15} />} title={t('set_language_title')} desc={t('set_language_desc')}>
+              <div className="grid grid-cols-2 gap-2 max-w-sm">
+                {(['fr', 'en'] as const).map(l => (
+                  <button key={l} onClick={() => setLang(l)}
+                    className={clsx('py-2.5 rounded-xl border text-sm font-semibold transition-all',
+                      lang === l ? 'bg-accent/10 text-accent border-accent/40 ring-1 ring-accent/20' : 'border-surface-border text-muted hover:border-accent/40 hover:text-ink bg-white')}>
+                    {l === 'fr' ? 'Français' : 'English'}
+                  </button>
+                ))}
+              </div>
+            </SectionCard>
+          </div>
 
-      {/* Full-width — My Scoring Criteria (donut + sliders need the room) */}
-      <div className="mt-5">
+          {/* My Scoring Criteria — full-width row (donut + sliders need the room) */}
+          <div className="lg:col-span-2">
         <SectionCard
           icon={<Gauge size={15} />}
-          title="My Scoring Criteria"
-          desc="Set your buy box in real numbers. Properties that meet your targets are shown first and scored against your own numbers."
+          title={t('set_scoring_title')}
+          desc={t('set_scoring_desc')}
           action={
             <button
               type="button" onClick={() => setShowScoringHelp(true)}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-surface-border text-xs font-semibold text-muted hover:text-accent hover:border-accent/40 transition-colors"
             >
-              <HelpCircle size={13} /> How this works
+              <HelpCircle size={13} /> {t('set_howThisWorks')}
             </button>
           }
         >
           {/* ── Buy box (real numbers) — the primary interaction ─────────────── */}
           <div className="flex items-center gap-2 mb-3">
             <CircleDollarSign size={15} className="text-accent" />
-            <h4 className="text-sm font-bold text-ink">Your buy box</h4>
-            <span className="text-[11px] text-muted">— in numbers, not percentages</span>
+            <h4 className="text-sm font-bold text-ink">{t('set_yourBuyBox')}</h4>
+            <span className="text-[11px] text-muted">{t('set_inNumbers')}</span>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2.5">
-            {SCORE_FACTORS.filter(f => FACTOR_TARGET[f]).map(f => {
-              const tgt = FACTOR_TARGET[f]!
-              return (
-                <div key={f} className="flex items-center gap-2 flex-wrap py-1">
-                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: FACTOR_COLOR[f] }} />
-                  <span className="text-sm font-semibold text-ink w-28 shrink-0">{FACTOR_LABEL[f]}</span>
-                  <span className="text-[11px] text-muted">Only show</span>
-                  {tgt.prefix && <span className="text-[11px] text-muted -mr-1">{tgt.prefix}</span>}
-                  <input
-                    type="number"
-                    step={tgt.step}
-                    min={0}
-                    placeholder={tgt.placeholder}
-                    value={buyBox[tgt.key] ?? ''}
-                    onChange={e => {
-                      const raw = e.target.value
-                      const v = raw === '' ? undefined : Number(raw)
-                      setBuyBox(prev => ({ ...prev, [tgt.key]: v }))
-                    }}
-                    className="input w-16 !py-1 !px-2 text-xs tabular-nums"
-                    aria-label={`${FACTOR_LABEL[f]} minimum`}
-                  />
-                  <span className="text-[11px] text-muted">{tgt.suffix}</span>
-                </div>
-              )
-            })}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-1">
+            {BUYBOX_FIELDS.map(cfg => (
+              <ValueSlider
+                key={cfg.key}
+                label={t(BUYBOX_LABEL_KEY[cfg.key])}
+                desc={t(BUYBOX_DESC_KEY[cfg.key])}
+                color={cfg.color}
+                value={buyBox[cfg.key]}
+                onChange={v => setBuyBox(prev => ({ ...prev, [cfg.key]: v }))}
+                min={cfg.min}
+                max={cfg.max}
+                step={cfg.step}
+                prefix={cfg.prefix}
+                suffix={cfg.suffix}
+              />
+            ))}
           </div>
-          <p className="text-[11px] text-muted/70 mt-2.5">
-            Leave a target blank to ignore it. Targets you set both filter the Properties list and
-            raise a listing's score the more it beats your number.
-          </p>
+          <p className="text-[11px] text-muted/70 mt-2.5">{t('set_buyBoxHint')}</p>
 
           {/* ── Advanced: ranking weights (secondary, collapsed by default) ──── */}
           <button
@@ -511,7 +503,7 @@ export default function Settings() {
             aria-expanded={showWeights}
           >
             <ChevronDown size={14} className={clsx('transition-transform', showWeights && 'rotate-180')} />
-            Advanced — fine-tune how factors are weighted when ranking
+            {t('set_advanced')}
           </button>
 
           {showWeights && (
@@ -530,7 +522,7 @@ export default function Settings() {
                            : 'bg-white text-muted border-surface-border hover:border-accent/40 hover:text-ink',
                   )}
                 >
-                  <Icon size={13} /> {p.label}
+                  <Icon size={13} /> {t(p.labelKey)}
                 </button>
               )
             })}
@@ -539,13 +531,13 @@ export default function Settings() {
               activePreset === null ? 'bg-accent/10 text-accent border-accent/40 ring-1 ring-accent/20'
                                     : 'border-dashed border-surface-border text-muted/70',
             )}>
-              <SlidersHorizontal size={13} /> Custom
+              <SlidersHorizontal size={13} /> {t('preset_custom')}
             </span>
             <button
               type="button" onClick={resetWeightsToStrategy}
-              className="btn-ghost text-xs ml-auto" title="Reset to your strategy's default mix"
+              className="btn-ghost text-xs ml-auto"
             >
-              <RotateCcw size={13} /> Reset
+              <RotateCcw size={13} /> {t('set_reset')}
             </button>
           </div>
 
@@ -555,121 +547,91 @@ export default function Settings() {
             <div className="flex lg:flex-col items-center gap-4 shrink-0 mx-auto lg:mx-0">
               <WeightDonut pct={pctMap} />
               <div className="text-center">
-                <p className="text-[11px] font-semibold text-muted uppercase tracking-wider">Your mix</p>
-                <p className="text-[11px] text-muted mt-0.5 max-w-[140px]">
-                  Relative weight of each factor in your verdict.
-                </p>
+                <p className="text-[11px] font-semibold text-muted uppercase tracking-wider">{t('set_yourMix')}</p>
+                <p className="text-[11px] text-muted mt-0.5 max-w-[150px]">{t('set_yourMix_desc')}</p>
               </div>
             </div>
 
             {/* Sliders — two columns on wide screens now that it's full-width */}
             <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3.5 min-w-0 content-start">
-              {SCORE_FACTORS.map(f => (
-                <div key={f}>
-                  <div className="flex items-center justify-between gap-3 mb-1">
-                    <div className="min-w-0 flex items-start gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full shrink-0 mt-1" style={{ backgroundColor: FACTOR_COLOR[f] }} />
-                      <div className="min-w-0">
-                        <span className="text-sm font-semibold text-ink">{FACTOR_LABEL[f]}</span>
-                        <span className="block text-[11px] text-muted leading-snug">{FACTOR_DESC[f]}</span>
-                        <span className="block text-[10px] text-muted/70 font-mono leading-snug mt-0.5">{FACTOR_UNIT_HINT[f]}</span>
+              {SCORE_FACTORS.map(f => {
+                const pct = weightPoints[f] // already 0-100
+                const fill = `linear-gradient(to right, ${FACTOR_COLOR[f]} 0%, ${FACTOR_COLOR[f]} ${pct}%, #E2E8F0 ${pct}%, #E2E8F0 100%)`
+                return (
+                  <div key={f}>
+                    <div className="flex items-center justify-between gap-3 mb-1.5">
+                      <div className="min-w-0 flex items-start gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full shrink-0 mt-1" style={{ backgroundColor: FACTOR_COLOR[f] }} />
+                        <div className="min-w-0">
+                          <span className="text-sm font-semibold text-ink">{t(FACTOR_LABEL_KEY[f])}</span>
+                          <span className="block text-[11px] text-muted leading-snug">{t(FACTOR_DESC_KEY[f])}</span>
+                        </div>
                       </div>
+                      <span className="text-xs font-semibold shrink-0 tabular-nums text-right" style={{ color: FACTOR_COLOR[f] }}>
+                        {sharePct(f)}%
+                      </span>
                     </div>
-                    <span className="text-sm font-bold font-mono shrink-0 tabular-nums w-11 text-right" style={{ color: FACTOR_COLOR[f] }}>
-                      {weightPoints[f]}%
-                    </span>
+                    <input
+                      type="range" min={0} max={100} step={1}
+                      value={weightPoints[f]}
+                      onChange={e => adjustWeight(f, Number(e.target.value))}
+                      aria-label={t(FACTOR_LABEL_KEY[f])}
+                      className="range-fill"
+                      style={{ background: fill, ['--range-color' as string]: FACTOR_COLOR[f] }}
+                    />
                   </div>
-                  <input
-                    type="range" min={0} max={100} step={1}
-                    value={weightPoints[f]}
-                    onChange={e => adjustWeight(f, Number(e.target.value))}
-                    aria-label={`${FACTOR_LABEL[f]} weight`}
-                    className="w-full"
-                    style={{ accentColor: FACTOR_COLOR[f] }}
-                  />
-                </div>
-              ))}
+                )
+              })}
             </div>
           </div>
           </div>
           )}
         </SectionCard>
+        </div>
       </div>
 
-      <InfoModal open={showScoringHelp} onClose={() => setShowScoringHelp(false)} title="How My Scoring Criteria works" size="lg">
-        <ScoringCriteriaHelp weightPoints={weightPoints} />
+      <InfoModal open={showScoringHelp} onClose={() => setShowScoringHelp(false)} title={t('set_howThisWorks')} size="lg">
+        <ScoringCriteriaHelp />
       </InfoModal>
     </div>
   )
 }
 
 // ── "How this works" explainer content ──────────────────────────────────────
-const barColor = (score: number) => (score >= 70 ? '#10B981' : score >= 40 ? '#F59E0B' : '#EF4444')
-const scoreTextColor = (score: number) => clsx(
-  'text-sm font-black font-mono w-8 text-right',
-  score >= 70 ? 'text-emerald-700' : score >= 40 ? 'text-amber-600' : 'text-red-600',
-)
-
-// Mirrors the real per-property "Score Breakdown" panel (PropertyPage.tsx) —
-// same row shape (label + weight%, raw value + score + contribution, colored
-// progress bar) — on a made-up example listing, since that panel is the one
-// piece of the app the client already reads comfortably. New UI here would
-// just be one more thing to learn; reusing it means "how do points gather"
-// already has a familiar answer.
-function ScoringCriteriaHelp({ weightPoints }: { weightPoints: Record<ScoreFactor, number> }) {
-  const rows = SCORE_FACTORS.map(f => {
-    const { value, score } = EXAMPLE_ROW[f]
-    const weightPct = weightPoints[f]
-    const contribution = Math.round((weightPct / 100) * score * 10) / 10
-    return { f, value, score, weightPct, contribution }
-  })
-  const total = Math.round(rows.reduce((s, r) => s + r.contribution, 0))
-
+// Three plain-language steps, no per-factor bars — the client asked us to drop
+// the line-heavy layout. One concrete worked example makes "how do points
+// gather" answerable without re-teaching the whole Score Breakdown panel.
+function ScoringCriteriaHelp() {
+  const { t } = useLang()
+  const steps = [
+    { title: t('help_step1_title'), body: t('help_step1_body') },
+    { title: t('help_step2_title'), body: t('help_step2_body') },
+    { title: t('help_step3_title'), body: t('help_step3_body') },
+  ]
   return (
     <div className="space-y-5 text-sm">
-      <p className="text-muted leading-relaxed">
-        Every listing gets a 0–100 score on each factor below, from its real numbers (like an
-        actual $180/mo cash flow or 52 days on market). The % you set is how much that score
-        counts toward <span className="font-semibold text-ink">Your Verdict</span> — score ×
-        weight = points, and every factor's points add up to the total, exactly like the{' '}
-        <span className="font-semibold text-ink">Score Breakdown</span> on any property page.
-      </p>
+      <p className="text-muted leading-relaxed">{t('help_intro')}</p>
 
-      <div className="space-y-4">
-        {rows.map(r => (
-          <div key={r.f}>
-            <div className="flex items-center justify-between mb-1.5 gap-3">
-              <div className="min-w-0">
-                <span className="text-sm font-semibold text-ink">{FACTOR_LABEL[r.f]}</span>
-                <span className="text-xs text-muted ml-1.5">{r.weightPct}% weight</span>
-              </div>
-              <div className="flex items-center gap-3 shrink-0">
-                <span className="text-sm font-mono text-muted">{r.value}</span>
-                <span className={scoreTextColor(r.score)}>{r.score}</span>
-                <span className="text-xs font-mono font-bold text-accent w-12 text-right" title="Points added to the score (sub-score × weight)">
-                  +{r.contribution}
-                </span>
-              </div>
+      <ol className="space-y-3">
+        {steps.map((s, i) => (
+          <li key={i} className="flex gap-3">
+            <span className="w-7 h-7 rounded-full bg-accent/10 text-accent font-bold text-sm flex items-center justify-center shrink-0">
+              {i + 1}
+            </span>
+            <div className="min-w-0 pt-0.5">
+              <p className="font-semibold text-ink leading-tight">{s.title}</p>
+              <p className="text-muted leading-snug mt-0.5">{s.body}</p>
             </div>
-            <div className="h-2 bg-surface-border rounded-full overflow-hidden">
-              <div
-                className="h-full rounded-full transition-all duration-700 ease-out"
-                style={{ width: `${r.score}%`, backgroundColor: barColor(r.score) }}
-              />
-            </div>
-          </div>
+          </li>
         ))}
+      </ol>
+
+      <div className="rounded-xl bg-surface border border-surface-border px-4 py-3">
+        <p className="text-xs font-semibold text-muted uppercase tracking-wider mb-1">{t('help_example')}</p>
+        <p className="text-ink leading-relaxed">{t('help_example_body')}</p>
       </div>
 
-      <div className="pt-3 border-t border-surface-border flex items-center justify-between">
-        <span className="text-xs text-muted">Example listing — sum of points above</span>
-        <span className="text-sm font-black font-mono text-accent">{total}/100 Your Verdict</span>
-      </div>
-
-      <p className="text-[11px] text-muted leading-relaxed">
-        This is a made-up example so every bar shows a different score. See the real numbers for
-        any listing under its own Score Breakdown tab.
-      </p>
+      <p className="text-[11px] text-muted leading-relaxed">{t('help_note')}</p>
     </div>
   )
 }
@@ -678,6 +640,7 @@ function ScoringCriteriaHelp({ weightPoints }: { weightPoints: Record<ScoreFacto
 // Inline SVG (no chart lib): one arc segment per factor, coloured to match its
 // slider row, sized to its share of the total.
 function WeightDonut({ pct }: { pct: Record<ScoreFactor, number> }) {
+  const { t } = useLang()
   const size = 160, stroke = 24
   const r = (size - stroke) / 2
   const C = 2 * Math.PI * r
@@ -703,8 +666,8 @@ function WeightDonut({ pct }: { pct: Record<ScoreFactor, number> }) {
         </g>
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-6">
-        <span className="text-[10px] font-semibold text-muted uppercase tracking-wider">Top factor</span>
-        <span className="text-xs font-bold text-ink leading-tight mt-0.5">{FACTOR_LABEL[top]}</span>
+        <span className="text-[10px] font-semibold text-muted uppercase tracking-wider">{t('set_topFactor')}</span>
+        <span className="text-xs font-bold text-ink leading-tight mt-0.5">{t(FACTOR_LABEL_KEY[top])}</span>
         <span className="text-sm font-black font-mono" style={{ color: FACTOR_COLOR[top] }}>{pct[top]}%</span>
       </div>
     </div>
@@ -745,8 +708,13 @@ function ToggleRow({ label, sub, value, onChange, icon }: { label: string; sub: 
 }
 
 // ── Investment-goal multi-select dropdown ─────────────────────────────────────
-function GoalDropdown({ selected, onChange }: { selected: string[]; onChange: (v: string[]) => void }) {
+// ── Multi-city selector ───────────────────────────────────────────────────────
+// Chips for chosen cities + a typeahead that suggests common Québec cities and
+// lets the user add any other by typing it and pressing Enter.
+function CityMultiSelect({ selected, onChange }: { selected: string[]; onChange: (v: string[]) => void }) {
+  const { t } = useLang()
   const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
   const ref = useRef<HTMLDivElement | null>(null)
   useEffect(() => {
     if (!open) return
@@ -754,30 +722,92 @@ function GoalDropdown({ selected, onChange }: { selected: string[]; onChange: (v
     document.addEventListener('mousedown', onDown)
     return () => document.removeEventListener('mousedown', onDown)
   }, [open])
-  const toggle = (v: string) => onChange(selected.includes(v) ? selected.filter(x => x !== v) : [...selected, v])
-  const summary = selected.length === 0 ? 'Select one or more goals…' : GOALS.filter(g => selected.includes(g.value)).map(g => g.label).join(', ')
+
+  const add = (city: string) => {
+    const name = city.trim()
+    if (name && !selected.some(c => c.toLowerCase() === name.toLowerCase())) onChange([...selected, name])
+    setQuery('')
+  }
+  const remove = (city: string) => onChange(selected.filter(c => c !== city))
+  const q = query.trim().toLowerCase()
+  const suggestions = QUEBEC_CITIES.filter(
+    c => c.toLowerCase().includes(q) && !selected.some(s => s.toLowerCase() === c.toLowerCase()),
+  )
+  const canAddCustom = q.length > 0
+    && !QUEBEC_CITIES.some(c => c.toLowerCase() === q)
+    && !selected.some(s => s.toLowerCase() === q)
+
   return (
     <div ref={ref} className="relative">
-      <button type="button" onClick={() => setOpen(o => !o)} aria-haspopup="listbox" aria-expanded={open}
-        className="w-full flex items-center justify-between gap-2 px-4 py-3 rounded-xl border border-surface-border bg-white text-left hover:border-accent/40 transition-colors">
-        <span className={clsx('text-sm truncate', selected.length ? 'text-ink font-medium' : 'text-muted')}>{summary}</span>
-        <ChevronDown size={16} className={clsx('text-muted shrink-0 transition-transform', open && 'rotate-180')} />
-      </button>
-      {open && (
-        <div className="absolute z-20 mt-2 w-full rounded-xl border border-surface-border bg-white shadow-lg overflow-hidden" role="listbox">
-          {GOALS.map(g => {
-            const Icon = g.icon, active = selected.includes(g.value)
-            return (
-              <button key={g.value} type="button" onClick={() => toggle(g.value)} role="option" aria-selected={active}
-                className={clsx('w-full flex items-center gap-3 px-4 py-3 text-left transition-colors', active ? 'bg-accent/8' : 'hover:bg-surface-hover')}>
-                <div className={clsx('w-8 h-8 rounded-lg flex items-center justify-center shrink-0', active ? 'bg-accent/15' : 'bg-surface')}><Icon size={16} className={active ? 'text-accent' : 'text-muted'} /></div>
-                <div className="min-w-0 flex-1"><p className="text-sm font-bold text-ink">{g.label}</p><p className="text-xs text-muted leading-snug">{g.desc}</p></div>
-                <span className={clsx('w-5 h-5 rounded-md border flex items-center justify-center shrink-0', active ? 'bg-accent border-accent' : 'border-surface-border')}>{active && <Check size={13} className="text-white" />}</span>
-              </button>
-            )
-          })}
+      <div className="flex flex-wrap items-center gap-1.5 min-h-[46px] px-2 py-2 rounded-xl border border-surface-border bg-white focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/15 transition-all">
+        {selected.map(c => (
+          <span key={c} className="inline-flex items-center gap-1 pl-2.5 pr-1 py-1 rounded-lg bg-accent/10 text-accent text-xs font-semibold">
+            {c}
+            <button type="button" onClick={() => remove(c)} className="p-0.5 rounded hover:bg-accent/20" aria-label={`Remove ${c}`}><X size={12} /></button>
+          </span>
+        ))}
+        <input
+          value={query}
+          onChange={e => { setQuery(e.target.value); setOpen(true) }}
+          onFocus={() => setOpen(true)}
+          onKeyDown={e => {
+            if (e.key === 'Enter') { e.preventDefault(); add(query) }
+            else if (e.key === 'Backspace' && !query && selected.length) remove(selected[selected.length - 1])
+          }}
+          placeholder={selected.length ? t('set_addAnother') : t('set_cityPlaceholder')}
+          className="flex-1 min-w-[8rem] px-1.5 py-1 text-sm bg-transparent focus:outline-none placeholder:text-muted"
+        />
+      </div>
+      {open && (suggestions.length > 0 || canAddCustom) && (
+        <div className="absolute z-20 mt-2 w-full max-h-56 overflow-auto rounded-xl border border-surface-border bg-white shadow-lg py-1">
+          {canAddCustom && (
+            <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => add(query)}
+              className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-surface-hover">
+              <Plus size={14} className="text-accent" /> {t('set_add')} “<span className="font-semibold">{query.trim()}</span>”
+            </button>
+          )}
+          {suggestions.map(c => (
+            <button key={c} type="button" onMouseDown={e => e.preventDefault()} onClick={() => add(c)}
+              className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm text-ink hover:bg-surface-hover">
+              <MapPin size={13} className="text-muted" /> {c}
+            </button>
+          ))}
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Investment-goal cards ─────────────────────────────────────────────────────
+// Two selectable cards (pick one or both) with an expandable per-option
+// explanation, so the client's "explain what Buy & Hold / Flip means" is answered
+// inline instead of assumed.
+function GoalCards({ selected, onChange }: { selected: string[]; onChange: (v: string[]) => void }) {
+  const { t } = useLang()
+  const [expanded, setExpanded] = useState<string | null>(null)
+  const toggle = (v: string) => onChange(selected.includes(v) ? selected.filter(x => x !== v) : [...selected, v])
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      {GOALS.map(g => {
+        const Icon = g.icon, active = selected.includes(g.value), open = expanded === g.value
+        return (
+          <div key={g.value} className={clsx('rounded-xl border transition-all', active ? 'border-accent/50 bg-accent/5 ring-1 ring-accent/20' : 'border-surface-border bg-white')}>
+            <button type="button" onClick={() => toggle(g.value)} className="w-full flex items-start gap-3 p-3.5 text-left">
+              <div className={clsx('w-9 h-9 rounded-lg flex items-center justify-center shrink-0', active ? 'bg-accent/15' : 'bg-surface')}><Icon size={17} className={active ? 'text-accent' : 'text-muted'} /></div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-bold text-ink">{t(g.labelKey)}</p>
+                <p className="text-xs text-muted leading-snug mt-0.5">{t(g.descKey)}</p>
+              </div>
+              <span className={clsx('w-5 h-5 rounded-md border flex items-center justify-center shrink-0 mt-0.5', active ? 'bg-accent border-accent' : 'border-surface-border')}>{active && <Check size={13} className="text-white" />}</span>
+            </button>
+            <button type="button" onClick={() => setExpanded(open ? null : g.value)}
+              className="w-full flex items-center gap-1.5 px-3.5 pb-3 text-[11px] font-semibold text-muted hover:text-accent transition-colors">
+              <HelpCircle size={12} /> {t('set_whatsThis')} <ChevronDown size={12} className={clsx('transition-transform', open && 'rotate-180')} />
+            </button>
+            {open && <p className="px-3.5 pb-3.5 text-xs text-muted leading-relaxed animate-fade-in">{t(g.infoKey)}</p>}
+          </div>
+        )
+      })}
     </div>
   )
 }

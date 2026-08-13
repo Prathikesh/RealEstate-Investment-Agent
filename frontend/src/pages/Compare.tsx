@@ -2,6 +2,7 @@ import { useQueries } from '@tanstack/react-query'
 import { displayAddress } from '../lib/address'
 import { Link } from 'react-router-dom'
 import { X, Building2, ExternalLink, GitCompareArrows, ArrowLeft } from 'lucide-react'
+import { useLang } from '../context/LanguageContext'
 import clsx from 'clsx'
 import { fetchProperty } from '../api'
 import type { PropertyDetail } from '../api'
@@ -85,6 +86,7 @@ function winnerIndex(row: Row, props: PropertyDetail[]): number | null {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function Compare() {
+  const { t } = useLang()
   const { items, remove, clear } = useCompare()
   const { user } = useAuth()
 
@@ -130,7 +132,7 @@ export default function Compare() {
         <div className="card py-20 text-center space-y-4">
           <GitCompareArrows size={40} className="text-muted mx-auto" />
           <div>
-            <p className="font-bold text-ink text-lg">No properties to compare</p>
+            <p className="font-bold text-ink text-lg">{t('cmp_empty')}</p>
             <p className="text-sm text-muted mt-1">Use the + button on property cards to add up to 3 properties.</p>
           </div>
           <Link to="/properties" className="btn-primary inline-flex mx-auto">
@@ -154,7 +156,7 @@ export default function Compare() {
             <ArrowLeft size={16} />
           </Link>
           <div>
-            <h1 className="text-2xl font-bold text-ink">Property Comparison</h1>
+            <h1 className="text-2xl font-bold text-ink">{t('cmp_title')}</h1>
             <p className="text-sm text-muted mt-0.5">
               Comparing {items.length} {items.length === 1 ? 'property' : 'properties'} side-by-side
             </p>
@@ -234,7 +236,7 @@ export default function Compare() {
                       className="flex flex-col items-center justify-center gap-2 aspect-video w-full rounded-xl border-2 border-dashed border-surface-border hover:border-accent/40 transition-colors text-muted hover:text-accent"
                     >
                       <span className="text-2xl font-bold leading-none">+</span>
-                      <span className="text-xs font-medium">Add property</span>
+                      <span className="text-xs font-medium">{t('cmp_add')}</span>
                     </Link>
                   </th>
                 )}

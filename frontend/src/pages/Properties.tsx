@@ -13,7 +13,8 @@ import {
 } from '../api'
 import { useLang } from '../context/LanguageContext'
 import { useAuth } from '../auth/AuthContext'
-import { loadBuyBox, BUYBOX_KEYS } from '../lib/buybox'
+import { loadBuyBox, BUYBOX_KEYS, BUYBOX_FIELDS } from '../lib/buybox'
+import { ValueSlider } from '../components/ValueSlider'
 import { Sparkles, SlidersHorizontal as SlidersIcon } from 'lucide-react'
 import ScoreBadge from '../components/ScoreBadge'
 import PropertyCardGrid from '../components/PropertyCardGrid'
@@ -23,37 +24,48 @@ const PropertyMapView = lazy(() => import('../components/PropertyMapView'))
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const PROPERTY_TYPES = [
-  { value: 'duplex',          label: 'Duplex (2 units)' },
-  { value: 'triplex',         label: 'Triplex (3 units)' },
-  { value: 'quadruplex',      label: 'Quadruplex (4 units)' },
-  { value: 'quintuplex_plus', label: 'Quintuplex+ (5+ units)' },
-  { value: 'single_family',   label: 'Single Family Home' },
-  { value: 'condo',           label: 'Condo' },
+  { value: 'duplex',          labelKey: 'ptype_duplex' },
+  { value: 'triplex',         labelKey: 'ptype_triplex' },
+  { value: 'quadruplex',      labelKey: 'ptype_quadruplex' },
+  { value: 'quintuplex_plus', labelKey: 'ptype_quintuplex' },
+  { value: 'single_family',   labelKey: 'ptype_single' },
+  { value: 'condo',           labelKey: 'ptype_condo' },
 ]
 
 const SCORE_OPTIONS = [
-  { value: '',   label: 'Any quality' },
-  { value: '80', label: 'Great deals only (80+)' },
-  { value: '60', label: 'Worth checking (60+)' },
-  { value: '40', label: 'Show everything (40+)' },
+  { value: '',   labelKey: 'pf_quality_any' },
+  { value: '80', labelKey: 'pf_quality_great' },
+  { value: '60', labelKey: 'pf_quality_worth' },
+  { value: '40', labelKey: 'pf_quality_all' },
 ]
 
 const LISTED_WITHIN_OPTIONS = [
-  { value: '',    label: 'Any time' },
-  { value: '24h', label: 'Last 24 hours' },
-  { value: '48h', label: 'Last 48 hours' },
-  { value: '7d',  label: 'Last 7 days' },
-  { value: '30d', label: 'Last 30 days' },
+  { value: '',    labelKey: 'pf_time_any' },
+  { value: '24h', labelKey: 'pf_time_24h' },
+  { value: '48h', labelKey: 'pf_time_48h' },
+  { value: '7d',  labelKey: 'pf_time_7d' },
+  { value: '30d', labelKey: 'pf_time_30d' },
 ]
 
 const SORT_OPTIONS = [
-  { value: 'score',      label: 'Best deals first' },
-  { value: 'discount',   label: 'Biggest discount first' },
-  { value: 'price_asc',  label: 'Lowest price first' },
-  { value: 'price_desc', label: 'Highest price first' },
-  { value: 'newest',     label: 'Newest listings first' },
-  { value: 'days_listed', label: 'Longest listed first' },
+  { value: 'score',      labelKey: 'pf_sort_best' },
+  { value: 'discount',   labelKey: 'pf_sort_discount' },
+  { value: 'price_asc',  labelKey: 'pf_sort_priceasc' },
+  { value: 'price_desc', labelKey: 'pf_sort_pricedesc' },
+  { value: 'newest',     labelKey: 'pf_sort_newest' },
+  { value: 'days_listed', labelKey: 'pf_sort_longest' },
 ]
+
+// Buy-box field → translation keys (shared factor_*/fdesc_* keys), so the filter
+// panel's buy box localizes just like the Settings one.
+const PF_BUYBOX_LABEL: Record<string, string> = {
+  cash_flow_min: 'factor_cash_flow', cap_rate_min: 'factor_cap_rate', discount_min: 'factor_discount',
+  days_on_market_min: 'factor_dom_bonus', price_drop_min: 'factor_price_cut',
+}
+const PF_BUYBOX_DESC: Record<string, string> = {
+  cash_flow_min: 'fdesc_cash_flow', cap_rate_min: 'fdesc_cap_rate', discount_min: 'fdesc_discount',
+  days_on_market_min: 'fdesc_dom_bonus', price_drop_min: 'fdesc_price_cut',
+}
 
 // ── Format helpers ────────────────────────────────────────────────────────────
 
@@ -69,7 +81,7 @@ function fmtCAD(v: number | null): string {
 type ViewMode = 'grid' | 'list' | 'map'
 
 export default function Properties() {
-  const { lang } = useLang()
+  const { lang, t } = useLang()
   const { user } = useAuth()
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
@@ -188,9 +200,9 @@ export default function Properties() {
           <p className="text-sm text-muted">
             {data?.total != null ? (
               hasActiveFilters
-                ? `${data.total.toLocaleString()} of ${(stats?.total_properties ?? data.total).toLocaleString()} listings match your criteria`
-                : `${data.total.toLocaleString()} listings found`
-            ) : 'Loading…'}
+                ? `${data.total.toLocaleString()} ${t('pf_of')} ${(stats?.total_properties ?? data.total).toLocaleString()} ${t('pf_listingsMatch')}`
+                : `${data.total.toLocaleString()} ${t('pf_listingsFound')}`
+            ) : t('pf_loading')}
             {rankMode === 'your' && (
               <span className="text-accent font-semibold">
                 {' · '}{lang === 'fr' ? 'classées selon vos critères' : 'ranked by your metrics'}
@@ -238,7 +250,7 @@ export default function Properties() {
             )}
           >
             <SlidersHorizontal size={13} />
-            Filters
+            {t('filters')}
             {hasActiveFilters && (
               <span className={clsx('w-1.5 h-1.5 rounded-full', showFilters ? 'bg-white' : 'bg-accent')} />
             )}
@@ -281,7 +293,7 @@ export default function Properties() {
           <Search size={15} className="text-muted shrink-0" />
           <input
             type="text"
-            placeholder="Search address or city…"
+            placeholder={t('pf_searchPlaceholder')}
             value={filters.address ?? ''}
             onChange={e => setFilter('address', e.target.value)}
             onFocus={() => setSuggestOpen(true)}
@@ -314,7 +326,7 @@ export default function Properties() {
         <Hash size={13} className="text-muted shrink-0" />
         <input
           type="text"
-          placeholder="MLS number…"
+          placeholder={t('pf_mlsPlaceholder')}
           value={filters.mls_number ?? ''}
           onChange={e => setFilter('mls_number', e.target.value)}
           className="w-32 text-sm text-ink placeholder:text-muted bg-transparent focus:outline-none"
@@ -325,7 +337,7 @@ export default function Properties() {
           onChange={e => setFilter('sort_by', e.target.value)}
           className="text-sm text-ink bg-transparent focus:outline-none cursor-pointer font-medium pr-1"
         >
-          {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{t(o.labelKey)}</option>)}
         </select>
         {hasActiveFilters && (
           <>
@@ -334,7 +346,7 @@ export default function Properties() {
               onClick={() => setParams(new URLSearchParams())}
               className="flex items-center gap-1 text-xs text-red-500 font-semibold hover:bg-red-50 px-2 py-1 rounded-lg transition-colors"
             >
-              <X size={11} /> Clear
+              <X size={11} /> {t('pf_clear')}
             </button>
           </>
         )}
@@ -344,10 +356,10 @@ export default function Properties() {
       <div className="flex items-center gap-1.5 flex-wrap">
         {/* Time chips */}
         {[
-          { value: '24h',  label: 'Last 24h',   icon: <Zap size={11} /> },
-          { value: '48h',  label: 'Last 48h',   icon: <Zap size={11} /> },
-          { value: '7d',   label: 'Last 7 days', icon: <Clock size={11} /> },
-          { value: '30d',  label: 'Last 30 days', icon: <Clock size={11} /> },
+          { value: '24h',  label: t('pf_chip_24h'), icon: <Zap size={11} /> },
+          { value: '48h',  label: t('pf_chip_48h'), icon: <Zap size={11} /> },
+          { value: '7d',   label: t('pf_chip_7d'),  icon: <Clock size={11} /> },
+          { value: '30d',  label: t('pf_chip_30d'), icon: <Clock size={11} /> },
         ].map(opt => (
           <button
             key={opt.value}
@@ -367,11 +379,11 @@ export default function Properties() {
 
         {/* Sort chips */}
         {[
-          { value: 'score',      label: 'Best deals',       icon: <TrendingUp size={11} />,    active: 'bg-score-strong/10 text-score-strong border-score-strong/30',    inactive: 'hover:text-score-strong hover:border-score-strong/30 hover:bg-score-strong/5' },
-          { value: 'discount',   label: 'Biggest discount',  icon: <ArrowDownCircle size={11} />, active: 'bg-red-50 text-red-600 border-red-200',                           inactive: 'hover:text-red-500 hover:border-red-200 hover:bg-red-50' },
-          { value: 'price_asc',  label: 'Lowest price',     icon: <DollarSign size={11} />,    active: 'bg-score-worth/10 text-score-worth border-score-worth/30',        inactive: 'hover:text-score-worth hover:border-score-worth/30 hover:bg-score-worth/5' },
-          { value: 'price_desc', label: 'Highest price',    icon: <TrendingUp size={11} />,    active: 'bg-score-market/10 text-score-market border-score-market/30',     inactive: 'hover:text-score-market hover:border-score-market/30 hover:bg-score-market/5' },
-          { value: 'multi',      label: 'Multi-site',       icon: <Globe size={11} />,         active: 'bg-blue-50 text-blue-600 border-blue-200',                        inactive: 'hover:text-blue-600 hover:border-blue-200 hover:bg-blue-50', filter: 'multi_site' },
+          { value: 'score',      label: t('pf_chip_best'),     icon: <TrendingUp size={11} />,    active: 'bg-score-strong/10 text-score-strong border-score-strong/30',    inactive: 'hover:text-score-strong hover:border-score-strong/30 hover:bg-score-strong/5' },
+          { value: 'discount',   label: t('pf_chip_discount'), icon: <ArrowDownCircle size={11} />, active: 'bg-red-50 text-red-600 border-red-200',                           inactive: 'hover:text-red-500 hover:border-red-200 hover:bg-red-50' },
+          { value: 'price_asc',  label: t('pf_chip_lowest'),   icon: <DollarSign size={11} />,    active: 'bg-score-worth/10 text-score-worth border-score-worth/30',        inactive: 'hover:text-score-worth hover:border-score-worth/30 hover:bg-score-worth/5' },
+          { value: 'price_desc', label: t('pf_chip_highest'),  icon: <TrendingUp size={11} />,    active: 'bg-score-market/10 text-score-market border-score-market/30',     inactive: 'hover:text-score-market hover:border-score-market/30 hover:bg-score-market/5' },
+          { value: 'multi',      label: t('multiSite'),        icon: <Globe size={11} />,         active: 'bg-blue-50 text-blue-600 border-blue-200',                        inactive: 'hover:text-blue-600 hover:border-blue-200 hover:bg-blue-50', filter: 'multi_site' },
         ].map(opt => {
           const isSort = opt.value !== 'multi'
           const isActive = isSort
@@ -399,7 +411,7 @@ export default function Properties() {
             onClick={() => setParams(new URLSearchParams())}
             className="flex items-center gap-1 ml-1 text-xs text-red-500 font-semibold hover:bg-red-50 px-2.5 py-1.5 rounded-full border border-red-200 transition-all"
           >
-            <X size={10} /> Clear all
+            <X size={10} /> {t('pf_clearAll')}
           </button>
         )}
       </div>
@@ -409,15 +421,15 @@ export default function Properties() {
         <div className="card flex flex-wrap gap-4 items-end">
           {/* Property type */}
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-muted">Property Type</span>
+            <span className="text-xs font-medium text-muted">{t('pf_propertyType')}</span>
             <select
               value={filters.property_type ?? ''}
               onChange={e => setFilter('property_type', e.target.value)}
               className="select"
             >
-              <option value="">All types</option>
+              <option value="">{t('allTypes')}</option>
               {PROPERTY_TYPES.map(tp => (
-                <option key={tp.value} value={tp.value}>{tp.label}</option>
+                <option key={tp.value} value={tp.value}>{t(tp.labelKey)}</option>
               ))}
             </select>
           </label>
@@ -438,28 +450,28 @@ export default function Properties() {
 
           {/* Quality / Score */}
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-muted">Minimum quality</span>
+            <span className="text-xs font-medium text-muted">{t('pf_minQuality')}</span>
             <select
               value={filters.score_min ?? ''}
               onChange={e => setFilter('score_min', e.target.value)}
               className="select"
             >
               {SCORE_OPTIONS.map(o => (
-                <option key={o.value} value={o.value}>{o.label}</option>
+                <option key={o.value} value={o.value}>{t(o.labelKey)}</option>
               ))}
             </select>
           </label>
 
           {/* Listed within */}
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-muted">Listed within</span>
+            <span className="text-xs font-medium text-muted">{t('pf_listedWithin')}</span>
             <select
               value={filters.listed_within ?? ''}
               onChange={e => setFilter('listed_within', e.target.value)}
               className="select"
             >
               {LISTED_WITHIN_OPTIONS.map(o => (
-                <option key={o.value} value={o.value}>{o.label}</option>
+                <option key={o.value} value={o.value}>{t(o.labelKey)}</option>
               ))}
             </select>
           </label>
@@ -467,13 +479,13 @@ export default function Properties() {
           {/* City dropdown */}
           {stats?.cities && stats.cities.length > 0 && (
             <label className="flex flex-col gap-1">
-              <span className="text-xs font-medium text-muted">City</span>
+              <span className="text-xs font-medium text-muted">{t('pf_city')}</span>
               <select
                 value={filters.city ?? ''}
                 onChange={e => setFilter('city', e.target.value)}
                 className="select"
               >
-                <option value="">All cities</option>
+                <option value="">{t('allCities')}</option>
                 {stats.cities.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </label>
@@ -481,94 +493,57 @@ export default function Properties() {
 
           {/* Price range */}
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-muted">Min price ($)</span>
+            <span className="text-xs font-medium text-muted">{t('pf_minPrice')}</span>
             <input
               type="number"
               step="50000"
-              placeholder="e.g. 300000"
+              placeholder={t('pf_egMin')}
               value={filters.price_min ?? ''}
               onChange={e => setFilter('price_min', e.target.value)}
               className="input w-36"
             />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-muted">Max price ($)</span>
+            <span className="text-xs font-medium text-muted">{t('pf_maxPrice')}</span>
             <input
               type="number"
               step="50000"
-              placeholder="e.g. 1000000"
+              placeholder={t('pf_egMax')}
               value={filters.price_max ?? ''}
               onChange={e => setFilter('price_max', e.target.value)}
               className="input w-36"
             />
           </label>
 
-          {/* ── Buy-box targets (real numbers, the client's request) ────────── */}
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-muted">Min cash flow ($/mo)</span>
-            <input
-              type="number"
-              step="100"
-              placeholder="e.g. 200"
-              value={filters.cash_flow_min ?? ''}
-              onChange={e => setFilter('cash_flow_min', e.target.value)}
-              className="input w-36"
-            />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-muted">Min cap rate (%)</span>
-            <input
-              type="number"
-              step="0.5"
-              placeholder="e.g. 5"
-              value={filters.cap_rate_min ?? ''}
-              onChange={e => setFilter('cap_rate_min', e.target.value)}
-              className="input w-36"
-            />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-muted">Min below-market (%)</span>
-            <input
-              type="number"
-              step="1"
-              placeholder="e.g. 5"
-              value={filters.discount_min ?? ''}
-              onChange={e => setFilter('discount_min', e.target.value)}
-              className="input w-36"
-            />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-muted">Min days listed</span>
-            <input
-              type="number"
-              step="7"
-              placeholder="e.g. 30"
-              value={filters.days_on_market_min ?? ''}
-              onChange={e => setFilter('days_on_market_min', e.target.value)}
-              className="input w-36"
-            />
-            <span className="text-[10px] text-muted/70 leading-tight max-w-[9rem]">
-              Days since we first tracked it — most sources hide the true list date.
-            </span>
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-muted">Min price cut ($)</span>
-            <input
-              type="number"
-              step="5000"
-              placeholder="e.g. 10000"
-              value={filters.price_drop_min ?? ''}
-              onChange={e => setFilter('price_drop_min', e.target.value)}
-              className="input w-36"
-            />
-            <span className="text-[10px] text-muted/70 leading-tight max-w-[9rem]">
-              Vendor has cut the price this much since listing — a motivated-seller signal.
-            </span>
-          </label>
+          {/* ── Buy-box targets (real numbers) — same control as Settings ───── */}
+          <div className="w-full border-t border-surface-border pt-4 mt-1">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-xs font-bold text-ink uppercase tracking-wider">{t('pf_buyBoxTitle')}</span>
+              <span className="text-[11px] text-muted">{t('pf_buyBoxHint')}</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-1">
+              {BUYBOX_FIELDS.map(cfg => (
+                <ValueSlider
+                  key={cfg.key}
+                  label={t(PF_BUYBOX_LABEL[cfg.key])}
+                  desc={t(PF_BUYBOX_DESC[cfg.key])}
+                  color={cfg.color}
+                  value={filters[cfg.key]}
+                  onChange={v => setFilter(cfg.key, v == null ? '' : String(v))}
+                  min={cfg.min}
+                  max={cfg.max}
+                  step={cfg.step}
+                  prefix={cfg.prefix}
+                  suffix={cfg.suffix}
+                />
+              ))}
+            </div>
+            <p className="text-[11px] text-muted/70 mt-1.5">{t('pf_daysNote')}</p>
+          </div>
 
           {/* Multi-site only */}
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-muted">Listed on multiple sites</span>
+            <span className="text-xs font-medium text-muted">{t('pf_multiOnly')}</span>
             <label className="flex items-center gap-2 cursor-pointer h-[38px]">
               <input
                 type="checkbox"
@@ -576,13 +551,13 @@ export default function Properties() {
                 onChange={e => setFilter('multi_site', e.target.checked ? 'true' : '')}
                 className="w-4 h-4 accent-accent rounded"
               />
-              <span className="text-sm text-ink">Multi-site only</span>
+              <span className="text-sm text-ink">{t('multiSiteFilter')}</span>
             </label>
           </label>
 
           {/* Has sqft */}
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-muted">Size data</span>
+            <span className="text-xs font-medium text-muted">{t('pf_sizeData')}</span>
             <label className="flex items-center gap-2 cursor-pointer h-[38px]">
               <input
                 type="checkbox"
@@ -590,13 +565,13 @@ export default function Properties() {
                 onChange={e => setFilter('has_sqft', e.target.checked ? 'true' : '')}
                 className="w-4 h-4 accent-accent rounded"
               />
-              <span className="text-sm text-ink">Has sqft only</span>
+              <span className="text-sm text-ink">{t('pf_hasSqft')}</span>
             </label>
           </label>
 
           {/* Flood zone */}
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-muted">Flood risk</span>
+            <span className="text-xs font-medium text-muted">{t('pf_floodRisk')}</span>
             <label className="flex items-center gap-2 cursor-pointer h-[38px]">
               <input
                 type="checkbox"
@@ -604,7 +579,7 @@ export default function Properties() {
                 onChange={e => setFilter('flood_zone', e.target.checked ? 'true' : '')}
                 className="w-4 h-4 accent-accent rounded"
               />
-              <span className="text-sm text-ink">Flagged flood zone only</span>
+              <span className="text-sm text-ink">{t('pf_floodOnly')}</span>
             </label>
           </label>
         </div>
@@ -624,7 +599,7 @@ export default function Properties() {
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 000 16v-4l-3 3 3 3v-4a8 8 0 01-8-8z"/>
                 </svg>
-                Filtering…
+                {t('pf_loading')}
               </div>
             </div>
           )}
@@ -639,13 +614,13 @@ export default function Properties() {
       {/* ── Empty state ────────────────────────────────────────────────── */}
       {view !== 'map' && !isLoading && data?.items.length === 0 && (
         <div className="card py-12 text-center space-y-2">
-          <p className="text-ink font-medium">No properties found</p>
-          <p className="text-sm text-muted">Try adjusting your filters or expanding the search area.</p>
+          <p className="text-ink font-medium">{t('pf_noResults')}</p>
+          <p className="text-sm text-muted">{t('pf_noResultsHint')}</p>
           <button
             onClick={() => setParams(new URLSearchParams())}
             className="mt-4 text-sm text-accent hover:underline"
           >
-            Clear all filters
+            {t('pf_clearAllFilters')}
           </button>
         </div>
       )}
