@@ -35,10 +35,10 @@ const CAT_LABEL_KEY: Record<string, 'strongOpportunity' | 'worthInvestigating' |
 }
 
 // Friendly strategy names — the raw enum ("both") reads badly in a sentence.
-const STRATEGY_LABEL: Record<string, string> = {
-  buy_and_hold: 'Buy & Hold',
-  buy_fix_sell: 'Flip (Fix & Sell)',
-  both:         'Buy & Hold + Flip',
+const STRATEGY_LABEL_KEY: Record<string, string> = {
+  buy_and_hold: 'vc_strat_hold',
+  buy_fix_sell: 'vc_strat_flip',
+  both:         'vc_strat_both',
 }
 
 function VerdictTile({
@@ -81,6 +81,7 @@ export default function VerdictCompare({
   className?: string
 }) {
   const { user } = useAuth()
+  const { t } = useLang()
 
   const strategy = user?.investment_strategy ?? 'both'
   const customValid = user?.custom_score_weights && weightsAreValid(user.custom_score_weights)
@@ -114,21 +115,21 @@ export default function VerdictCompare({
   // rather than showing two identical numbers that look broken.
   const personalized = customValid || !!live
   const yourSubtitle = live
-    ? 'your weights · live'
+    ? t('vc_sub_live')
     : personalized
-      ? 'your weights'
-      : 'mirrors AI until you set your weights'
+      ? t('vc_sub_weights')
+      : t('vc_sub_mirror')
 
   return (
     <div className={clsx('card p-5 space-y-3', className)}>
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-bold text-ink">AI Verdict vs. Your Verdict</h3>
+        <h3 className="text-sm font-bold text-ink">{t('vc_title')}</h3>
         {delta != null && Math.abs(delta) >= 1 && (
           <span className={clsx(
             'text-xs font-bold font-mono px-2 py-0.5 rounded-full',
             delta > 0 ? 'text-score-strong bg-score-strong/10' : 'text-score-notrecommended bg-score-notrecommended/10',
           )}>
-            {delta > 0 ? '+' : ''}{delta} vs AI
+            {delta > 0 ? '+' : ''}{delta} {t('vc_vsAI')}
           </span>
         )}
       </div>
@@ -136,15 +137,15 @@ export default function VerdictCompare({
       <div className="flex gap-3">
         <VerdictTile
           icon={<Sparkles size={12} className="text-accent" />}
-          title="AI Verdict"
-          subtitle="AI weighting · listing terms"
+          title={t('vc_aiVerdict')}
+          subtitle={t('vc_aiSubtitle')}
           score={aiScore}
           category={aiCategory}
           accent={false}
         />
         <VerdictTile
           icon={<SlidersHorizontal size={12} className="text-accent" />}
-          title="Your Verdict"
+          title={t('vc_yourVerdict')}
           subtitle={yourSubtitle}
           score={yourScore}
           category={yourCategory}
@@ -155,11 +156,11 @@ export default function VerdictCompare({
       <div className="flex items-center justify-between text-[11px] text-muted pt-1">
         <span>
           {customValid
-            ? 'Using your custom scoring criteria.'
-            : `Using your ${STRATEGY_LABEL[strategy]} defaults — set your own in Settings.`}
+            ? t('vc_usingCustom')
+            : `${t('vc_usingDefPre')} ${t(STRATEGY_LABEL_KEY[strategy] ?? 'vc_strat_both')} ${t('vc_usingDefPost')}`}
         </span>
         <Link to="/settings" className="inline-flex items-center gap-0.5 text-accent font-semibold hover:underline">
-          Adjust criteria <ArrowUpRight size={12} />
+          {t('vc_adjust')} <ArrowUpRight size={12} />
         </Link>
       </div>
     </div>
