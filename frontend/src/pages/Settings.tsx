@@ -11,22 +11,33 @@ import { useLang } from '../context/LanguageContext'
 import { useAuth } from '../auth/AuthContext'
 import { updatePreferences, type PreferencesPayload, type User } from '../auth/api'
 import {
-  SCORE_FACTORS, STRATEGY_WEIGHTS, FACTOR_LABEL,
+  SCORE_FACTORS, STRATEGY_WEIGHTS,
   type ScoreFactor, type ScoreWeights,
 } from '../lib/verdict'
 import { InfoModal } from '../components/InfoModal'
 import { ValueSlider } from '../components/ValueSlider'
 import { type BuyBox, BUYBOX_FIELDS, loadBuyBox, cacheBuyBox, cleanBuyBox } from '../lib/buybox'
 
-// Short investor-facing descriptions for each scoring factor (My Scoring Criteria).
-const FACTOR_DESC: Record<ScoreFactor, string> = {
-  discount:      'How far below comparable sales it is priced',
-  cap_rate:      'Annual return — net income vs. purchase price',
-  cash_flow:     'Monthly profit after mortgage, taxes & expenses',
-  grm:           'Price relative to gross rent (lower is better)',
-  confidence:    'How much comparable data backs the numbers',
-  dom_bonus:     'Days on market — longer means more leverage',
-  price_history: 'Past price cuts signal a motivated seller',
+// Factor → translation-key maps (labels + descriptions) for the advanced sliders
+// and the buy box, so both localize. See LanguageContext factor_* / fdesc_* keys.
+const FACTOR_LABEL_KEY: Record<ScoreFactor, string> = {
+  discount: 'factor_discount', cap_rate: 'factor_cap_rate', cash_flow: 'factor_cash_flow',
+  grm: 'factor_grm', confidence: 'factor_confidence', dom_bonus: 'factor_dom_bonus',
+  price_history: 'factor_price_history',
+}
+const FACTOR_DESC_KEY: Record<ScoreFactor, string> = {
+  discount: 'fdesc_discount', cap_rate: 'fdesc_cap_rate', cash_flow: 'fdesc_cash_flow',
+  grm: 'fdesc_grm', confidence: 'fdesc_confidence', dom_bonus: 'fdesc_dom_bonus',
+  price_history: 'fdesc_price_cut',
+}
+// Buy-box field key → translation keys (fields come from lib/buybox.ts).
+const BUYBOX_LABEL_KEY: Record<string, string> = {
+  cash_flow_min: 'factor_cash_flow', cap_rate_min: 'factor_cap_rate', discount_min: 'factor_discount',
+  days_on_market_min: 'factor_dom_bonus', price_drop_min: 'factor_price_cut',
+}
+const BUYBOX_DESC_KEY: Record<string, string> = {
+  cash_flow_min: 'fdesc_cash_flow', cap_rate_min: 'fdesc_cap_rate', discount_min: 'fdesc_discount',
+  days_on_market_min: 'fdesc_dom_bonus', price_drop_min: 'fdesc_price_cut',
 }
 
 // The buy-box real-number targets — the client's "in numbers, not percentages"
@@ -47,11 +58,11 @@ const FACTOR_COLOR: Record<ScoreFactor, string> = {
 
 // One-tap starting points. The three strategy presets mirror the backend's
 // weight sets; "Cash-flow" is an income-first tilt for buy-and-hold investors.
-const WEIGHT_PRESETS: { id: string; label: string; icon: typeof Scale; weights: ScoreWeights }[] = [
-  { id: 'balanced', label: 'Balanced',     icon: Scale,           weights: STRATEGY_WEIGHTS.both },
-  { id: 'cashflow', label: 'Cash-flow',    icon: CircleDollarSign, weights: { discount: 0.12, cap_rate: 0.28, cash_flow: 0.30, grm: 0.10, confidence: 0.08, dom_bonus: 0.07, price_history: 0.05 } },
-  { id: 'income',   label: 'Buy & Hold',   icon: TrendingUp,      weights: STRATEGY_WEIGHTS.buy_and_hold },
-  { id: 'value',    label: 'Value / Flip', icon: Wrench,          weights: STRATEGY_WEIGHTS.buy_fix_sell },
+const WEIGHT_PRESETS: { id: string; labelKey: string; icon: typeof Scale; weights: ScoreWeights }[] = [
+  { id: 'balanced', labelKey: 'preset_balanced', icon: Scale,           weights: STRATEGY_WEIGHTS.both },
+  { id: 'cashflow', labelKey: 'preset_cashflow', icon: CircleDollarSign, weights: { discount: 0.12, cap_rate: 0.28, cash_flow: 0.30, grm: 0.10, confidence: 0.08, dom_bonus: 0.07, price_history: 0.05 } },
+  { id: 'income',   labelKey: 'preset_buyhold',  icon: TrendingUp,      weights: STRATEGY_WEIGHTS.buy_and_hold },
+  { id: 'value',    labelKey: 'preset_value',    icon: Wrench,          weights: STRATEGY_WEIGHTS.buy_fix_sell },
 ]
 
 // Seed slider points from stored fractional weights (×100). Points are a
@@ -74,33 +85,25 @@ function pointsFromWeights(w: ScoreWeights): Record<ScoreFactor, number> {
 
 // ── Option data ──────────────────────────────────────────────────────────────
 const PROPERTY_TYPES = [
-  { value: 'duplex',          label: 'Duplex',        sub: '2 units' },
-  { value: 'triplex',         label: 'Triplex',       sub: '3 units' },
-  { value: 'quadruplex',      label: 'Quadruplex',    sub: '4 units' },
-  { value: 'quintuplex_plus', label: 'Quintuplex+',   sub: '5+ units' },
-  { value: 'single_family',   label: 'Single Family', sub: 'house' },
-  { value: 'condo',           label: 'Condo',         sub: 'apartment' },
+  { value: 'duplex',          labelKey: 'type_duplex',        subKey: 'units_2' },
+  { value: 'triplex',         labelKey: 'type_triplex',       subKey: 'units_3' },
+  { value: 'quadruplex',      labelKey: 'type_quadruplex',    subKey: 'units_4' },
+  { value: 'quintuplex_plus', labelKey: 'type_quintuplex',    subKey: 'units_5plus' },
+  { value: 'single_family',   labelKey: 'type_single_family', subKey: 'unit_house' },
+  { value: 'condo',           labelKey: 'type_condo',         subKey: 'unit_apartment' },
 ]
 
 const GOALS = [
-  {
-    value: 'buy_and_hold', icon: TrendingUp, label: 'Buy & Hold',
-    desc: 'Monthly rental income from tenants',
-    info: 'You keep the property long-term and rent it out. The goal is steady monthly cash flow plus long-term appreciation. With this strategy Your Verdict leans on cap rate and cash flow.',
-  },
-  {
-    value: 'buy_fix_sell', icon: Wrench, label: 'Flip (Fix & Sell)',
-    desc: 'Buy cheap, renovate, sell for profit',
-    info: 'You buy below market, renovate, and resell for a one-time profit — the spread between what you paid plus reno costs and the resale price. With this strategy Your Verdict leans on price discount and days-on-market (motivated sellers).',
-  },
+  { value: 'buy_and_hold', icon: TrendingUp, labelKey: 'goal_hold_label', descKey: 'goal_hold_desc', infoKey: 'goal_hold_info' },
+  { value: 'buy_fix_sell', icon: Wrench,     labelKey: 'goal_flip_label', descKey: 'goal_flip_desc', infoKey: 'goal_flip_info' },
 ]
 
 const BUDGETS = [
-  { value: '0-300000',       label: 'Under $300K',   min: undefined, max: 300000 },
-  { value: '300000-500000',  label: '$300K – $500K', min: 300000,    max: 500000 },
-  { value: '500000-750000',  label: '$500K – $750K', min: 500000,    max: 750000 },
-  { value: '750000-1000000', label: '$750K – $1M',   min: 750000,    max: 1000000 },
-  { value: '1000000+',       label: 'Over $1M',      min: 1000000,   max: undefined },
+  { value: '0-300000',       labelKey: 'set_budget_under',  min: undefined, max: 300000 },
+  { value: '300000-500000',  labelKey: 'set_budget_300500', min: 300000,    max: 500000 },
+  { value: '500000-750000',  labelKey: 'set_budget_500750', min: 500000,    max: 750000 },
+  { value: '750000-1000000', labelKey: 'set_budget_7501m',  min: 750000,    max: 1000000 },
+  { value: '1000000+',       labelKey: 'set_budget_over1m', min: 1000000,   max: undefined },
 ]
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -145,7 +148,7 @@ function loadDelivery() {
 
 export default function Settings() {
   const { user, setUser } = useAuth()
-  const { lang, setLang } = useLang()
+  const { lang, setLang, t } = useLang()
   const navigate = useNavigate()
 
   // ── State, seeded from the account ──
@@ -316,68 +319,68 @@ export default function Settings() {
       {/* ── Header ── */}
       <div className="flex items-start justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-2xl font-extrabold text-ink tracking-tight">Settings</h1>
+          <h1 className="text-2xl font-extrabold text-ink tracking-tight">{t('settings')}</h1>
           <p className="text-sm text-muted mt-1 flex items-center gap-1.5">
             <ShieldCheck size={15} className="text-score-strong" />
-            Your investment preferences, saved to your account.
+            {t('set_headerSubtitle')}
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <button onClick={applyToSearch} className="btn-ghost" title="Open the Properties list filtered by these preferences">
-            <Search size={15} /> Apply to search
+          <button onClick={applyToSearch} className="btn-ghost">
+            <Search size={15} /> {t('set_applyToSearch')}
           </button>
           <button onClick={handleSave} disabled={!canSave || saving} className="btn-primary disabled:opacity-40 disabled:cursor-not-allowed min-w-[150px] justify-center">
-            {saved ? <><CheckCircle2 size={15} /> Saved</> : saving ? 'Saving…' : 'Save preferences'}
+            {saved ? <><CheckCircle2 size={15} /> {t('set_saved')}</> : saving ? t('set_saving') : t('set_save')}
           </button>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
-          <SectionCard icon={<MapPin size={15} />} title="Search location" desc="The cities you're hunting in — pick as many as you like.">
+          <SectionCard icon={<MapPin size={15} />} title={t('set_location_title')} desc={t('set_location_desc')}>
             <div className="space-y-4">
               <div>
-                <span className="block text-xs font-semibold text-muted uppercase tracking-wider mb-2">Target cities</span>
+                <span className="block text-xs font-semibold text-muted uppercase tracking-wider mb-2">{t('set_targetCities')}</span>
                 <CityMultiSelect selected={cities} onChange={setCities} />
               </div>
               <label className="block">
-                <div className="flex items-center justify-between mb-2"><span className="text-xs font-semibold text-muted uppercase tracking-wider">Search radius</span><span className="text-sm font-bold font-mono text-accent">{radius} km</span></div>
+                <div className="flex items-center justify-between mb-2"><span className="text-xs font-semibold text-muted uppercase tracking-wider">{t('set_searchRadius')}</span><span className="text-sm font-bold font-mono text-accent">{radius} km</span></div>
                 <input type="range" min={5} max={100} step={5} value={radius} onChange={e => setRadius(Number(e.target.value))} className="w-full accent-accent" />
                 <div className="flex justify-between text-[10px] text-muted mt-1.5"><span>5 km</span><span>50 km</span><span>100 km</span></div>
               </label>
             </div>
           </SectionCard>
 
-          <SectionCard icon={<TrendingUp size={15} />} title="Budget range" desc="The price band you invest in.">
+          <SectionCard icon={<TrendingUp size={15} />} title={t('set_budget_title')} desc={t('set_budget_desc')}>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               {BUDGETS.map(b => (
                 <button key={b.value} onClick={() => setBudget(budget === b.value ? '' : b.value)}
                   className={clsx('px-3 py-2.5 rounded-xl border text-xs font-semibold text-center transition-all',
                     budget === b.value ? 'border-accent bg-accent/10 text-accent ring-1 ring-accent/20' : 'border-surface-border text-muted hover:border-accent/40 hover:text-ink bg-white')}>
-                  {b.label}
+                  {t(b.labelKey)}
                 </button>
               ))}
               <button onClick={() => setBudget(budget === 'custom' ? '' : 'custom')}
                 className={clsx('px-3 py-2.5 rounded-xl border text-xs font-semibold text-center transition-all',
                   budget === 'custom' ? 'border-accent bg-accent/10 text-accent ring-1 ring-accent/20' : 'border-surface-border text-muted hover:border-accent/40 hover:text-ink bg-white')}>
-                Custom
+                {t('set_budget_custom')}
               </button>
             </div>
             {budget === 'custom' && (
               <div className="grid grid-cols-2 gap-3 mt-3 animate-fade-in">
                 <label className="block">
-                  <span className="block text-[11px] font-semibold text-muted uppercase tracking-wider mb-1.5">Min price</span>
+                  <span className="block text-[11px] font-semibold text-muted uppercase tracking-wider mb-1.5">{t('set_minPrice')}</span>
                   <div className="flex items-center rounded-xl border border-surface-border bg-white">
                     <span className="pl-3 text-sm text-muted">$</span>
-                    <input type="number" min={0} step={25000} placeholder="Any" value={customMin ?? ''}
+                    <input type="number" min={0} step={25000} placeholder={t('set_any')} value={customMin ?? ''}
                       onChange={e => setCustomMin(e.target.value === '' ? undefined : Number(e.target.value))}
                       className="no-spinner w-full py-2.5 px-2 text-sm text-ink tabular-nums bg-transparent focus:outline-none" />
                   </div>
                 </label>
                 <label className="block">
-                  <span className="block text-[11px] font-semibold text-muted uppercase tracking-wider mb-1.5">Max price</span>
+                  <span className="block text-[11px] font-semibold text-muted uppercase tracking-wider mb-1.5">{t('set_maxPrice')}</span>
                   <div className="flex items-center rounded-xl border border-surface-border bg-white">
                     <span className="pl-3 text-sm text-muted">$</span>
-                    <input type="number" min={0} step={25000} placeholder="Any" value={customMax ?? ''}
+                    <input type="number" min={0} step={25000} placeholder={t('set_any')} value={customMax ?? ''}
                       onChange={e => setCustomMax(e.target.value === '' ? undefined : Number(e.target.value))}
                       className="no-spinner w-full py-2.5 px-2 text-sm text-ink tabular-nums bg-transparent focus:outline-none" />
                   </div>
@@ -386,60 +389,60 @@ export default function Settings() {
             )}
           </SectionCard>
 
-          <SectionCard icon={<Building2 size={15} />} title="Property types" desc="Pick every type you'd consider.">
+          <SectionCard icon={<Building2 size={15} />} title={t('set_types_title')} desc={t('set_types_desc')}>
             <div className="flex flex-wrap gap-2">
               {PROPERTY_TYPES.map(tp => (
                 <button key={tp.value} onClick={() => toggleType(tp.value)}
                   className={clsx('px-4 py-2.5 rounded-xl border text-sm transition-all text-left',
                     types.includes(tp.value) ? 'bg-accent/10 text-accent border-accent/40 ring-1 ring-accent/20' : 'bg-white text-muted border-surface-border hover:border-accent/40 hover:text-ink')}>
-                  <span className="block font-semibold">{tp.label}</span>
-                  <span className="text-[10px] font-normal opacity-60">{tp.sub}</span>
+                  <span className="block font-semibold">{t(tp.labelKey)}</span>
+                  <span className="text-[10px] font-normal opacity-60">{t(tp.subKey)}</span>
                 </button>
               ))}
             </div>
           </SectionCard>
 
-          <SectionCard icon={<Home size={15} />} title="Investment goal" desc="Pick the strategy (or both) you invest with.">
+          <SectionCard icon={<Home size={15} />} title={t('set_goal_title')} desc={t('set_goal_desc')}>
             <GoalCards selected={goals} onChange={setGoals} />
           </SectionCard>
 
-          <SectionCard icon={<Bell size={15} />} title="Alert triggers" desc="What should trigger a notification.">
+          <SectionCard icon={<Bell size={15} />} title={t('set_alerts_title')} desc={t('set_alerts_desc')}>
             <div className="space-y-2.5">
-              <ToggleRow label="New listings" sub="A property matching your criteria appears" value={newListings} onChange={setNewListings} />
-              <ToggleRow label="Price drops" sub="A listing you'd want drops in price" value={priceDrops} onChange={setPriceDrops} />
+              <ToggleRow label={t('set_newListings')} sub={t('set_newListings_sub')} value={newListings} onChange={setNewListings} />
+              <ToggleRow label={t('set_priceDrops')} sub={t('set_priceDrops_sub')} value={priceDrops} onChange={setPriceDrops} />
             </div>
             <div className="pt-4 mt-2 border-t border-surface-border">
-              <div className="flex items-center justify-between mb-2"><span className="text-xs font-semibold text-muted uppercase tracking-wider">Min deal quality</span><span className="text-sm font-bold font-mono text-accent">{minScore}/100</span></div>
+              <div className="flex items-center justify-between mb-2"><span className="text-xs font-semibold text-muted uppercase tracking-wider">{t('set_minQuality')}</span><span className="text-sm font-bold font-mono text-accent">{minScore}/100</span></div>
               <input type="range" min={40} max={90} step={5} value={minScore} onChange={e => setMinScore(Number(e.target.value))} className="w-full accent-accent" />
-              <div className="flex justify-between text-[10px] text-muted mt-1.5"><span>Any</span><span>Good</span><span>Top</span><span>Best</span></div>
+              <div className="flex justify-between text-[10px] text-muted mt-1.5"><span>{t('set_qualityAny')}</span><span>{t('set_qualityGood')}</span><span>{t('set_qualityTop')}</span><span>{t('set_qualityBest')}</span></div>
             </div>
           </SectionCard>
 
-          <SectionCard icon={<SlidersHorizontal size={15} />} title="Delivery channels" desc="How we reach you.">
+          <SectionCard icon={<SlidersHorizontal size={15} />} title={t('set_delivery_title')} desc={t('set_delivery_desc')}>
             <div className="space-y-4">
-              <ToggleRow label="Email alerts" sub={user?.email ? `Sent to ${user.email}` : 'Sent to your account email'} value={emailAlerts} onChange={setEmailAlerts} icon={<Mail size={14} className="text-accent" />} />
+              <ToggleRow label={t('set_emailAlerts')} sub={user?.email ? `${t('set_sentTo')} ${user.email}` : t('set_sentToAccount')} value={emailAlerts} onChange={setEmailAlerts} icon={<Mail size={14} className="text-accent" />} />
 
               <div className="pt-3 border-t border-surface-border space-y-3">
                 <div className="flex items-center gap-1.5 text-[11px] font-semibold text-muted">
-                  <Layers size={12} /> SMS &amp; WhatsApp
-                  <span className="ml-auto text-[10px] font-bold text-accent bg-accent/10 px-2 py-0.5 rounded-full">Coming soon</span>
+                  <Layers size={12} /> {t('set_smsWhatsapp')}
+                  <span className="ml-auto text-[10px] font-bold text-accent bg-accent/10 px-2 py-0.5 rounded-full">{t('set_comingSoon')}</span>
                 </div>
                 <label className="block">
-                  <span className="block text-xs font-semibold text-muted uppercase tracking-wider mb-2">Phone number</span>
+                  <span className="block text-xs font-semibold text-muted uppercase tracking-wider mb-2">{t('set_phoneNumber')}</span>
                   <div className="flex gap-2">
                     <div className="flex items-center px-3 py-2 border border-surface-border bg-surface rounded-xl text-sm text-muted shrink-0">+1</div>
                     <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="514-555-1234" className="input flex-1" />
                   </div>
                 </label>
-                <ToggleRow label="SMS" sub="Works on any phone" value={smsAlerts} onChange={setSmsAlerts} icon={<Smartphone size={14} className="text-muted" />} />
-                <ToggleRow label="WhatsApp" sub="Rich messages with photos" value={whatsappAlerts} onChange={setWhatsapp} icon={<MessageCircle size={14} className="text-green-500" />} />
-                {phoneNeeded && <p className="text-xs text-score-market bg-score-market/10 border border-score-market/30 rounded-lg px-3 py-2">Enter a valid phone number to enable SMS/WhatsApp.</p>}
+                <ToggleRow label={t('set_sms')} sub={t('set_sms_sub')} value={smsAlerts} onChange={setSmsAlerts} icon={<Smartphone size={14} className="text-muted" />} />
+                <ToggleRow label={t('set_whatsapp')} sub={t('set_whatsapp_sub')} value={whatsappAlerts} onChange={setWhatsapp} icon={<MessageCircle size={14} className="text-green-500" />} />
+                {phoneNeeded && <p className="text-xs text-score-market bg-score-market/10 border border-score-market/30 rounded-lg px-3 py-2">{t('set_phoneNeeded')}</p>}
               </div>
             </div>
           </SectionCard>
 
           <div className="lg:col-span-2">
-            <SectionCard icon={<Globe size={15} />} title="Language" desc="Interface language.">
+            <SectionCard icon={<Globe size={15} />} title={t('set_language_title')} desc={t('set_language_desc')}>
               <div className="grid grid-cols-2 gap-2 max-w-sm">
                 {(['fr', 'en'] as const).map(l => (
                   <button key={l} onClick={() => setLang(l)}
@@ -456,29 +459,29 @@ export default function Settings() {
           <div className="lg:col-span-2">
         <SectionCard
           icon={<Gauge size={15} />}
-          title="My Scoring Criteria"
-          desc="Set your buy box in real numbers. Properties that meet your targets are shown first and scored against your own numbers."
+          title={t('set_scoring_title')}
+          desc={t('set_scoring_desc')}
           action={
             <button
               type="button" onClick={() => setShowScoringHelp(true)}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-surface-border text-xs font-semibold text-muted hover:text-accent hover:border-accent/40 transition-colors"
             >
-              <HelpCircle size={13} /> How this works
+              <HelpCircle size={13} /> {t('set_howThisWorks')}
             </button>
           }
         >
           {/* ── Buy box (real numbers) — the primary interaction ─────────────── */}
           <div className="flex items-center gap-2 mb-3">
             <CircleDollarSign size={15} className="text-accent" />
-            <h4 className="text-sm font-bold text-ink">Your buy box</h4>
-            <span className="text-[11px] text-muted">— in numbers, not percentages</span>
+            <h4 className="text-sm font-bold text-ink">{t('set_yourBuyBox')}</h4>
+            <span className="text-[11px] text-muted">{t('set_inNumbers')}</span>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-1">
             {BUYBOX_FIELDS.map(cfg => (
               <ValueSlider
                 key={cfg.key}
-                label={cfg.label}
-                desc={cfg.desc}
+                label={t(BUYBOX_LABEL_KEY[cfg.key])}
+                desc={t(BUYBOX_DESC_KEY[cfg.key])}
                 color={cfg.color}
                 value={buyBox[cfg.key]}
                 onChange={v => setBuyBox(prev => ({ ...prev, [cfg.key]: v }))}
@@ -490,10 +493,7 @@ export default function Settings() {
               />
             ))}
           </div>
-          <p className="text-[11px] text-muted/70 mt-2.5">
-            Set a target with the slider or by typing a number — leave it at <span className="font-semibold">Off</span> to ignore it.
-            Targets both filter the Properties list and raise a listing's score the more it beats your number.
-          </p>
+          <p className="text-[11px] text-muted/70 mt-2.5">{t('set_buyBoxHint')}</p>
 
           {/* ── Advanced: ranking weights (secondary, collapsed by default) ──── */}
           <button
@@ -503,7 +503,7 @@ export default function Settings() {
             aria-expanded={showWeights}
           >
             <ChevronDown size={14} className={clsx('transition-transform', showWeights && 'rotate-180')} />
-            Advanced — fine-tune how factors are weighted when ranking
+            {t('set_advanced')}
           </button>
 
           {showWeights && (
@@ -522,7 +522,7 @@ export default function Settings() {
                            : 'bg-white text-muted border-surface-border hover:border-accent/40 hover:text-ink',
                   )}
                 >
-                  <Icon size={13} /> {p.label}
+                  <Icon size={13} /> {t(p.labelKey)}
                 </button>
               )
             })}
@@ -531,13 +531,13 @@ export default function Settings() {
               activePreset === null ? 'bg-accent/10 text-accent border-accent/40 ring-1 ring-accent/20'
                                     : 'border-dashed border-surface-border text-muted/70',
             )}>
-              <SlidersHorizontal size={13} /> Custom
+              <SlidersHorizontal size={13} /> {t('preset_custom')}
             </span>
             <button
               type="button" onClick={resetWeightsToStrategy}
-              className="btn-ghost text-xs ml-auto" title="Reset to your strategy's default mix"
+              className="btn-ghost text-xs ml-auto"
             >
-              <RotateCcw size={13} /> Reset
+              <RotateCcw size={13} /> {t('set_reset')}
             </button>
           </div>
 
@@ -547,10 +547,8 @@ export default function Settings() {
             <div className="flex lg:flex-col items-center gap-4 shrink-0 mx-auto lg:mx-0">
               <WeightDonut pct={pctMap} />
               <div className="text-center">
-                <p className="text-[11px] font-semibold text-muted uppercase tracking-wider">Your mix</p>
-                <p className="text-[11px] text-muted mt-0.5 max-w-[150px]">
-                  Each slider is independent. The donut shows the resulting share of your verdict.
-                </p>
+                <p className="text-[11px] font-semibold text-muted uppercase tracking-wider">{t('set_yourMix')}</p>
+                <p className="text-[11px] text-muted mt-0.5 max-w-[150px]">{t('set_yourMix_desc')}</p>
               </div>
             </div>
 
@@ -565,8 +563,8 @@ export default function Settings() {
                       <div className="min-w-0 flex items-start gap-2">
                         <span className="w-2.5 h-2.5 rounded-full shrink-0 mt-1" style={{ backgroundColor: FACTOR_COLOR[f] }} />
                         <div className="min-w-0">
-                          <span className="text-sm font-semibold text-ink">{FACTOR_LABEL[f]}</span>
-                          <span className="block text-[11px] text-muted leading-snug">{FACTOR_DESC[f]}</span>
+                          <span className="text-sm font-semibold text-ink">{t(FACTOR_LABEL_KEY[f])}</span>
+                          <span className="block text-[11px] text-muted leading-snug">{t(FACTOR_DESC_KEY[f])}</span>
                         </div>
                       </div>
                       <span className="text-xs font-semibold shrink-0 tabular-nums text-right" style={{ color: FACTOR_COLOR[f] }}>
@@ -577,7 +575,7 @@ export default function Settings() {
                       type="range" min={0} max={100} step={1}
                       value={weightPoints[f]}
                       onChange={e => adjustWeight(f, Number(e.target.value))}
-                      aria-label={`${FACTOR_LABEL[f]} importance`}
+                      aria-label={t(FACTOR_LABEL_KEY[f])}
                       className="range-fill"
                       style={{ background: fill, ['--range-color' as string]: FACTOR_COLOR[f] }}
                     />
@@ -592,7 +590,7 @@ export default function Settings() {
         </div>
       </div>
 
-      <InfoModal open={showScoringHelp} onClose={() => setShowScoringHelp(false)} title="How My Scoring Criteria works" size="lg">
+      <InfoModal open={showScoringHelp} onClose={() => setShowScoringHelp(false)} title={t('set_howThisWorks')} size="lg">
         <ScoringCriteriaHelp />
       </InfoModal>
     </div>
@@ -603,31 +601,19 @@ export default function Settings() {
 // Three plain-language steps, no per-factor bars — the client asked us to drop
 // the line-heavy layout. One concrete worked example makes "how do points
 // gather" answerable without re-teaching the whole Score Breakdown panel.
-const HELP_STEPS: { title: string; body: React.ReactNode }[] = [
-  {
-    title: 'Set your targets in real numbers',
-    body: <>Use the sliders (or type a number) for the things that matter to you — say <span className="font-semibold text-ink">$200/mo cash flow</span> and <span className="font-semibold text-ink">30+ days on market</span>. Leave the rest at <span className="font-semibold text-ink">Off</span>.</>,
-  },
-  {
-    title: 'Every listing is scored against your numbers',
-    body: <>Each factor scores <span className="font-semibold text-ink">0–100</span>. Meet or beat your target and it scores <span className="font-semibold text-ink">100</span> on that factor — the further a listing beats your number, the higher it scores.</>,
-  },
-  {
-    title: 'The factors combine into Your Verdict',
-    body: <>Your targets (and any importance tweaks) blend into one <span className="font-semibold text-ink">0–100</span> score, and the whole Properties list is ranked by it — not just one page.</>,
-  },
-]
-
 function ScoringCriteriaHelp() {
+  const { t } = useLang()
+  const steps = [
+    { title: t('help_step1_title'), body: t('help_step1_body') },
+    { title: t('help_step2_title'), body: t('help_step2_body') },
+    { title: t('help_step3_title'), body: t('help_step3_body') },
+  ]
   return (
     <div className="space-y-5 text-sm">
-      <p className="text-muted leading-relaxed">
-        <span className="font-semibold text-ink">Your Verdict</span> ranks every property by
-        <em> your </em> numbers instead of the app's default opinion. It works in three steps:
-      </p>
+      <p className="text-muted leading-relaxed">{t('help_intro')}</p>
 
       <ol className="space-y-3">
-        {HELP_STEPS.map((s, i) => (
+        {steps.map((s, i) => (
           <li key={i} className="flex gap-3">
             <span className="w-7 h-7 rounded-full bg-accent/10 text-accent font-bold text-sm flex items-center justify-center shrink-0">
               {i + 1}
@@ -641,19 +627,11 @@ function ScoringCriteriaHelp() {
       </ol>
 
       <div className="rounded-xl bg-surface border border-surface-border px-4 py-3">
-        <p className="text-xs font-semibold text-muted uppercase tracking-wider mb-1">Example</p>
-        <p className="text-ink leading-relaxed">
-          A listing at <span className="font-semibold">$250/mo</span> (target $200) that's been
-          up <span className="font-semibold">45 days</span> (target 30) maxes out both factors —
-          so it lands near the top of Your Verdict.
-        </p>
+        <p className="text-xs font-semibold text-muted uppercase tracking-wider mb-1">{t('help_example')}</p>
+        <p className="text-ink leading-relaxed">{t('help_example_body')}</p>
       </div>
 
-      <p className="text-[11px] text-muted leading-relaxed">
-        One guardrail: when a listing's rent is only estimated (not disclosed by the seller), the
-        income factors — cap rate, cash flow, GRM — can't score above neutral, so made-up rent
-        can't inflate a verdict.
-      </p>
+      <p className="text-[11px] text-muted leading-relaxed">{t('help_note')}</p>
     </div>
   )
 }
@@ -662,6 +640,7 @@ function ScoringCriteriaHelp() {
 // Inline SVG (no chart lib): one arc segment per factor, coloured to match its
 // slider row, sized to its share of the total.
 function WeightDonut({ pct }: { pct: Record<ScoreFactor, number> }) {
+  const { t } = useLang()
   const size = 160, stroke = 24
   const r = (size - stroke) / 2
   const C = 2 * Math.PI * r
@@ -687,8 +666,8 @@ function WeightDonut({ pct }: { pct: Record<ScoreFactor, number> }) {
         </g>
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-6">
-        <span className="text-[10px] font-semibold text-muted uppercase tracking-wider">Top factor</span>
-        <span className="text-xs font-bold text-ink leading-tight mt-0.5">{FACTOR_LABEL[top]}</span>
+        <span className="text-[10px] font-semibold text-muted uppercase tracking-wider">{t('set_topFactor')}</span>
+        <span className="text-xs font-bold text-ink leading-tight mt-0.5">{t(FACTOR_LABEL_KEY[top])}</span>
         <span className="text-sm font-black font-mono" style={{ color: FACTOR_COLOR[top] }}>{pct[top]}%</span>
       </div>
     </div>
@@ -733,6 +712,7 @@ function ToggleRow({ label, sub, value, onChange, icon }: { label: string; sub: 
 // Chips for chosen cities + a typeahead that suggests common Québec cities and
 // lets the user add any other by typing it and pressing Enter.
 function CityMultiSelect({ selected, onChange }: { selected: string[]; onChange: (v: string[]) => void }) {
+  const { t } = useLang()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const ref = useRef<HTMLDivElement | null>(null)
@@ -774,7 +754,7 @@ function CityMultiSelect({ selected, onChange }: { selected: string[]; onChange:
             if (e.key === 'Enter') { e.preventDefault(); add(query) }
             else if (e.key === 'Backspace' && !query && selected.length) remove(selected[selected.length - 1])
           }}
-          placeholder={selected.length ? 'Add another…' : 'e.g. Montréal, Laval…'}
+          placeholder={selected.length ? t('set_addAnother') : t('set_cityPlaceholder')}
           className="flex-1 min-w-[8rem] px-1.5 py-1 text-sm bg-transparent focus:outline-none placeholder:text-muted"
         />
       </div>
@@ -783,7 +763,7 @@ function CityMultiSelect({ selected, onChange }: { selected: string[]; onChange:
           {canAddCustom && (
             <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => add(query)}
               className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-surface-hover">
-              <Plus size={14} className="text-accent" /> Add “<span className="font-semibold">{query.trim()}</span>”
+              <Plus size={14} className="text-accent" /> {t('set_add')} “<span className="font-semibold">{query.trim()}</span>”
             </button>
           )}
           {suggestions.map(c => (
@@ -803,6 +783,7 @@ function CityMultiSelect({ selected, onChange }: { selected: string[]; onChange:
 // explanation, so the client's "explain what Buy & Hold / Flip means" is answered
 // inline instead of assumed.
 function GoalCards({ selected, onChange }: { selected: string[]; onChange: (v: string[]) => void }) {
+  const { t } = useLang()
   const [expanded, setExpanded] = useState<string | null>(null)
   const toggle = (v: string) => onChange(selected.includes(v) ? selected.filter(x => x !== v) : [...selected, v])
   return (
@@ -814,16 +795,16 @@ function GoalCards({ selected, onChange }: { selected: string[]; onChange: (v: s
             <button type="button" onClick={() => toggle(g.value)} className="w-full flex items-start gap-3 p-3.5 text-left">
               <div className={clsx('w-9 h-9 rounded-lg flex items-center justify-center shrink-0', active ? 'bg-accent/15' : 'bg-surface')}><Icon size={17} className={active ? 'text-accent' : 'text-muted'} /></div>
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-bold text-ink">{g.label}</p>
-                <p className="text-xs text-muted leading-snug mt-0.5">{g.desc}</p>
+                <p className="text-sm font-bold text-ink">{t(g.labelKey)}</p>
+                <p className="text-xs text-muted leading-snug mt-0.5">{t(g.descKey)}</p>
               </div>
               <span className={clsx('w-5 h-5 rounded-md border flex items-center justify-center shrink-0 mt-0.5', active ? 'bg-accent border-accent' : 'border-surface-border')}>{active && <Check size={13} className="text-white" />}</span>
             </button>
             <button type="button" onClick={() => setExpanded(open ? null : g.value)}
               className="w-full flex items-center gap-1.5 px-3.5 pb-3 text-[11px] font-semibold text-muted hover:text-accent transition-colors">
-              <HelpCircle size={12} /> What’s this? <ChevronDown size={12} className={clsx('transition-transform', open && 'rotate-180')} />
+              <HelpCircle size={12} /> {t('set_whatsThis')} <ChevronDown size={12} className={clsx('transition-transform', open && 'rotate-180')} />
             </button>
-            {open && <p className="px-3.5 pb-3.5 text-xs text-muted leading-relaxed animate-fade-in">{g.info}</p>}
+            {open && <p className="px-3.5 pb-3.5 text-xs text-muted leading-relaxed animate-fade-in">{t(g.infoKey)}</p>}
           </div>
         )
       })}
