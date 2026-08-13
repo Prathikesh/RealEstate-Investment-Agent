@@ -390,7 +390,7 @@ export default function Dashboard() {
                   {fmtCAD(p.asking_price)}<span className="text-[10px] font-semibold text-muted">/mo</span>
                 </p>
                 <p className="text-[10px] text-muted flex items-center gap-0.5 justify-end mt-0.5">
-                  <Clock size={9} /> {timeAgo(p.first_seen_at)}
+                  <Clock size={9} /> {timeAgo(p.first_seen_at, t)}
                 </p>
               </div>
             </Link>
