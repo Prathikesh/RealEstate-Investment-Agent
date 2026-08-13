@@ -160,7 +160,17 @@ async def main(apply: bool, refetch: bool, limit: int | None) -> None:
                     await db.rollback()
 
                 if i % 25 == 0:
-                    await db.commit()
+                    try:
+                        await db.commit()
+                    except Exception as exc:
+                        # The checkpoint commit itself can hit the same
+                        # transient connection loss as a per-item fetch —
+                        # confirmed live (asyncpg ConnectionDoesNotExistError
+                        # here crashed the whole run previously, past the
+                        # per-item try/except above).
+                        logger.warning(f"commit at {i}/{len(candidates)} failed: {exc}")
+                        await db.rollback()
+                        errors += 1
                     print(f"  refetched {i}/{len(candidates)} (errors={errors})")
                 await asyncio.sleep(2)
 
