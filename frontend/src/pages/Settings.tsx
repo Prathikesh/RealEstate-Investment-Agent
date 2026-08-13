@@ -15,7 +15,8 @@ import {
   type ScoreFactor, type ScoreWeights,
 } from '../lib/verdict'
 import { InfoModal } from '../components/InfoModal'
-import { type BuyBox, loadBuyBox, cacheBuyBox, cleanBuyBox } from '../lib/buybox'
+import { ValueSlider } from '../components/ValueSlider'
+import { type BuyBox, BUYBOX_FIELDS, loadBuyBox, cacheBuyBox, cleanBuyBox } from '../lib/buybox'
 
 // Short investor-facing descriptions for each scoring factor (My Scoring Criteria).
 const FACTOR_DESC: Record<ScoreFactor, string> = {
@@ -28,51 +29,10 @@ const FACTOR_DESC: Record<ScoreFactor, string> = {
   price_history: 'Past price cuts signal a motivated seller',
 }
 
-// Compact real-unit hint shown directly under each slider (not just in the
-// popup) — this is what actually shows the $ / days figures the client asked
-// for, right where he's looking, instead of behind a separate click.
-const FACTOR_UNIT_HINT: Record<ScoreFactor, string> = {
-  discount:      'at market → low  ·  20%+ off → high',
-  cap_rate:      '1% return → low  ·  6%+ → high',
-  cash_flow:     '–$3,000/mo → low  ·  +$500/mo → high',
-  grm:           '18× rent → low  ·  10× → high',
-  confidence:    'less comp data → low  ·  more → high',
-  dom_bonus:     '<7 days → low  ·  90+ days → high',
-  price_history: 'price ↑ → low  ·  repeat drops → high',
-}
-
-// ── "Buy box" real-number targets ────────────────────────────────────────────
-// The client's "in numbers, not percentages" request: alongside the weight for
-// each factor, let him set a real-world minimum a listing must hit to show up.
-// Five factors map to a real-number target the client can type in. Four of them
-// (discount, cap_rate, cash_flow, dom_bonus) also drive target-relative scoring;
-// price_history maps to a price-drop filter (the observable motivated-seller
-// signal). GRM + Confidence stay weight-only. Persistence + typing live in
-// lib/buybox.ts (shared with the Properties page).
-const FACTOR_TARGET: Partial<Record<ScoreFactor, {
-  key: keyof BuyBox; prefix?: string; suffix: string; step: number; placeholder: string
-}>> = {
-  discount:      { key: 'discount_min',       suffix: '% below market or more', step: 1,   placeholder: '5' },
-  cap_rate:      { key: 'cap_rate_min',        suffix: '% cap rate or more',     step: 0.5, placeholder: '5' },
-  cash_flow:     { key: 'cash_flow_min', prefix: '$', suffix: '/mo cash flow or more', step: 100, placeholder: '200' },
-  dom_bonus:     { key: 'days_on_market_min',  suffix: ' days listed or more',   step: 7,   placeholder: '30' },
-  price_history: { key: 'price_drop_min', prefix: '$', suffix: '+ price cut since listing', step: 5000, placeholder: '10000' },
-}
-
-// A representative example listing for the "How this works" popup — not a
-// real property. Each score is back-solved from a realistic raw value using
-// the SAME normalization the backend scorer uses (see backend/app/agent/
-// scorer.py), so "14.6% below comps -> 82" etc. is mathematically real, not
-// made up, and the spread of scores (38 to 82) exercises all three bar colors.
-const EXAMPLE_ROW: Record<ScoreFactor, { value: string; score: number }> = {
-  discount:      { value: '14.6% below comps',       score: 82 },
-  cap_rate:      { value: '3.8%',                     score: 56 },
-  cash_flow:     { value: '-$1,670/mo',                score: 38 },
-  grm:           { value: '12.3x',                    score: 71 },
-  confidence:    { value: '5 comparable sales',        score: 50 },
-  dom_bonus:     { value: '60 days on market',         score: 55 },
-  price_history: { value: '3 price drops, -9.2% total', score: 78 },
-}
+// The buy-box real-number targets — the client's "in numbers, not percentages"
+// request, now the PRIMARY control (each factor is a real-value slider + linked
+// number box, see ValueSlider). Config is shared with the Properties filter panel
+// via lib/buybox.ts BUYBOX_FIELDS so the two surfaces never drift apart.
 
 // Distinct colour per factor — ties the weight donut to its slider row.
 const FACTOR_COLOR: Record<ScoreFactor, string> = {
@@ -211,13 +171,18 @@ export default function Settings() {
     if (user.custom_buy_box) setBuyBox(user.custom_buy_box)
   }, [user?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // weightPoints IS the displayed percentage — it always sums to exactly 100,
-  // so the slider position and the label next to it are the same number.
-  // Used directly by the donut and preset-matching.
-  const pctMap = weightPoints
-  // Highlight whichever preset the current mix matches (±1pt), else "Custom".
+  // Each importance slider is INDEPENDENT (0-100) — dragging one never moves the
+  // others (that live proportional redistribution was the "sliders jump / can't
+  // hit a value" bug from the client's Loom). We normalize to shares only for
+  // display + on save, so the handle position always equals its own value.
+  const totalPoints = SCORE_FACTORS.reduce((s, f) => s + weightPoints[f], 0)
+  const sharePct = (f: ScoreFactor) =>
+    totalPoints > 0 ? Math.round((weightPoints[f] / totalPoints) * 100) : 0
+  // Normalized share map for the donut + preset matching.
+  const pctMap = Object.fromEntries(SCORE_FACTORS.map(f => [f, sharePct(f)])) as Record<ScoreFactor, number>
+  // Highlight whichever preset the current mix matches (±2pt share), else "Custom".
   const activePreset = WEIGHT_PRESETS.find(p =>
-    SCORE_FACTORS.every(f => Math.abs(pctMap[f] - Math.round((p.weights[f] ?? 0) * 100)) <= 1),
+    SCORE_FACTORS.every(f => Math.abs(pctMap[f] - Math.round((p.weights[f] ?? 0) * 100)) <= 2),
   )?.id ?? null
 
   function applyPreset(weights: ScoreWeights) {
@@ -227,33 +192,10 @@ export default function Settings() {
     setWeightPoints(pointsFromWeights(STRATEGY_WEIGHTS[strategyFromGoals(goals)]))
   }
 
-  // Drag factor `f` to `nextValue` (0-100): it takes that exact share, and the
-  // remaining 100-nextValue is redistributed across the other 6 factors in
-  // proportion to their current relative weights (so an existing tilt is
-  // preserved, just rescaled) — never just re-normalized after the fact. This
-  // is what keeps the slider position and its displayed % identical, and keeps
-  // every value on the track reachable (no dead zones from a drifting total).
+  // Set one factor's importance directly — no redistribution, so nothing else moves.
   function adjustWeight(f: ScoreFactor, nextValue: number) {
-    setWeightPoints(prev => {
-      const P = Math.max(0, Math.min(100, Math.round(nextValue)))
-      const others = SCORE_FACTORS.filter(x => x !== f)
-      const remainder = 100 - P
-      const othersTotal = others.reduce((s, x) => s + prev[x], 0)
-      const next = { ...prev, [f]: P }
-      let acc = 0
-      others.forEach((x, i) => {
-        const isLast = i === others.length - 1
-        if (isLast) {
-          next[x] = Math.max(0, remainder - acc)
-        } else {
-          const share = othersTotal > 0 ? prev[x] / othersTotal : 1 / others.length
-          const v = Math.round(share * remainder)
-          next[x] = v
-          acc += v
-        }
-      })
-      return next
-    })
+    const P = Math.max(0, Math.min(100, Math.round(nextValue)))
+    setWeightPoints(prev => ({ ...prev, [f]: P }))
   }
 
   const phoneNeeded = (smsAlerts || whatsappAlerts) && digits(phone).length < 10
@@ -264,18 +206,20 @@ export default function Settings() {
     setTypes(prev => prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v])
   }
 
-  // Convert the slider points (already 0-100, summing to exactly 100) to
-  // fractions summing to 1.0, as the backend requires (see auth/routes.py
-  // custom_score_weights validation). The last factor absorbs rounding drift
-  // so the sum is exactly 1.0.
+  // Convert the independent slider points to fractions summing to exactly 1.0,
+  // as the backend requires (see auth/routes.py custom_score_weights validation).
+  // Divide each by the running total; the last factor absorbs rounding drift.
+  // If every slider is 0, fall back to the strategy preset so we never save all-zero.
   function normalizedWeights(): ScoreWeights {
+    const sum = SCORE_FACTORS.reduce((s, f) => s + weightPoints[f], 0)
+    if (sum <= 0) return STRATEGY_WEIGHTS[strategyFromGoals(goals)]
     const w = {} as ScoreWeights
     let acc = 0
     SCORE_FACTORS.forEach((f, i) => {
       if (i === SCORE_FACTORS.length - 1) {
         w[f] = Math.round((1 - acc) * 1000) / 1000
       } else {
-        const v = Math.round((weightPoints[f] / 100) * 1000) / 1000
+        const v = Math.round((weightPoints[f] / sum) * 1000) / 1000
         w[f] = v
         acc += v
       }
@@ -470,37 +414,27 @@ export default function Settings() {
             <h4 className="text-sm font-bold text-ink">Your buy box</h4>
             <span className="text-[11px] text-muted">— in numbers, not percentages</span>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2.5">
-            {SCORE_FACTORS.filter(f => FACTOR_TARGET[f]).map(f => {
-              const tgt = FACTOR_TARGET[f]!
-              return (
-                <div key={f} className="flex items-center gap-2 flex-wrap py-1">
-                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: FACTOR_COLOR[f] }} />
-                  <span className="text-sm font-semibold text-ink w-28 shrink-0">{FACTOR_LABEL[f]}</span>
-                  <span className="text-[11px] text-muted">Only show</span>
-                  {tgt.prefix && <span className="text-[11px] text-muted -mr-1">{tgt.prefix}</span>}
-                  <input
-                    type="number"
-                    step={tgt.step}
-                    min={0}
-                    placeholder={tgt.placeholder}
-                    value={buyBox[tgt.key] ?? ''}
-                    onChange={e => {
-                      const raw = e.target.value
-                      const v = raw === '' ? undefined : Number(raw)
-                      setBuyBox(prev => ({ ...prev, [tgt.key]: v }))
-                    }}
-                    className="input w-16 !py-1 !px-2 text-xs tabular-nums"
-                    aria-label={`${FACTOR_LABEL[f]} minimum`}
-                  />
-                  <span className="text-[11px] text-muted">{tgt.suffix}</span>
-                </div>
-              )
-            })}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-1">
+            {BUYBOX_FIELDS.map(cfg => (
+              <ValueSlider
+                key={cfg.key}
+                label={cfg.label}
+                desc={cfg.desc}
+                color={cfg.color}
+                value={buyBox[cfg.key]}
+                onChange={v => setBuyBox(prev => ({ ...prev, [cfg.key]: v }))}
+                min={cfg.min}
+                max={cfg.max}
+                step={cfg.step}
+                prefix={cfg.prefix}
+                suffix={cfg.suffix}
+                hint={cfg.hint}
+              />
+            ))}
           </div>
           <p className="text-[11px] text-muted/70 mt-2.5">
-            Leave a target blank to ignore it. Targets you set both filter the Properties list and
-            raise a listing's score the more it beats your number.
+            Set a target with the slider or by typing a number — leave it at <span className="font-semibold">Off</span> to ignore it.
+            Targets both filter the Properties list and raise a listing's score the more it beats your number.
           </p>
 
           {/* ── Advanced: ranking weights (secondary, collapsed by default) ──── */}
@@ -556,39 +490,42 @@ export default function Settings() {
               <WeightDonut pct={pctMap} />
               <div className="text-center">
                 <p className="text-[11px] font-semibold text-muted uppercase tracking-wider">Your mix</p>
-                <p className="text-[11px] text-muted mt-0.5 max-w-[140px]">
-                  Relative weight of each factor in your verdict.
+                <p className="text-[11px] text-muted mt-0.5 max-w-[150px]">
+                  Each slider is independent. The donut shows the resulting share of your verdict.
                 </p>
               </div>
             </div>
 
             {/* Sliders — two columns on wide screens now that it's full-width */}
             <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3.5 min-w-0 content-start">
-              {SCORE_FACTORS.map(f => (
-                <div key={f}>
-                  <div className="flex items-center justify-between gap-3 mb-1">
-                    <div className="min-w-0 flex items-start gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full shrink-0 mt-1" style={{ backgroundColor: FACTOR_COLOR[f] }} />
-                      <div className="min-w-0">
-                        <span className="text-sm font-semibold text-ink">{FACTOR_LABEL[f]}</span>
-                        <span className="block text-[11px] text-muted leading-snug">{FACTOR_DESC[f]}</span>
-                        <span className="block text-[10px] text-muted/70 font-mono leading-snug mt-0.5">{FACTOR_UNIT_HINT[f]}</span>
+              {SCORE_FACTORS.map(f => {
+                const pct = weightPoints[f] // already 0-100
+                const fill = `linear-gradient(to right, ${FACTOR_COLOR[f]} 0%, ${FACTOR_COLOR[f]} ${pct}%, #E2E8F0 ${pct}%, #E2E8F0 100%)`
+                return (
+                  <div key={f}>
+                    <div className="flex items-center justify-between gap-3 mb-1.5">
+                      <div className="min-w-0 flex items-start gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full shrink-0 mt-1" style={{ backgroundColor: FACTOR_COLOR[f] }} />
+                        <div className="min-w-0">
+                          <span className="text-sm font-semibold text-ink">{FACTOR_LABEL[f]}</span>
+                          <span className="block text-[11px] text-muted leading-snug">{FACTOR_DESC[f]}</span>
+                        </div>
                       </div>
+                      <span className="text-xs font-semibold shrink-0 tabular-nums text-right" style={{ color: FACTOR_COLOR[f] }}>
+                        {sharePct(f)}%
+                      </span>
                     </div>
-                    <span className="text-sm font-bold font-mono shrink-0 tabular-nums w-11 text-right" style={{ color: FACTOR_COLOR[f] }}>
-                      {weightPoints[f]}%
-                    </span>
+                    <input
+                      type="range" min={0} max={100} step={1}
+                      value={weightPoints[f]}
+                      onChange={e => adjustWeight(f, Number(e.target.value))}
+                      aria-label={`${FACTOR_LABEL[f]} importance`}
+                      className="range-fill"
+                      style={{ background: fill, ['--range-color' as string]: FACTOR_COLOR[f] }}
+                    />
                   </div>
-                  <input
-                    type="range" min={0} max={100} step={1}
-                    value={weightPoints[f]}
-                    onChange={e => adjustWeight(f, Number(e.target.value))}
-                    aria-label={`${FACTOR_LABEL[f]} weight`}
-                    className="w-full"
-                    style={{ accentColor: FACTOR_COLOR[f] }}
-                  />
-                </div>
-              ))}
+                )
+              })}
             </div>
           </div>
           </div>
@@ -597,78 +534,66 @@ export default function Settings() {
       </div>
 
       <InfoModal open={showScoringHelp} onClose={() => setShowScoringHelp(false)} title="How My Scoring Criteria works" size="lg">
-        <ScoringCriteriaHelp weightPoints={weightPoints} />
+        <ScoringCriteriaHelp />
       </InfoModal>
     </div>
   )
 }
 
 // ── "How this works" explainer content ──────────────────────────────────────
-const barColor = (score: number) => (score >= 70 ? '#10B981' : score >= 40 ? '#F59E0B' : '#EF4444')
-const scoreTextColor = (score: number) => clsx(
-  'text-sm font-black font-mono w-8 text-right',
-  score >= 70 ? 'text-emerald-700' : score >= 40 ? 'text-amber-600' : 'text-red-600',
-)
+// Three plain-language steps, no per-factor bars — the client asked us to drop
+// the line-heavy layout. One concrete worked example makes "how do points
+// gather" answerable without re-teaching the whole Score Breakdown panel.
+const HELP_STEPS: { title: string; body: React.ReactNode }[] = [
+  {
+    title: 'Set your targets in real numbers',
+    body: <>Use the sliders (or type a number) for the things that matter to you — say <span className="font-semibold text-ink">$200/mo cash flow</span> and <span className="font-semibold text-ink">30+ days on market</span>. Leave the rest at <span className="font-semibold text-ink">Off</span>.</>,
+  },
+  {
+    title: 'Every listing is scored against your numbers',
+    body: <>Each factor scores <span className="font-semibold text-ink">0–100</span>. Meet or beat your target and it scores <span className="font-semibold text-ink">100</span> on that factor — the further a listing beats your number, the higher it scores.</>,
+  },
+  {
+    title: 'The factors combine into Your Verdict',
+    body: <>Your targets (and any importance tweaks) blend into one <span className="font-semibold text-ink">0–100</span> score, and the whole Properties list is ranked by it — not just one page.</>,
+  },
+]
 
-// Mirrors the real per-property "Score Breakdown" panel (PropertyPage.tsx) —
-// same row shape (label + weight%, raw value + score + contribution, colored
-// progress bar) — on a made-up example listing, since that panel is the one
-// piece of the app the client already reads comfortably. New UI here would
-// just be one more thing to learn; reusing it means "how do points gather"
-// already has a familiar answer.
-function ScoringCriteriaHelp({ weightPoints }: { weightPoints: Record<ScoreFactor, number> }) {
-  const rows = SCORE_FACTORS.map(f => {
-    const { value, score } = EXAMPLE_ROW[f]
-    const weightPct = weightPoints[f]
-    const contribution = Math.round((weightPct / 100) * score * 10) / 10
-    return { f, value, score, weightPct, contribution }
-  })
-  const total = Math.round(rows.reduce((s, r) => s + r.contribution, 0))
-
+function ScoringCriteriaHelp() {
   return (
     <div className="space-y-5 text-sm">
       <p className="text-muted leading-relaxed">
-        Every listing gets a 0–100 score on each factor below, from its real numbers (like an
-        actual $180/mo cash flow or 52 days on market). The % you set is how much that score
-        counts toward <span className="font-semibold text-ink">Your Verdict</span> — score ×
-        weight = points, and every factor's points add up to the total, exactly like the{' '}
-        <span className="font-semibold text-ink">Score Breakdown</span> on any property page.
+        <span className="font-semibold text-ink">Your Verdict</span> ranks every property by
+        <em> your </em> numbers instead of the app's default opinion. It works in three steps:
       </p>
 
-      <div className="space-y-4">
-        {rows.map(r => (
-          <div key={r.f}>
-            <div className="flex items-center justify-between mb-1.5 gap-3">
-              <div className="min-w-0">
-                <span className="text-sm font-semibold text-ink">{FACTOR_LABEL[r.f]}</span>
-                <span className="text-xs text-muted ml-1.5">{r.weightPct}% weight</span>
-              </div>
-              <div className="flex items-center gap-3 shrink-0">
-                <span className="text-sm font-mono text-muted">{r.value}</span>
-                <span className={scoreTextColor(r.score)}>{r.score}</span>
-                <span className="text-xs font-mono font-bold text-accent w-12 text-right" title="Points added to the score (sub-score × weight)">
-                  +{r.contribution}
-                </span>
-              </div>
+      <ol className="space-y-3">
+        {HELP_STEPS.map((s, i) => (
+          <li key={i} className="flex gap-3">
+            <span className="w-7 h-7 rounded-full bg-accent/10 text-accent font-bold text-sm flex items-center justify-center shrink-0">
+              {i + 1}
+            </span>
+            <div className="min-w-0 pt-0.5">
+              <p className="font-semibold text-ink leading-tight">{s.title}</p>
+              <p className="text-muted leading-snug mt-0.5">{s.body}</p>
             </div>
-            <div className="h-2 bg-surface-border rounded-full overflow-hidden">
-              <div
-                className="h-full rounded-full transition-all duration-700 ease-out"
-                style={{ width: `${r.score}%`, backgroundColor: barColor(r.score) }}
-              />
-            </div>
-          </div>
+          </li>
         ))}
-      </div>
+      </ol>
 
-      <div className="pt-3 border-t border-surface-border flex items-center justify-between">
-        <span className="text-xs text-muted">Example listing — sum of points above</span>
-        <span className="text-sm font-black font-mono text-accent">{total}/100 Your Verdict</span>
+      <div className="rounded-xl bg-surface border border-surface-border px-4 py-3">
+        <p className="text-xs font-semibold text-muted uppercase tracking-wider mb-1">Example</p>
+        <p className="text-ink leading-relaxed">
+          A listing at <span className="font-semibold">$250/mo</span> (target $200) that's been
+          up <span className="font-semibold">45 days</span> (target 30) maxes out both factors —
+          so it lands near the top of Your Verdict.
+        </p>
       </div>
 
       <p className="text-[11px] text-muted leading-relaxed">
-        This is a made-up example so every bar shows a different score. See the real numbers for
-        any listing under its own Score Breakdown tab.
+        One guardrail: when a listing's rent is only estimated (not disclosed by the seller), the
+        income factors — cap rate, cash flow, GRM — can't score above neutral, so made-up rent
+        can't inflate a verdict.
       </p>
     </div>
   )

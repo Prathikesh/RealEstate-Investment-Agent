@@ -29,6 +29,15 @@ export const SCORE_FACTORS = [
 
 export type ScoreFactor = (typeof SCORE_FACTORS)[number]
 
+// Yield factors derived from the listing's rental income. When rent is only
+// ESTIMATED (not disclosed), Your Verdict clamps each of these to a neutral
+// ceiling — instead of hard-capping the whole score — so fabricated rent can't
+// inflate the yield factors while a discount-/days-driven verdict stays free to
+// exceed 59. Mirrors backend verdict.py INCOME_FACTORS; the AI score keeps its
+// own global cap in scorer.py. Keep in sync with backend/app/agent/verdict.py.
+export const INCOME_FACTORS: ReadonlySet<ScoreFactor> = new Set(['cap_rate', 'cash_flow', 'grm'])
+export const UNVERIFIED_INCOME_FACTOR_CEILING = 50
+
 /** Weight per factor (0-1). Must sum to 1.0. Matches backend WEIGHTS. */
 export type ScoreWeights = Record<ScoreFactor, number>
 
@@ -130,6 +139,11 @@ export function computeWeightedScore(
   buyBox?: Record<string, number | undefined> | null,
   raw?: RawMetrics | null,
 ): number {
+  // Guard flag: unverified_income_cap > 0 means the listing's rent was estimated,
+  // not disclosed. We clamp only the yield factors below (not the whole score) so
+  // fabricated rent can't inflate cap_rate/cash_flow/grm while a discount-/days-
+  // driven verdict is still free to exceed 59. Mirrors backend verdict.py.
+  const incomeEstimated = (components.unverified_income_cap ?? 0) > 0
   let total = 0
   for (const factor of SCORE_FACTORS) {
     const targetKey = FACTOR_TARGET_KEY[factor]
@@ -138,21 +152,19 @@ export function computeWeightedScore(
     // Target-relative: the broker's own number defines "fully satisfies me" (=100).
     // Falls back to the stored component when there's no target or no raw value —
     // so a broker with no buy box scores identically to before.
+    let comp: number | undefined
     if (target != null && target > 0 && rawVal != null) {
-      total += clamp((rawVal / target) * 100) * weights[factor]
-      continue
+      comp = clamp((rawVal / target) * 100)
+    } else {
+      comp = components[factor]
     }
-    const c = components[factor]
-    if (c != null) total += c * weights[factor]
+    if (comp == null) continue
+    // Neutralize a yield factor when income is only estimated — see INCOME_FACTORS.
+    if (INCOME_FACTORS.has(factor) && incomeEstimated) {
+      comp = Math.min(comp, UNVERIFIED_INCOME_FACTOR_CEILING)
+    }
+    total += comp * weights[factor]
   }
-  // Data-integrity guard, mirroring backend verdict.py: when the listing's income
-  // was estimated (not disclosed), honour the same hard cap the AI applies so a
-  // broker weighting yield high can't push a fabricated-income listing to the top.
-  // This is the one backend modifier we DO re-apply client-side, because its value
-  // (unverified_income_cap) is carried in the stored components — unlike the risk /
-  // neighbourhood modifiers, which need data the client doesn't have.
-  const cap = components.unverified_income_cap
-  if (cap != null && cap > 0) total = Math.min(total, cap)
   return clamp(Math.round(total))
 }
 

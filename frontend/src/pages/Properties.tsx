@@ -13,7 +13,8 @@ import {
 } from '../api'
 import { useLang } from '../context/LanguageContext'
 import { useAuth } from '../auth/AuthContext'
-import { loadBuyBox, BUYBOX_KEYS } from '../lib/buybox'
+import { loadBuyBox, BUYBOX_KEYS, BUYBOX_FIELDS } from '../lib/buybox'
+import { ValueSlider } from '../components/ValueSlider'
 import { Sparkles, SlidersHorizontal as SlidersIcon } from 'lucide-react'
 import ScoreBadge from '../components/ScoreBadge'
 import PropertyCardGrid from '../components/PropertyCardGrid'
@@ -488,68 +489,34 @@ export default function Properties() {
             />
           </label>
 
-          {/* ── Buy-box targets (real numbers, the client's request) ────────── */}
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-muted">Min cash flow ($/mo)</span>
-            <input
-              type="number"
-              step="100"
-              placeholder="e.g. 200"
-              value={filters.cash_flow_min ?? ''}
-              onChange={e => setFilter('cash_flow_min', e.target.value)}
-              className="input w-36"
-            />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-muted">Min cap rate (%)</span>
-            <input
-              type="number"
-              step="0.5"
-              placeholder="e.g. 5"
-              value={filters.cap_rate_min ?? ''}
-              onChange={e => setFilter('cap_rate_min', e.target.value)}
-              className="input w-36"
-            />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-muted">Min below-market (%)</span>
-            <input
-              type="number"
-              step="1"
-              placeholder="e.g. 5"
-              value={filters.discount_min ?? ''}
-              onChange={e => setFilter('discount_min', e.target.value)}
-              className="input w-36"
-            />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-muted">Min days listed</span>
-            <input
-              type="number"
-              step="7"
-              placeholder="e.g. 30"
-              value={filters.days_on_market_min ?? ''}
-              onChange={e => setFilter('days_on_market_min', e.target.value)}
-              className="input w-36"
-            />
-            <span className="text-[10px] text-muted/70 leading-tight max-w-[9rem]">
-              Days since we first tracked it — most sources hide the true list date.
-            </span>
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-muted">Min price cut ($)</span>
-            <input
-              type="number"
-              step="5000"
-              placeholder="e.g. 10000"
-              value={filters.price_drop_min ?? ''}
-              onChange={e => setFilter('price_drop_min', e.target.value)}
-              className="input w-36"
-            />
-            <span className="text-[10px] text-muted/70 leading-tight max-w-[9rem]">
-              Vendor has cut the price this much since listing — a motivated-seller signal.
-            </span>
-          </label>
+          {/* ── Buy-box targets (real numbers) — same control as Settings ───── */}
+          <div className="w-full border-t border-surface-border pt-4 mt-1">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-xs font-bold text-ink uppercase tracking-wider">Your buy box</span>
+              <span className="text-[11px] text-muted">— drag or type your minimums; blank = off</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-1">
+              {BUYBOX_FIELDS.map(cfg => (
+                <ValueSlider
+                  key={cfg.key}
+                  label={cfg.label}
+                  desc={cfg.desc}
+                  color={cfg.color}
+                  value={filters[cfg.key]}
+                  onChange={v => setFilter(cfg.key, v == null ? '' : String(v))}
+                  min={cfg.min}
+                  max={cfg.max}
+                  step={cfg.step}
+                  prefix={cfg.prefix}
+                  suffix={cfg.suffix}
+                  hint={cfg.hint}
+                />
+              ))}
+            </div>
+            <p className="text-[11px] text-muted/70 mt-1.5">
+              Days Listed counts from when we first tracked a listing — most sources hide the true list date.
+            </p>
+          </div>
 
           {/* Multi-site only */}
           <label className="flex flex-col gap-1">
