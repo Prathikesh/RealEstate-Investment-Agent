@@ -4,7 +4,7 @@ import {
   Bell, MapPin, Home, TrendingUp, Globe, CheckCircle2, ShieldCheck,
   Smartphone, MessageCircle, Wrench, Building2, Mail, SlidersHorizontal,
   ChevronDown, Check, Search, Layers, Gauge, RotateCcw, Scale, CircleDollarSign,
-  HelpCircle,
+  HelpCircle, X, Plus,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useLang } from '../context/LanguageContext'
@@ -83,8 +83,16 @@ const PROPERTY_TYPES = [
 ]
 
 const GOALS = [
-  { value: 'buy_and_hold', icon: TrendingUp, label: 'Buy & Hold',        desc: 'Monthly rental income from tenants' },
-  { value: 'buy_fix_sell', icon: Wrench,     label: 'Flip (Fix & Sell)', desc: 'Buy cheap, renovate, sell for profit' },
+  {
+    value: 'buy_and_hold', icon: TrendingUp, label: 'Buy & Hold',
+    desc: 'Monthly rental income from tenants',
+    info: 'You keep the property long-term and rent it out. The goal is steady monthly cash flow plus long-term appreciation. With this strategy Your Verdict leans on cap rate and cash flow.',
+  },
+  {
+    value: 'buy_fix_sell', icon: Wrench, label: 'Flip (Fix & Sell)',
+    desc: 'Buy cheap, renovate, sell for profit',
+    info: 'You buy below market, renovate, and resell for a one-time profit — the spread between what you paid plus reno costs and the resale price. With this strategy Your Verdict leans on price discount and days-on-market (motivated sellers).',
+  },
 ]
 
 const BUDGETS = [
@@ -99,11 +107,27 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const digits = (s: string) => s.replace(/\D/g, '')
 const DELIVERY_KEY = 'plexa.delivery'
 
-// account price range -> budget bucket, and back
+// account price range -> budget bucket, and back. A set range that matches no
+// preset resolves to the "custom" option so the exact numbers are preserved.
 function bucketFromRange(min?: number | null, max?: number | null): string {
+  if (min == null && max == null) return ''
   const b = BUDGETS.find(x => (x.min ?? null) === (min ?? null) && (x.max ?? null) === (max ?? null))
-  return b?.value ?? ''
+  return b?.value ?? 'custom'
 }
+// Seed the multi-city list from the account: prefer the new location_cities list,
+// fall back to the legacy single location_city.
+function citiesFromUser(u?: User | null): string[] {
+  if (u?.location_cities?.length) return u.location_cities
+  if (u?.location_city) return [u.location_city]
+  return []
+}
+// Common Québec target cities offered in the multi-select (users can also type
+// any other city name).
+const QUEBEC_CITIES = [
+  'Montréal', 'Laval', 'Longueuil', 'Québec City', 'Gatineau', 'Sherbrooke',
+  'Trois-Rivières', 'Brossard', 'Terrebonne', 'Saint-Jean-sur-Richelieu',
+  'Lévis', 'Repentigny', 'Drummondville', 'Saint-Jérôme', 'Granby',
+]
 function goalsFromStrategy(s?: string | null): string[] {
   if (s === 'buy_and_hold') return ['buy_and_hold']
   if (s === 'buy_fix_sell') return ['buy_fix_sell']
@@ -126,9 +150,11 @@ export default function Settings() {
 
   // ── State, seeded from the account ──
   const d0 = loadDelivery()
-  const [city, setCity]               = useState(user?.location_city ?? '')
+  const [cities, setCities]           = useState<string[]>(citiesFromUser(user))
   const [radius, setRadius]           = useState(user?.location_radius_km ?? 25)
   const [budget, setBudget]           = useState(bucketFromRange(user?.price_min, user?.price_max))
+  const [customMin, setCustomMin]     = useState<number | undefined>(user?.price_min ?? undefined)
+  const [customMax, setCustomMax]     = useState<number | undefined>(user?.price_max ?? undefined)
   const [types, setTypes]             = useState<string[]>(user?.property_types ?? ['triplex', 'duplex'])
   const [goals, setGoals]             = useState<string[]>(goalsFromStrategy(user?.investment_strategy))
   const [minScore, setMinScore]       = useState(user?.min_score_for_alert ?? 60)
@@ -160,9 +186,11 @@ export default function Settings() {
   // Re-seed if the account arrives/changes after mount.
   useEffect(() => {
     if (!user) return
-    setCity(user.location_city ?? '')
+    setCities(citiesFromUser(user))
     setRadius(user.location_radius_km ?? 25)
     setBudget(bucketFromRange(user.price_min, user.price_max))
+    setCustomMin(user.price_min ?? undefined)
+    setCustomMax(user.price_max ?? undefined)
     setTypes(user.property_types ?? ['triplex', 'duplex'])
     setGoals(goalsFromStrategy(user.investment_strategy))
     setMinScore(user.min_score_for_alert ?? 60)
@@ -227,13 +255,22 @@ export default function Settings() {
     return w
   }
 
-  function accountPayload(): PreferencesPayload {
+  // Resolve the selected budget (preset bucket OR the custom min/max inputs).
+  function budgetRange(): { min: number | null; max: number | null } {
+    if (budget === 'custom') return { min: customMin ?? null, max: customMax ?? null }
     const b = BUDGETS.find(x => x.value === budget)
+    return { min: b?.min ?? null, max: b?.max ?? null }
+  }
+
+  function accountPayload(): PreferencesPayload {
+    const range = budgetRange()
+    const cleanCities = cities.map(c => c.trim()).filter(Boolean)
     return {
-      location_city: city.trim() || null,
+      location_cities: cleanCities,
+      location_city: cleanCities[0] ?? null,
       location_radius_km: radius,
-      price_min: b?.min ?? null,
-      price_max: b?.max ?? null,
+      price_min: range.min,
+      price_max: range.max,
       property_types: types,
       investment_strategy: strategyFromGoals(goals),
       min_score_for_alert: minScore,
@@ -264,11 +301,12 @@ export default function Settings() {
   function applyToSearch() {
     // Browse filter = location + budget + type. Min deal quality is an ALERT
     // threshold (not a browse filter), so it's intentionally left out here.
-    const b = BUDGETS.find(x => x.value === budget)
+    const range = budgetRange()
     const p = new URLSearchParams()
-    if (city.trim()) p.set('city', city.trim())
-    if (b?.min != null) p.set('price_min', String(b.min))
-    if (b?.max != null) p.set('price_max', String(b.max))
+    // The Properties city filter is single-select; use the first chosen city.
+    if (cities[0]?.trim()) p.set('city', cities[0].trim())
+    if (range.min != null) p.set('price_min', String(range.min))
+    if (range.max != null) p.set('price_max', String(range.max))
     if (types.length === 1) p.set('property_type', types[0])
     navigate(p.toString() ? `/properties?${p}` : '/properties')
   }
@@ -294,15 +332,13 @@ export default function Settings() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
-        {/* LEFT — investment preferences */}
-        <div className="xl:col-span-2 space-y-5">
-          <SectionCard icon={<MapPin size={15} />} title="Search location" desc="Where you're hunting for deals.">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-              <label className="block">
-                <span className="block text-xs font-semibold text-muted uppercase tracking-wider mb-2">Target city</span>
-                <input value={city} onChange={e => setCity(e.target.value)} placeholder="e.g. Montréal, Laval, Québec City" className="input" />
-              </label>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
+          <SectionCard icon={<MapPin size={15} />} title="Search location" desc="The cities you're hunting in — pick as many as you like.">
+            <div className="space-y-4">
+              <div>
+                <span className="block text-xs font-semibold text-muted uppercase tracking-wider mb-2">Target cities</span>
+                <CityMultiSelect selected={cities} onChange={setCities} />
+              </div>
               <label className="block">
                 <div className="flex items-center justify-between mb-2"><span className="text-xs font-semibold text-muted uppercase tracking-wider">Search radius</span><span className="text-sm font-bold font-mono text-accent">{radius} km</span></div>
                 <input type="range" min={5} max={100} step={5} value={radius} onChange={e => setRadius(Number(e.target.value))} className="w-full accent-accent" />
@@ -312,7 +348,7 @@ export default function Settings() {
           </SectionCard>
 
           <SectionCard icon={<TrendingUp size={15} />} title="Budget range" desc="The price band you invest in.">
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               {BUDGETS.map(b => (
                 <button key={b.value} onClick={() => setBudget(budget === b.value ? '' : b.value)}
                   className={clsx('px-3 py-2.5 rounded-xl border text-xs font-semibold text-center transition-all',
@@ -320,7 +356,34 @@ export default function Settings() {
                   {b.label}
                 </button>
               ))}
+              <button onClick={() => setBudget(budget === 'custom' ? '' : 'custom')}
+                className={clsx('px-3 py-2.5 rounded-xl border text-xs font-semibold text-center transition-all',
+                  budget === 'custom' ? 'border-accent bg-accent/10 text-accent ring-1 ring-accent/20' : 'border-surface-border text-muted hover:border-accent/40 hover:text-ink bg-white')}>
+                Custom
+              </button>
             </div>
+            {budget === 'custom' && (
+              <div className="grid grid-cols-2 gap-3 mt-3 animate-fade-in">
+                <label className="block">
+                  <span className="block text-[11px] font-semibold text-muted uppercase tracking-wider mb-1.5">Min price</span>
+                  <div className="flex items-center rounded-xl border border-surface-border bg-white">
+                    <span className="pl-3 text-sm text-muted">$</span>
+                    <input type="number" min={0} step={25000} placeholder="Any" value={customMin ?? ''}
+                      onChange={e => setCustomMin(e.target.value === '' ? undefined : Number(e.target.value))}
+                      className="w-full py-2.5 px-2 text-sm text-ink tabular-nums bg-transparent focus:outline-none" />
+                  </div>
+                </label>
+                <label className="block">
+                  <span className="block text-[11px] font-semibold text-muted uppercase tracking-wider mb-1.5">Max price</span>
+                  <div className="flex items-center rounded-xl border border-surface-border bg-white">
+                    <span className="pl-3 text-sm text-muted">$</span>
+                    <input type="number" min={0} step={25000} placeholder="Any" value={customMax ?? ''}
+                      onChange={e => setCustomMax(e.target.value === '' ? undefined : Number(e.target.value))}
+                      className="w-full py-2.5 px-2 text-sm text-ink tabular-nums bg-transparent focus:outline-none" />
+                  </div>
+                </label>
+              </div>
+            )}
           </SectionCard>
 
           <SectionCard icon={<Building2 size={15} />} title="Property types" desc="Pick every type you'd consider.">
@@ -336,14 +399,10 @@ export default function Settings() {
             </div>
           </SectionCard>
 
-          <SectionCard icon={<Home size={15} />} title="Investment goal" desc="Choose one or more strategies.">
-            <GoalDropdown selected={goals} onChange={setGoals} />
+          <SectionCard icon={<Home size={15} />} title="Investment goal" desc="Pick the strategy (or both) you invest with.">
+            <GoalCards selected={goals} onChange={setGoals} />
           </SectionCard>
 
-        </div>
-
-        {/* RIGHT — alerts + language */}
-        <div className="space-y-5">
           <SectionCard icon={<Bell size={15} />} title="Alert triggers" desc="What should trigger a notification.">
             <div className="space-y-2.5">
               <ToggleRow label="New listings" sub="A property matching your criteria appears" value={newListings} onChange={setNewListings} />
@@ -379,22 +438,22 @@ export default function Settings() {
             </div>
           </SectionCard>
 
-          <SectionCard icon={<Globe size={15} />} title="Language" desc="Interface language.">
-            <div className="grid grid-cols-2 gap-2">
-              {(['fr', 'en'] as const).map(l => (
-                <button key={l} onClick={() => setLang(l)}
-                  className={clsx('py-2.5 rounded-xl border text-sm font-semibold transition-all',
-                    lang === l ? 'bg-accent/10 text-accent border-accent/40 ring-1 ring-accent/20' : 'border-surface-border text-muted hover:border-accent/40 hover:text-ink bg-white')}>
-                  {l === 'fr' ? 'Français' : 'English'}
-                </button>
-              ))}
-            </div>
-          </SectionCard>
-        </div>
-      </div>
+          <div className="lg:col-span-2">
+            <SectionCard icon={<Globe size={15} />} title="Language" desc="Interface language.">
+              <div className="grid grid-cols-2 gap-2 max-w-sm">
+                {(['fr', 'en'] as const).map(l => (
+                  <button key={l} onClick={() => setLang(l)}
+                    className={clsx('py-2.5 rounded-xl border text-sm font-semibold transition-all',
+                      lang === l ? 'bg-accent/10 text-accent border-accent/40 ring-1 ring-accent/20' : 'border-surface-border text-muted hover:border-accent/40 hover:text-ink bg-white')}>
+                    {l === 'fr' ? 'Français' : 'English'}
+                  </button>
+                ))}
+              </div>
+            </SectionCard>
+          </div>
 
-      {/* Full-width — My Scoring Criteria (donut + sliders need the room) */}
-      <div className="mt-5">
+          {/* My Scoring Criteria — full-width row (donut + sliders need the room) */}
+          <div className="lg:col-span-2">
         <SectionCard
           icon={<Gauge size={15} />}
           title="My Scoring Criteria"
@@ -428,7 +487,6 @@ export default function Settings() {
                 step={cfg.step}
                 prefix={cfg.prefix}
                 suffix={cfg.suffix}
-                hint={cfg.hint}
               />
             ))}
           </div>
@@ -531,6 +589,7 @@ export default function Settings() {
           </div>
           )}
         </SectionCard>
+        </div>
       </div>
 
       <InfoModal open={showScoringHelp} onClose={() => setShowScoringHelp(false)} title="How My Scoring Criteria works" size="lg">
@@ -670,8 +729,12 @@ function ToggleRow({ label, sub, value, onChange, icon }: { label: string; sub: 
 }
 
 // ── Investment-goal multi-select dropdown ─────────────────────────────────────
-function GoalDropdown({ selected, onChange }: { selected: string[]; onChange: (v: string[]) => void }) {
+// ── Multi-city selector ───────────────────────────────────────────────────────
+// Chips for chosen cities + a typeahead that suggests common Québec cities and
+// lets the user add any other by typing it and pressing Enter.
+function CityMultiSelect({ selected, onChange }: { selected: string[]; onChange: (v: string[]) => void }) {
   const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
   const ref = useRef<HTMLDivElement | null>(null)
   useEffect(() => {
     if (!open) return
@@ -679,30 +742,91 @@ function GoalDropdown({ selected, onChange }: { selected: string[]; onChange: (v
     document.addEventListener('mousedown', onDown)
     return () => document.removeEventListener('mousedown', onDown)
   }, [open])
-  const toggle = (v: string) => onChange(selected.includes(v) ? selected.filter(x => x !== v) : [...selected, v])
-  const summary = selected.length === 0 ? 'Select one or more goals…' : GOALS.filter(g => selected.includes(g.value)).map(g => g.label).join(', ')
+
+  const add = (city: string) => {
+    const name = city.trim()
+    if (name && !selected.some(c => c.toLowerCase() === name.toLowerCase())) onChange([...selected, name])
+    setQuery('')
+  }
+  const remove = (city: string) => onChange(selected.filter(c => c !== city))
+  const q = query.trim().toLowerCase()
+  const suggestions = QUEBEC_CITIES.filter(
+    c => c.toLowerCase().includes(q) && !selected.some(s => s.toLowerCase() === c.toLowerCase()),
+  )
+  const canAddCustom = q.length > 0
+    && !QUEBEC_CITIES.some(c => c.toLowerCase() === q)
+    && !selected.some(s => s.toLowerCase() === q)
+
   return (
     <div ref={ref} className="relative">
-      <button type="button" onClick={() => setOpen(o => !o)} aria-haspopup="listbox" aria-expanded={open}
-        className="w-full flex items-center justify-between gap-2 px-4 py-3 rounded-xl border border-surface-border bg-white text-left hover:border-accent/40 transition-colors">
-        <span className={clsx('text-sm truncate', selected.length ? 'text-ink font-medium' : 'text-muted')}>{summary}</span>
-        <ChevronDown size={16} className={clsx('text-muted shrink-0 transition-transform', open && 'rotate-180')} />
-      </button>
-      {open && (
-        <div className="absolute z-20 mt-2 w-full rounded-xl border border-surface-border bg-white shadow-lg overflow-hidden" role="listbox">
-          {GOALS.map(g => {
-            const Icon = g.icon, active = selected.includes(g.value)
-            return (
-              <button key={g.value} type="button" onClick={() => toggle(g.value)} role="option" aria-selected={active}
-                className={clsx('w-full flex items-center gap-3 px-4 py-3 text-left transition-colors', active ? 'bg-accent/8' : 'hover:bg-surface-hover')}>
-                <div className={clsx('w-8 h-8 rounded-lg flex items-center justify-center shrink-0', active ? 'bg-accent/15' : 'bg-surface')}><Icon size={16} className={active ? 'text-accent' : 'text-muted'} /></div>
-                <div className="min-w-0 flex-1"><p className="text-sm font-bold text-ink">{g.label}</p><p className="text-xs text-muted leading-snug">{g.desc}</p></div>
-                <span className={clsx('w-5 h-5 rounded-md border flex items-center justify-center shrink-0', active ? 'bg-accent border-accent' : 'border-surface-border')}>{active && <Check size={13} className="text-white" />}</span>
-              </button>
-            )
-          })}
+      <div className="flex flex-wrap items-center gap-1.5 min-h-[46px] px-2 py-2 rounded-xl border border-surface-border bg-white focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/15 transition-all">
+        {selected.map(c => (
+          <span key={c} className="inline-flex items-center gap-1 pl-2.5 pr-1 py-1 rounded-lg bg-accent/10 text-accent text-xs font-semibold">
+            {c}
+            <button type="button" onClick={() => remove(c)} className="p-0.5 rounded hover:bg-accent/20" aria-label={`Remove ${c}`}><X size={12} /></button>
+          </span>
+        ))}
+        <input
+          value={query}
+          onChange={e => { setQuery(e.target.value); setOpen(true) }}
+          onFocus={() => setOpen(true)}
+          onKeyDown={e => {
+            if (e.key === 'Enter') { e.preventDefault(); add(query) }
+            else if (e.key === 'Backspace' && !query && selected.length) remove(selected[selected.length - 1])
+          }}
+          placeholder={selected.length ? 'Add another…' : 'e.g. Montréal, Laval…'}
+          className="flex-1 min-w-[8rem] px-1.5 py-1 text-sm bg-transparent focus:outline-none placeholder:text-muted"
+        />
+      </div>
+      {open && (suggestions.length > 0 || canAddCustom) && (
+        <div className="absolute z-20 mt-2 w-full max-h-56 overflow-auto rounded-xl border border-surface-border bg-white shadow-lg py-1">
+          {canAddCustom && (
+            <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => add(query)}
+              className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-surface-hover">
+              <Plus size={14} className="text-accent" /> Add “<span className="font-semibold">{query.trim()}</span>”
+            </button>
+          )}
+          {suggestions.map(c => (
+            <button key={c} type="button" onMouseDown={e => e.preventDefault()} onClick={() => add(c)}
+              className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm text-ink hover:bg-surface-hover">
+              <MapPin size={13} className="text-muted" /> {c}
+            </button>
+          ))}
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Investment-goal cards ─────────────────────────────────────────────────────
+// Two selectable cards (pick one or both) with an expandable per-option
+// explanation, so the client's "explain what Buy & Hold / Flip means" is answered
+// inline instead of assumed.
+function GoalCards({ selected, onChange }: { selected: string[]; onChange: (v: string[]) => void }) {
+  const [expanded, setExpanded] = useState<string | null>(null)
+  const toggle = (v: string) => onChange(selected.includes(v) ? selected.filter(x => x !== v) : [...selected, v])
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      {GOALS.map(g => {
+        const Icon = g.icon, active = selected.includes(g.value), open = expanded === g.value
+        return (
+          <div key={g.value} className={clsx('rounded-xl border transition-all', active ? 'border-accent/50 bg-accent/5 ring-1 ring-accent/20' : 'border-surface-border bg-white')}>
+            <button type="button" onClick={() => toggle(g.value)} className="w-full flex items-start gap-3 p-3.5 text-left">
+              <div className={clsx('w-9 h-9 rounded-lg flex items-center justify-center shrink-0', active ? 'bg-accent/15' : 'bg-surface')}><Icon size={17} className={active ? 'text-accent' : 'text-muted'} /></div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-bold text-ink">{g.label}</p>
+                <p className="text-xs text-muted leading-snug mt-0.5">{g.desc}</p>
+              </div>
+              <span className={clsx('w-5 h-5 rounded-md border flex items-center justify-center shrink-0 mt-0.5', active ? 'bg-accent border-accent' : 'border-surface-border')}>{active && <Check size={13} className="text-white" />}</span>
+            </button>
+            <button type="button" onClick={() => setExpanded(open ? null : g.value)}
+              className="w-full flex items-center gap-1.5 px-3.5 pb-3 text-[11px] font-semibold text-muted hover:text-accent transition-colors">
+              <HelpCircle size={12} /> What’s this? <ChevronDown size={12} className={clsx('transition-transform', open && 'rotate-180')} />
+            </button>
+            {open && <p className="px-3.5 pb-3.5 text-xs text-muted leading-relaxed animate-fade-in">{g.info}</p>}
+          </div>
+        )
+      })}
     </div>
   )
 }

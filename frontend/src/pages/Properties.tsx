@@ -509,7 +509,6 @@ export default function Properties() {
                   step={cfg.step}
                   prefix={cfg.prefix}
                   suffix={cfg.suffix}
-                  hint={cfg.hint}
                 />
               ))}
             </div>

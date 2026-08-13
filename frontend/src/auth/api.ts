@@ -11,6 +11,7 @@ export interface User {
 
   // Investment / alert preferences (Settings page)
   location_city?: string | null
+  location_cities?: string[] | null
   location_radius_km?: number | null
   price_min?: number | null
   price_max?: number | null
@@ -29,6 +30,7 @@ export interface User {
 
 export interface PreferencesPayload {
   location_city?: string | null
+  location_cities?: string[]
   location_radius_km?: number
   price_min?: number | null
   price_max?: number | null

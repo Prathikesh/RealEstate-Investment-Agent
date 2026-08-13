@@ -63,6 +63,10 @@ class Broker(Base):
     )
     location_radius_km: Mapped[int] = mapped_column(Integer, default=25)
     location_city: Mapped[Optional[str]] = mapped_column(String(100))
+    # Multi-city selection (Settings → Search location). JSONB list of city names,
+    # e.g. ["Montréal", "Laval"]. location_city above is kept in sync with the
+    # first entry for back-compat with anything that reads a single city.
+    location_cities: Mapped[Optional[list]] = mapped_column(JSONB, default=list)
 
     # ── Property Filters ──────────────────────────────────────────────────────
     # e.g. ["duplex", "triplex", "quadruplex"]

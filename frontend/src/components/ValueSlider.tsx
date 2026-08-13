@@ -20,20 +20,21 @@ export interface ValueSliderProps {
   step: number
   prefix?: string
   suffix?: string
-  /** Optional helper line under the slider, e.g. "Listings at 45 days+ score 100 here". */
-  hint?: (value: number) => string
   compact?: boolean
 }
 
 export function ValueSlider({
   label, desc, color, value, onChange,
-  min, max, step, prefix, suffix, hint, compact,
+  min, max, step, prefix, suffix, compact,
 }: ValueSliderProps) {
   const active = value != null && value > 0
   // The handle sits at min(value, max); the typed number can exceed the track max.
   const sliderVal = Math.min(Math.max(value ?? min, min), max)
   const pct = ((sliderVal - min) / (max - min)) * 100
   const fill = `linear-gradient(to right, ${color} 0%, ${color} ${pct}%, #E2E8F0 ${pct}%, #E2E8F0 100%)`
+  // Size the number box to the widest value it can hold (digits + a little room),
+  // so 5-6 digit targets like a $100,000 price cut are never clipped.
+  const inputCh = Math.max(4, String(Math.max(max, value ?? 0)).length + 1)
 
   const commit = (v: number | undefined) => {
     if (v == null || Number.isNaN(v) || v <= 0) onChange(undefined)
@@ -55,7 +56,7 @@ export function ValueSlider({
           'flex items-center rounded-lg border bg-white shrink-0 transition-colors',
           active ? 'border-surface-border' : 'border-dashed border-surface-border',
         )}>
-          {prefix && <span className="pl-2 text-xs text-muted select-none">{prefix}</span>}
+          {prefix && <span className="pl-2.5 text-xs text-muted select-none">{prefix}</span>}
           <input
             type="number"
             inputMode="numeric"
@@ -65,13 +66,14 @@ export function ValueSlider({
             placeholder="Off"
             onChange={e => commit(e.target.value === '' ? undefined : Number(e.target.value))}
             aria-label={`${label} target`}
+            style={{ width: `${inputCh}ch` }}
             className={clsx(
-              'w-16 py-1 px-1.5 text-sm font-semibold tabular-nums text-right bg-transparent',
+              'py-1.5 px-1.5 text-sm font-semibold tabular-nums text-right bg-transparent',
               'focus:outline-none placeholder:text-muted/60 placeholder:font-normal',
               active ? 'text-ink' : 'text-muted',
             )}
           />
-          {suffix && <span className="pr-2 text-xs text-muted select-none whitespace-nowrap">{suffix}</span>}
+          {suffix && <span className="pr-2.5 text-xs text-muted select-none whitespace-nowrap">{suffix}</span>}
         </div>
       </div>
 
@@ -86,12 +88,6 @@ export function ValueSlider({
         className="range-fill"
         style={{ background: fill, ['--range-color' as string]: color }}
       />
-
-      {hint && (
-        <p className="text-[11px] mt-1.5 min-h-[14px]" style={{ color: active ? color : 'transparent' }}>
-          {active ? hint(value!) : ' '}
-        </p>
-      )}
     </div>
   )
 }

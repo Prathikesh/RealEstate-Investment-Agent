@@ -73,6 +73,7 @@ class UserResponse(BaseModel):
 
     # ── Investment / alert preferences (Settings page) ──
     location_city:        Optional[str]       = None
+    location_cities:      Optional[list[str]] = None
     location_radius_km:   Optional[int]       = None
     price_min:            Optional[float]     = None
     price_max:            Optional[float]     = None
@@ -97,6 +98,7 @@ class UserResponse(BaseModel):
 class PreferencesUpdate(BaseModel):
     """Partial update of the current user's investment/alert preferences."""
     location_city:        Optional[str]       = None
+    location_cities:      Optional[list[str]] = None
     location_radius_km:   Optional[int]       = None
     price_min:            Optional[float]     = None
     price_max:            Optional[float]     = None
@@ -249,6 +251,20 @@ async def update_me(
         data["min_score_for_alert"] = max(0, min(100, int(data["min_score_for_alert"])))
     if data.get("location_radius_km") is not None:
         data["location_radius_km"] = max(1, min(200, int(data["location_radius_km"])))
+    if data.get("location_cities") is not None:
+        # Trim, drop blanks, de-dupe (case-insensitive, first spelling wins),
+        # cap the list, and keep location_city in sync with the first entry.
+        seen: set[str] = set()
+        cities: list[str] = []
+        for c in data["location_cities"]:
+            name = str(c).strip()
+            key = name.lower()
+            if name and key not in seen:
+                seen.add(key)
+                cities.append(name)
+        cities = cities[:10]
+        data["location_cities"] = cities
+        data["location_city"] = cities[0] if cities else None
     if "custom_score_weights" in data and data["custom_score_weights"] is not None:
         weights = data["custom_score_weights"]
         valid_keys = set(WEIGHTS["both"].keys())
