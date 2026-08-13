@@ -438,6 +438,7 @@ function ConfidencePill({ confidence, t }: { confidence: string; t: (k: string) 
 // ── Verdict Banner ────────────────────────────────────────────────────────────
 
 function VerdictBanner({ prop }: { prop: PropertyDetail }) {
+  const { t } = useLang()
   const category = prop.score_category
   const score = prop.score
   if (!category || score == null) return null
@@ -448,26 +449,26 @@ function VerdictBanner({ prop }: { prop: PropertyDetail }) {
     badgeBg: string; badgeText: string; badgeBorder: string
   }> = {
     strong_opportunity: {
-      label: 'Strong Buy',
-      headline: 'This property merits serious consideration by investor clients.',
+      label: t('pp_verdict_strong'),
+      headline: t('pp_verdict_strong_h'),
       bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200',
       accent: '#059669', badgeBg: 'bg-emerald-100', badgeText: 'text-emerald-700', badgeBorder: 'border-emerald-200',
     },
     worth_investigating: {
-      label: 'Worth Investigating',
-      headline: 'Good potential — thorough due diligence is recommended before committing.',
+      label: t('pp_verdict_worth'),
+      headline: t('pp_verdict_worth_h'),
       bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200',
       accent: '#2563EB', badgeBg: 'bg-blue-100', badgeText: 'text-blue-700', badgeBorder: 'border-blue-200',
     },
     market_price: {
-      label: 'Fairly Priced',
-      headline: 'Priced at market value — limited discount, limited upside at this price.',
+      label: t('pp_verdict_fair'),
+      headline: t('pp_verdict_fair_h'),
       bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200',
       accent: '#D97706', badgeBg: 'bg-amber-100', badgeText: 'text-amber-700', badgeBorder: 'border-amber-200',
     },
     not_recommended: {
-      label: 'Not Recommended',
-      headline: 'Challenges outweigh the opportunity at the current asking price.',
+      label: t('pp_verdict_not'),
+      headline: t('pp_verdict_not_h'),
       bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200',
       accent: '#DC2626', badgeBg: 'bg-red-100', badgeText: 'text-red-700', badgeBorder: 'border-red-200',
     },

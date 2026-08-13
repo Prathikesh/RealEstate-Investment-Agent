@@ -357,6 +357,23 @@ const TRANSLATIONS = {
     pf_daysNote:        'Days Listed counts from when we first tracked a listing — most sources hide the true list date.',
     pf_listingsFound:   'listings found',
     pf_loading:         'Loading…',
+
+    // Property page — verdict banner
+    pp_verdict_strong:      'Strong Buy',
+    pp_verdict_strong_h:    'This property merits serious consideration by investor clients.',
+    pp_verdict_worth:       'Worth Investigating',
+    pp_verdict_worth_h:     'Good potential — thorough due diligence is recommended before committing.',
+    pp_verdict_fair:        'Fairly Priced',
+    pp_verdict_fair_h:      'Priced at market value — limited discount, limited upside at this price.',
+    pp_verdict_not:         'Not Recommended',
+    pp_verdict_not_h:       'Challenges outweigh the opportunity at the current asking price.',
+    pp_m_capRate:           'Cap Rate',
+    pp_m_belowMarket:       'Below Market',
+    pp_m_cashFlow:          'Monthly Cash Flow',
+    pp_m_grm:               'GRM',
+    pp_m_noi:               'Annual NOI',
+    pp_m_comparables:       'Comparables',
+    pp_tapCard:             "Tap a card to see how it's calculated",
   },
   fr: {
     // Nav
@@ -714,6 +731,23 @@ const TRANSLATIONS = {
     pf_daysNote:        'Les jours affichés comptent à partir de notre premier suivi — la plupart des sources masquent la vraie date d\'affichage.',
     pf_listingsFound:   'annonces trouvées',
     pf_loading:         'Chargement…',
+
+    // Property page — verdict banner
+    pp_verdict_strong:      'Achat fort',
+    pp_verdict_strong_h:    'Cette propriété mérite une considération sérieuse de vos clients investisseurs.',
+    pp_verdict_worth:       'À examiner',
+    pp_verdict_worth_h:     'Bon potentiel — une vérification diligente approfondie est recommandée avant de vous engager.',
+    pp_verdict_fair:        'Prix juste',
+    pp_verdict_fair_h:      'Au prix du marché — rabais limité, potentiel limité à ce prix.',
+    pp_verdict_not:         'Non recommandé',
+    pp_verdict_not_h:       'Les défis l\'emportent sur l\'occasion au prix demandé actuel.',
+    pp_m_capRate:           'Taux de cap.',
+    pp_m_belowMarket:       'Sous le marché',
+    pp_m_cashFlow:          'Flux de trésorerie mensuel',
+    pp_m_grm:               'MRB',
+    pp_m_noi:               'RNE annuel',
+    pp_m_comparables:       'Comparables',
+    pp_tapCard:             'Touchez une carte pour voir le calcul',
   },
 } as const
 
