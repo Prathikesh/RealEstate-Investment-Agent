@@ -17,13 +17,13 @@ function fmtCAD(v: number | null): string {
   }).format(v)
 }
 
-function timeAgo(dateStr: string): string {
+function timeAgo(dateStr: string, t: (k: string) => string): string {
   const diff = Date.now() - new Date(dateStr).getTime()
   const hours = Math.floor(diff / 3600000)
-  if (hours < 1) return 'Just now'
-  if (hours < 24) return `${hours}h ago`
+  if (hours < 1) return t('time_justNow')
+  if (hours < 24) return `${hours}${t('time_hAgo')}`
   const days = Math.floor(hours / 24)
-  return `${days}d ago`
+  return `${days}${t('time_dAgo')}`
 }
 
 // ── Metric strip item ─────────────────────────────────────────────────────────
@@ -116,14 +116,14 @@ export default function Dashboard() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-ink">{t('dashboard')}</h1>
-          <p className="text-sm text-muted mt-0.5">Quebec real estate investment overview</p>
+          <p className="text-sm text-muted mt-0.5">{t('dash_subtitle')}</p>
         </div>
         <Link
           to="/properties?listed_within=24h"
           className="btn-primary shadow-md"
         >
           <Sparkles size={14} />
-          New today
+          {t('dash_newToday')}
         </Link>
       </div>
 
@@ -131,18 +131,18 @@ export default function Dashboard() {
       <div className="bg-surface-card border border-surface-border rounded-2xl shadow-card overflow-hidden">
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 divide-x divide-y sm:divide-y-0 divide-surface-border">
           <Metric
-            label="Total properties"
+            label={t("dash_m_total")}
             value={stats?.total_properties.toLocaleString() ?? '—'}
-            sublabel="across Quebec"
+            sublabel={t("dash_m_total_sub")}
             icon={<Home size={18} />}
             iconColor="text-blue-600"
             iconBg="bg-blue-50"
             loading={statsLoading}
           />
           <Metric
-            label="New listings"
+            label={t("dash_m_new")}
             value={stats?.new_today ?? '—'}
-            sublabel="added today"
+            sublabel={t("dash_m_new_sub")}
             icon={<Zap size={18} />}
             iconColor="text-accent"
             iconBg="bg-accent/10"
@@ -150,9 +150,9 @@ export default function Dashboard() {
             to="/properties?listed_within=24h"
           />
           <Metric
-            label="Great deals"
+            label={t("dash_m_great")}
             value={stats?.strong_opportunities ?? '—'}
-            sublabel="score 80+"
+            sublabel={t("dash_m_great_sub")}
             icon={<TrendingUp size={18} />}
             iconColor="text-score-strong"
             iconBg="bg-score-strong/10"
@@ -160,9 +160,9 @@ export default function Dashboard() {
             to="/properties?score_min=80&sort_by=score"
           />
           <Metric
-            label="Worth checking"
+            label={t("dash_m_worth")}
             value={stats?.worth_investigating ?? '—'}
-            sublabel="score 60–79"
+            sublabel={t("dash_m_worth_sub")}
             icon={<BarChart2 size={18} />}
             iconColor="text-score-worth"
             iconBg="bg-score-worth/10"
@@ -170,9 +170,9 @@ export default function Dashboard() {
             to="/properties?score_min=60&score_max=79"
           />
           <Metric
-            label="Price drops"
+            label={t("dash_m_drops")}
             value={stats?.price_drops_today ?? '—'}
-            sublabel="since yesterday"
+            sublabel={t("dash_m_drops_sub")}
             icon={<ArrowDownCircle size={18} />}
             iconColor="text-red-500"
             iconBg="bg-red-50"
@@ -180,18 +180,18 @@ export default function Dashboard() {
             to="/properties?status=price_changed"
           />
           <Metric
-            label="Avg deal score"
+            label={t("dash_m_avg")}
             value={stats?.avg_score != null ? `${stats.avg_score.toFixed(0)}` : '—'}
-            sublabel="out of 100"
+            sublabel={t("dash_m_avg_sub")}
             icon={<Activity size={18} />}
             iconColor="text-muted"
             iconBg="bg-surface-hover"
             loading={statsLoading}
           />
           <Metric
-            label="Multi-site listings"
+            label={t("dash_m_multi")}
             value={stats?.multi_site_properties ?? '—'}
-            sublabel="compare prices"
+            sublabel={t("dash_m_multi_sub")}
             icon={<Globe size={18} />}
             iconColor="text-blue-600"
             iconBg="bg-blue-50"
@@ -207,16 +207,14 @@ export default function Dashboard() {
           <div>
             <h2 className="font-bold text-ink text-base">{t('topOpps')}</h2>
             <p className="text-xs text-muted">
-              {rankMode === 'your'
-                ? 'Ranked by your own scoring criteria'
-                : 'Best investment opportunities right now'}
+              {rankMode === 'your' ? t('dash_rankedYour') : t('dash_bestNow')}
             </p>
           </div>
           <Link
             to={rankMode === 'your' ? '/properties?sort_by=your_verdict' : '/properties?sort_by=score&score_min=60'}
             className="flex items-center gap-1 text-sm text-accent hover:underline font-semibold"
           >
-            View all <ChevronRight size={14} />
+            {t('dash_viewAll')} <ChevronRight size={14} />
           </Link>
         </div>
 
@@ -232,9 +230,7 @@ export default function Dashboard() {
           </div>
         ) : (
           <div className="card py-10 text-center">
-            <p className="text-muted text-sm">
-              No scored properties yet — run the AI pipeline to generate scores.
-            </p>
+            <p className="text-muted text-sm">{t('dash_noScored')}</p>
           </div>
         )}
       </div>
@@ -246,10 +242,10 @@ export default function Dashboard() {
           <div className="flex items-center justify-between">
             <div>
               <h2 className="font-bold text-ink text-base">{t('newListings')}</h2>
-              <p className="text-xs text-muted">Recently added to database</p>
+              <p className="text-xs text-muted">{t('dash_recentlyAdded')}</p>
             </div>
             <Link to="/properties?sort_by=newest" className="flex items-center gap-1 text-sm text-accent hover:underline font-semibold">
-              View all <ChevronRight size={14} />
+              {t('dash_viewAll')} <ChevronRight size={14} />
             </Link>
           </div>
           <div className="bg-surface-card border border-surface-border rounded-2xl overflow-hidden shadow-card divide-y divide-surface-border">
@@ -271,20 +267,20 @@ export default function Dashboard() {
                   <div className="flex items-center gap-2 mt-0.5">
                     <p className="text-xs text-muted">{p.city} · {p.property_type.replace(/_/g, ' ')}</p>
                     {p.is_new && (
-                      <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-accent text-white">NEW</span>
+                      <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-accent text-white">{t('newBadge')}</span>
                     )}
                   </div>
                 </div>
                 <div className="text-right shrink-0">
                   <p className="text-sm font-mono font-bold text-ink tabular-nums">{fmtCAD(p.asking_price)}</p>
                   <p className="text-[10px] text-muted flex items-center gap-0.5 justify-end mt-0.5">
-                    <Clock size={9} /> {timeAgo(p.first_seen_at)}
+                    <Clock size={9} /> {timeAgo(p.first_seen_at, t)}
                   </p>
                 </div>
               </Link>
             ))}
             {!newListings?.items.length && (
-              <div className="px-5 py-8 text-center text-muted text-sm">No new listings recorded today.</div>
+              <div className="px-5 py-8 text-center text-muted text-sm">{t('dash_noNewToday')}</div>
             )}
           </div>
         </div>
@@ -295,15 +291,15 @@ export default function Dashboard() {
           {/* Quick filters */}
           <div className="bg-surface-card border border-surface-border rounded-2xl shadow-card overflow-hidden">
             <div className="px-4 py-3 border-b border-surface-border">
-              <h2 className="font-bold text-ink text-sm">Quick Filters</h2>
+              <h2 className="font-bold text-ink text-sm">{t('dash_quickFilters')}</h2>
             </div>
             <div className="p-2 space-y-0.5">
               {[
-                { label: 'New last 24h',      to: '/properties?listed_within=24h',          color: 'text-accent',       bg: 'hover:bg-accent/8',       dot: 'bg-accent' },
-                { label: 'Best deals (80+)',  to: '/properties?score_min=80&sort_by=score',  color: 'text-score-strong', bg: 'hover:bg-score-strong/8', dot: 'bg-score-strong' },
-                { label: 'Price drops',       to: '/properties?sort_by=discount',            color: 'text-red-500',      bg: 'hover:bg-red-50',         dot: 'bg-red-500' },
-                { label: 'On multiple sites', to: '/properties?multi_site=true',             color: 'text-blue-600',     bg: 'hover:bg-blue-50',        dot: 'bg-blue-500' },
-                { label: 'Highest yield',     to: '/properties?sort_by=score&score_min=50',  color: 'text-score-market', bg: 'hover:bg-score-market/8', dot: 'bg-score-market' },
+                { label: t('dash_qf_new24'), to: '/properties?listed_within=24h',          color: 'text-accent',       bg: 'hover:bg-accent/8',       dot: 'bg-accent' },
+                { label: t('dash_qf_best'),  to: '/properties?score_min=80&sort_by=score',  color: 'text-score-strong', bg: 'hover:bg-score-strong/8', dot: 'bg-score-strong' },
+                { label: t('dash_qf_drops'), to: '/properties?sort_by=discount',            color: 'text-red-500',      bg: 'hover:bg-red-50',         dot: 'bg-red-500' },
+                { label: t('dash_qf_multi'), to: '/properties?multi_site=true',             color: 'text-blue-600',     bg: 'hover:bg-blue-50',        dot: 'bg-blue-500' },
+                { label: t('dash_qf_yield'), to: '/properties?sort_by=score&score_min=50',  color: 'text-score-market', bg: 'hover:bg-score-market/8', dot: 'bg-score-market' },
               ].map(link => (
                 <Link
                   key={link.to}
@@ -322,8 +318,8 @@ export default function Dashboard() {
           {stats?.cities && stats.cities.length > 0 && (
             <div className="bg-surface-card border border-surface-border rounded-2xl shadow-card overflow-hidden">
               <div className="flex items-center justify-between px-4 py-3 border-b border-surface-border">
-                <h2 className="font-bold text-ink text-sm">Top Cities</h2>
-                <span className="text-[10px] text-muted font-medium">{stats.cities.length} covered</span>
+                <h2 className="font-bold text-ink text-sm">{t('dash_topCities')}</h2>
+                <span className="text-[10px] text-muted font-medium">{stats.cities.length} {t('dash_covered')}</span>
               </div>
               <div className="p-2 grid grid-cols-2 gap-0.5">
                 {stats.cities.slice(0, 8).map(city => (
@@ -342,7 +338,7 @@ export default function Dashboard() {
                   to="/properties"
                   className="flex items-center justify-center gap-1 py-2.5 text-xs text-accent font-semibold border-t border-surface-border hover:bg-accent/5 transition-colors"
                 >
-                  +{stats.cities.length - 8} more cities <ChevronRight size={11} />
+                  +{stats.cities.length - 8} {t('dash_moreCities')} <ChevronRight size={11} />
                 </Link>
               )}
             </div>
