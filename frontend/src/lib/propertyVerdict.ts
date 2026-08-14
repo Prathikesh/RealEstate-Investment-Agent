@@ -82,3 +82,74 @@ export function buildFactorRows(
     }
   })
 }
+
+const round1 = (n: number) => Math.round(n * 10) / 10
+
+export type LedgerRowKind = 'risk' | 'neighbourhood' | 'income' | 'rounding'
+
+export interface LedgerRow {
+  kind: LedgerRowKind
+  delta: number // signed points this step applied to the running total
+  // For risk rows, the severity behind the modifier (drives the human reason).
+  reason?: 'critical' | 'high2' | 'high1' | 'medium'
+}
+
+export interface ScoreLedger {
+  subtotal: number // base weighted sum (= Σ factor contributions)
+  rows: LedgerRow[] // only the steps that actually moved the score
+  final: number // authoritative integer score (matches the header)
+}
+
+/**
+ * Reconciles the factor subtotal with the authoritative final `score` by
+ * replaying the backend's post-modifier order (scorer.py:199-247): risk →
+ * neighbourhood → unverified-income cap → round. Critical risk and the income
+ * cap are `min()` clamps (not additive), so each row records the *actual* delta
+ * that step applied to the running total. By anchoring the last step to the real
+ * `finalScore`, `subtotal + Σ rows === final` always — which is exactly what
+ * makes "why is this a 21 when the factors add up to 36?" answerable on screen.
+ *
+ * The client never gets risk items / neighbourhood percentiles, so this runs
+ * only for the AI verdict, off the modifier values the backend already stored in
+ * `score_components`. Your Verdict has no such modifiers by design.
+ */
+export function buildScoreLedger(
+  factors: VerdictFactorRow[],
+  components: ScoreComponents,
+  finalScore: number,
+): ScoreLedger {
+  const subtotal = round1(factors.reduce((s, f) => s + f.contribution, 0))
+  const rows: LedgerRow[] = []
+  let running = subtotal
+
+  // 1. Risk (scorer.py:202). Critical risk is a hard clamp to 35, not additive.
+  const risk = components.risk_modifier ?? 0
+  if (risk === -99) {
+    const post = Math.min(running, 35)
+    if (post !== running) rows.push({ kind: 'risk', delta: round1(post - running), reason: 'critical' })
+    running = post
+  } else if (risk !== 0) {
+    rows.push({ kind: 'risk', delta: round1(risk), reason: risk <= -15 ? 'high2' : risk <= -8 ? 'high1' : 'medium' })
+    running = round1(running + risk)
+  }
+
+  // 2. Neighbourhood (scorer.py:220) — additive.
+  const nb = components.neighbourhood_modifier ?? 0
+  if (nb !== 0) {
+    rows.push({ kind: 'neighbourhood', delta: round1(nb) })
+    running = round1(running + nb)
+  }
+
+  // 3. Unverified-income cap (scorer.py:236) — a clamp; only surfaces when it bites.
+  const incomeCap = components.unverified_income_cap ?? 0
+  if (incomeCap > 0 && running > incomeCap) {
+    rows.push({ kind: 'income', delta: round1(incomeCap - running) })
+    running = incomeCap
+  }
+
+  // 4. Rounding — the residue to reach the authoritative integer score.
+  const roundingDelta = round1(finalScore - running)
+  if (Math.abs(roundingDelta) >= 0.1) rows.push({ kind: 'rounding', delta: roundingDelta })
+
+  return { subtotal, rows, final: finalScore }
+}

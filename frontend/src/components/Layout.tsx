@@ -27,7 +27,7 @@ function SideLink({ to, Icon, label }: { to: string; Icon: typeof Bookmark; labe
     <NavLink
       to={to}
       className={({ isActive }) =>
-        clsx('relative flex items-center h-11 transition-colors', isActive ? 'text-accent' : 'text-muted hover:text-ink')
+        clsx('group relative flex items-center h-11 transition-colors', isActive ? 'text-accent' : 'text-muted hover:text-ink')
       }
     >
       {({ isActive }) => (
@@ -38,7 +38,7 @@ function SideLink({ to, Icon, label }: { to: string; Icon: typeof Bookmark; labe
               <Icon size={20} />
             </span>
           </span>
-          <span className="text-sm font-semibold whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200">{label}</span>
+          <span className="text-sm font-semibold whitespace-nowrap">{label}</span>
         </>
       )}
     </NavLink>
@@ -65,11 +65,10 @@ export default function Layout() {
   return (
     <div className="flex h-screen overflow-hidden bg-surface">
 
-      {/* ── Sidebar (desktop): collapsed icon rail, expands on hover ─────── */}
-      <aside className="hidden md:block relative w-[76px] shrink-0 z-30">
-        <div className="group absolute inset-y-0 left-0 flex flex-col w-[76px] hover:w-[240px]
-                        bg-white border-r border-surface-border shadow-sm
-                        transition-[width] duration-200 ease-out overflow-hidden">
+      {/* ── Sidebar (desktop): always-expanded rail ─────────────────────── */}
+      <aside className="hidden md:block relative w-[240px] shrink-0 z-30">
+        <div className="absolute inset-y-0 left-0 flex flex-col w-[240px]
+                        bg-white border-r border-surface-border shadow-sm overflow-hidden">
 
           {/* Logo */}
           <Link to="/" className="flex items-center h-16 shrink-0" title="PlexAI">
@@ -78,8 +77,7 @@ export default function Layout() {
                 <QuartisIcon size={20} className="text-white" />
               </span>
             </span>
-            <span className="font-black text-lg text-ink tracking-tight whitespace-nowrap
-                             opacity-0 group-hover:opacity-100 transition-opacity duration-200">PlexAI</span>
+            <span className="font-black text-lg text-ink tracking-tight whitespace-nowrap">PlexAI</span>
           </Link>
 
           {/* Primary nav */}
@@ -100,7 +98,7 @@ export default function Layout() {
               <span className="grid place-items-center w-[76px] shrink-0">
                 <span className="w-9 h-9 rounded-full bg-accent/10 text-accent text-xs font-bold grid place-items-center">{initials}</span>
               </span>
-              <div className="min-w-0 pr-3 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+              <div className="min-w-0 pr-3">
                 <p className="text-xs font-semibold text-ink truncate">{user?.name ?? 'Investor'}</p>
                 <p className="text-[10px] text-muted truncate">{user?.email}</p>
               </div>
@@ -109,12 +107,12 @@ export default function Layout() {
             <button onClick={handleLogout}
               className="w-full flex items-center h-10 text-muted hover:text-ink hover:bg-surface-hover transition-colors">
               <span className="grid place-items-center w-[76px] shrink-0"><LogOut size={20} /></span>
-              <span className="text-sm font-semibold whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200">{t('logout')}</span>
+              <span className="text-sm font-semibold whitespace-nowrap">{t('logout')}</span>
             </button>
 
             <div className="flex items-center">
               <span className="w-[76px] shrink-0" />
-              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+              <div className="flex gap-1">
                 {(['fr', 'en'] as const).map(l => (
                   <button key={l} onClick={() => setLang(l)}
                     className={clsx('px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors',

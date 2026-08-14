@@ -8,16 +8,17 @@
  * cap-rate/cash-flow components on the fly so the score reacts as they change
  * the down payment, rate, rent, etc.
  */
+import { useState } from 'react'
 import clsx from 'clsx'
 import { Link } from 'react-router-dom'
-import { Sparkles, SlidersHorizontal, ArrowUpRight } from 'lucide-react'
+import { Sparkles, SlidersHorizontal, ArrowUpRight, ChevronDown } from 'lucide-react'
 import { useLang } from '../context/LanguageContext'
 import { useAuth } from '../auth/AuthContext'
 import { scoreToCategory } from './ScoreBadge'
 import type { PropertyDetail } from '../api'
 import {
-  computeWeightedScore, categoryForScore, withLiveFinancials,
-  STRATEGY_WEIGHTS, weightsAreValid, type ScoreWeights,
+  computeWeightedScore, buildYourVerdictRows, categoryForScore, withLiveFinancials,
+  STRATEGY_WEIGHTS, weightsAreValid, FACTOR_LABEL, type ScoreWeights,
 } from '../lib/verdict'
 import { componentsForProperty } from '../lib/propertyVerdict'
 
@@ -82,6 +83,7 @@ export default function VerdictCompare({
 }) {
   const { user } = useAuth()
   const { t } = useLang()
+  const [showCalc, setShowCalc] = useState(false)
 
   const strategy = user?.investment_strategy ?? 'both'
   const customValid = user?.custom_score_weights && weightsAreValid(user.custom_score_weights)
@@ -104,6 +106,12 @@ export default function VerdictCompare({
   }
   const yourScore = computeWeightedScore(components, weights, buyBox, raw)
   const yourCategory = categoryForScore(yourScore)
+
+  // Per-factor breakdown behind Your Verdict — the "how did I get to 100?" answer.
+  // `breakdown.total` equals yourScore by construction (same loop as the score).
+  const breakdown = buildYourVerdictRows(components, weights, buyBox, raw)
+  const yourSubtotal = Math.round(breakdown.rows.reduce((s, r) => s + r.contribution, 0) * 10) / 10
+  const yourRounding = Math.round((breakdown.total - yourSubtotal) * 10) / 10
 
   const aiScore = prop.score
   const aiCategory = prop.score_category ?? (aiScore != null ? scoreToCategory(aiScore) : 'not_recommended')
@@ -162,6 +170,60 @@ export default function VerdictCompare({
         <Link to="/settings" className="inline-flex items-center gap-0.5 text-accent font-semibold hover:underline">
           {t('vc_adjust')} <ArrowUpRight size={12} />
         </Link>
+      </div>
+
+      {/* "How did I get to 100?" — the per-factor breakdown that adds up to Your
+          Verdict. Collapsed by default so the tiles stay the focus. */}
+      <div className="pt-1 border-t border-surface-border">
+        <button
+          onClick={() => setShowCalc(v => !v)}
+          className="w-full flex items-center justify-between text-[11px] font-semibold text-muted hover:text-ink transition-colors py-0.5"
+          aria-expanded={showCalc}
+        >
+          <span>{showCalc ? t('vc_hideCalc') : t('vc_howCalc')}</span>
+          <ChevronDown size={14} className={clsx('transition-transform', showCalc && 'rotate-180')} />
+        </button>
+
+        {showCalc && (
+          <div className="mt-2 space-y-1.5">
+            {breakdown.rows.map(r => (
+              <div key={r.factor} className="flex items-center justify-between gap-2 text-[11px]">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="font-semibold text-ink truncate">{FACTOR_LABEL[r.factor]}</span>
+                  <span className="text-muted shrink-0">{r.weightPct}% {t('vc_colWeight')}</span>
+                  {r.targeted && (
+                    <span className="shrink-0 px-1.5 py-px rounded-full bg-accent/10 text-accent font-semibold">{t('vc_badgeTarget')}</span>
+                  )}
+                  {r.capped && (
+                    <span className="shrink-0 px-1.5 py-px rounded-full bg-amber-100 text-amber-700 font-semibold">{t('vc_badgeCapped')}</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2.5 shrink-0 font-mono">
+                  <span className={clsx(
+                    'w-7 text-right font-black',
+                    r.score >= 70 ? 'text-emerald-700' : r.score >= 40 ? 'text-amber-600' : 'text-red-600',
+                  )}>{r.score}</span>
+                  <span className="w-10 text-right font-bold text-accent">+{r.contribution.toFixed(1)}</span>
+                </div>
+              </div>
+            ))}
+
+            <div className="pt-1.5 mt-0.5 border-t border-surface-border flex items-center justify-between text-[11px]">
+              <span className="text-muted">{t('vc_ledSubtotal')}</span>
+              <span className="font-mono font-semibold text-ink">{yourSubtotal.toFixed(1)}</span>
+            </div>
+            {Math.abs(yourRounding) >= 0.1 && (
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="text-muted">{t('vc_ledRounding')}</span>
+                <span className="font-mono font-semibold text-muted">{yourRounding > 0 ? '+' : ''}{yourRounding.toFixed(1)}</span>
+              </div>
+            )}
+            <div className="pt-1.5 mt-0.5 border-t border-surface-border flex items-center justify-between">
+              <span className="text-[11px] font-bold text-ink">{t('vc_yourVerdict')}</span>
+              <span className="text-sm font-black font-mono text-accent">{breakdown.total} <span className="text-muted font-semibold">/ 100</span></span>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

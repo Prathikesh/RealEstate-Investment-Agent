@@ -6,7 +6,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   SCORE_FACTORS, UNVERIFIED_INCOME_FACTOR_CEILING,
-  computeWeightedScore, type ScoreComponents, type ScoreWeights,
+  computeWeightedScore, buildYourVerdictRows, type ScoreComponents, type ScoreWeights,
 } from './verdict'
 
 const only = (factor: string): ScoreWeights =>
@@ -68,5 +68,52 @@ describe('estimated income still cannot inflate the yield factors', () => {
 describe('invariants', () => {
   it('matches the stored component when no buy box is set', () => {
     expect(computeWeightedScore(base({ discount: 80 }), only('discount'))).toBe(80)
+  })
+})
+
+describe('buildYourVerdictRows — the "how did I get to 100?" breakdown', () => {
+  const even: ScoreWeights =
+    Object.fromEntries(SCORE_FACTORS.map((f, i) => [f, i === 0 ? 0.28 : 0.12])) as ScoreWeights
+  // weights: discount .28 + six × .12 = 1.0
+
+  it('total always equals computeWeightedScore for the same inputs', () => {
+    const cases: Array<[ScoreComponents, ScoreWeights, any, any]> = [
+      [base(), even, null, null],
+      [base({ discount: 80 }), only('discount'), null, null],
+      [base({ dom_bonus: 30 }), only('dom_bonus'), { days_on_market_min: 30 }, { dom_bonus: 60 }],
+      [base({ cash_flow: 90, unverified_income_cap: 59 }), only('cash_flow'), null, null],
+      [base({ cash_flow: 10, unverified_income_cap: 59 }), only('cash_flow'), { cash_flow_min: 500 }, { cash_flow: 2000 }],
+    ]
+    for (const [c, w, bb, raw] of cases) {
+      expect(buildYourVerdictRows(c, w, bb, raw).total).toBe(computeWeightedScore(c, w, bb, raw))
+    }
+  })
+
+  it('emits one row per factor with weights that total 100%', () => {
+    const { rows } = buildYourVerdictRows(base(), even)
+    expect(rows).toHaveLength(SCORE_FACTORS.length)
+    expect(rows.reduce((s, r) => s + r.weightPct, 0)).toBe(100)
+  })
+
+  it('flags a factor scored against the broker\'s own target', () => {
+    const { rows } = buildYourVerdictRows(
+      base(), only('dom_bonus'), { days_on_market_min: 30 }, { dom_bonus: 60 },
+    )
+    const dom = rows.find(r => r.factor === 'dom_bonus')!
+    expect(dom.targeted).toBe(true)
+    expect(dom.score).toBe(100) // 60/30 -> clamp 100
+  })
+
+  it('flags a yield factor capped by estimated income', () => {
+    const { rows } = buildYourVerdictRows(base({ cash_flow: 90, unverified_income_cap: 59 }), only('cash_flow'))
+    const cf = rows.find(r => r.factor === 'cash_flow')!
+    expect(cf.capped).toBe(true)
+    expect(cf.score).toBe(UNVERIFIED_INCOME_FACTOR_CEILING) // 90 -> 50
+  })
+
+  it('rows contributions are within rounding of the total', () => {
+    const { rows, total } = buildYourVerdictRows(base({ discount: 73, cap_rate: 41, cash_flow: 88 }), even)
+    const sum = rows.reduce((s, r) => s + r.contribution, 0)
+    expect(Math.abs(sum - total)).toBeLessThanOrEqual(0.5)
   })
 })

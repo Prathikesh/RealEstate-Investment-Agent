@@ -22,7 +22,7 @@ import { loadFinancingScenario, type FinancingLive } from '../lib/financingScena
 import { useLang } from '../context/LanguageContext'
 import FinancingWorkbench from '../components/FinancingWorkbench'
 import { STRATEGY_WEIGHTS } from '../lib/verdict'
-import { buildFactorRows } from '../lib/propertyVerdict'
+import { buildFactorRows, buildScoreLedger, componentsForProperty, type LedgerRow } from '../lib/propertyVerdict'
 
 // Code-split: MapLibre (~210KB gzip) loads only when the Zoning tab renders.
 const ZoningMap = lazy(() => import('../components/ZoningMap'))
@@ -759,6 +759,13 @@ function buildScoreFactors(prop: PropertyDetail) {
   return buildFactorRows(prop, weights)
 }
 
+// Translation key for a reconciliation-ledger row (risk / neighbourhood / income
+// cap / rounding). Kept beside the panel so the wording lives with the display.
+function ledgerLabelKey(row: LedgerRow): string {
+  if (row.kind === 'risk') return `pp_led_risk_${row.reason ?? 'medium'}`
+  return `pp_led_${row.kind}`
+}
+
 // ── Investment Report (main data-driven section) ──────────────────────────────
 
 function InvestmentReport({ prop }: { prop: PropertyDetail }) {
@@ -1009,11 +1016,11 @@ function InvestmentReport({ prop }: { prop: PropertyDetail }) {
                     </span>
                   </div>
                 </div>
-                <div className="h-2.5 bg-surface-border rounded-full overflow-hidden">
+                <div className="h-3.5 bg-surface-border rounded-full overflow-hidden">
                   <div
                     className="h-full rounded-full transition-all duration-700 ease-out"
                     style={{
-                      width: `${f.score}%`,
+                      width: `${Math.max(f.score, 1.5)}%`,
                       backgroundColor: f.score >= 70 ? GREEN : f.score >= 40 ? '#F59E0B' : RED,
                     }}
                   />
@@ -1021,14 +1028,39 @@ function InvestmentReport({ prop }: { prop: PropertyDetail }) {
               </div>
             ))}
           </div>
-          {/* Arithmetic footer — the contributions sum to the base score, so the
-              total is never a black box: it's the sum of the +pts above. */}
-          <div className="pt-3 mt-1 border-t border-surface-border flex items-center justify-between">
-            <span className="text-xs text-muted">{t('pp_h_scoreSum')}</span>
-            <span className="text-sm font-black font-mono text-accent">
-              {factors.reduce((s, f) => s + f.contribution, 0).toFixed(1)} pts
-            </span>
-          </div>
+          {/* Reconciliation ledger — the factor subtotal, then every backend
+              adjustment (risk / neighbourhood / income cap / rounding) that moves
+              it, ending at the exact score in the header. subtotal + Σ rows ===
+              score, so "why is this a 21 when the factors add to 36?" is answered
+              on screen instead of being a black box. */}
+          {prop.score != null && (() => {
+            const ledger = buildScoreLedger(factors, componentsForProperty(prop), prop.score)
+            return (
+              <div className="pt-3 mt-1 border-t border-surface-border space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted">{t('pp_led_subtotal')}</span>
+                  <span className="text-sm font-mono font-semibold text-ink">{ledger.subtotal.toFixed(1)}</span>
+                </div>
+                {ledger.rows.map((row, i) => (
+                  <div key={i} className="flex items-center justify-between">
+                    <span className="text-xs text-muted">{t(ledgerLabelKey(row))}</span>
+                    <span className={clsx(
+                      'text-sm font-mono font-semibold',
+                      row.delta < 0 ? 'text-red-600' : row.delta > 0 ? 'text-emerald-700' : 'text-muted',
+                    )}>
+                      {row.delta > 0 ? '+' : ''}{row.delta.toFixed(1)}
+                    </span>
+                  </div>
+                ))}
+                <div className="flex items-center justify-between pt-2 mt-0.5 border-t border-surface-border">
+                  <span className="text-xs font-bold text-ink">{t('pp_led_final')}</span>
+                  <span className="text-sm font-black font-mono text-accent">
+                    {ledger.final} <span className="text-muted font-semibold">/ 100</span>
+                  </span>
+                </div>
+              </div>
+            )
+          })()}
           {prop.analysis_confidence && (
             <div className="pt-3 border-t border-surface-border flex items-center justify-between text-xs text-muted">
               <span>{prop.comparable_count ?? 0} comparable sales · {prop.analysis_confidence} confidence</span>

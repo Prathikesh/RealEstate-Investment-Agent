@@ -13,7 +13,7 @@ import {
 } from '../api'
 import { useLang } from '../context/LanguageContext'
 import { useAuth } from '../auth/AuthContext'
-import { loadBuyBox, BUYBOX_KEYS, BUYBOX_FIELDS } from '../lib/buybox'
+import { loadBuyBox, cleanBuyBox, BUYBOX_KEYS, BUYBOX_FIELDS, type BuyBox } from '../lib/buybox'
 import { ValueSlider } from '../components/ValueSlider'
 import { Sparkles, SlidersHorizontal as SlidersIcon } from 'lucide-react'
 import ScoreBadge from '../components/ScoreBadge'
@@ -98,9 +98,12 @@ export default function Properties() {
     if (hasBuyBoxParam) return
     // Account is the source of truth (syncs across devices); fall back to the
     // localStorage cache before `user` has loaded.
-    const bb = user?.custom_buy_box ?? loadBuyBox()
+    // cleanBuyBox keeps 0 / negatives for allow-negative fields (cash flow) and
+    // drops null / NaN / zero elsewhere — same "is this a real target?" rule the
+    // rest of the app uses, so a cash-flow floor of $0 seeds too.
+    const bb = cleanBuyBox((user?.custom_buy_box ?? loadBuyBox()) as BuyBox)
     const entries = BUYBOX_KEYS
-      .filter(k => bb[k] != null && bb[k] !== 0)
+      .filter(k => bb[k] != null)
       .map(k => [k, String(bb[k])] as [string, string])
     if (entries.length === 0) return
     const next = new URLSearchParams(params)
@@ -535,6 +538,7 @@ export default function Properties() {
                   step={cfg.step}
                   prefix={cfg.prefix}
                   suffix={cfg.suffix}
+                  allowNegative={cfg.allowNegative}
                 />
               ))}
             </div>

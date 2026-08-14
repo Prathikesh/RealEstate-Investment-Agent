@@ -118,6 +118,11 @@ BUY_BOX_KEYS = {
     "price_drop_min", "price_drop_pct_min", "price_max",
 }
 
+# Targets where 0 / negatives are legitimate (an investor may accept break-even or
+# a small monthly loss). For every other key a non-positive value means "no target"
+# and is dropped. Mirrors the frontend lib/buybox.ts allowNegative fields.
+BUY_BOX_ALLOW_NONPOSITIVE = {"cash_flow_min"}
+
 
 # ── Cookie helpers ────────────────────────────────────────────────────────────
 
@@ -277,7 +282,10 @@ async def update_me(
         raw_box = data["custom_buy_box"]
         clean_box: dict[str, float] = {}
         for k, v in raw_box.items():
-            if k in BUY_BOX_KEYS and isinstance(v, (int, float)) and v > 0:
+            if k not in BUY_BOX_KEYS or isinstance(v, bool) or not isinstance(v, (int, float)):
+                continue
+            # Most targets drop at <= 0 ("no target"); cash flow keeps 0 / negatives.
+            if v > 0 or k in BUY_BOX_ALLOW_NONPOSITIVE:
                 clean_box[k] = float(v)
         data["custom_buy_box"] = clean_box
 

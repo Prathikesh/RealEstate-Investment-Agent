@@ -490,6 +490,7 @@ export default function Settings() {
                 step={cfg.step}
                 prefix={cfg.prefix}
                 suffix={cfg.suffix}
+                allowNegative={cfg.allowNegative}
               />
             ))}
           </div>

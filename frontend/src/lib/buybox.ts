@@ -51,13 +51,16 @@ export interface BuyBoxField {
   prefix?: string
   suffix: string
   scored: boolean
+  // When true, 0 and negative targets are valid (not treated as "off"). Only cash
+  // flow uses this — an investor may accept break-even or a small monthly loss.
+  allowNegative?: boolean
 }
 
 export const BUYBOX_FIELDS: BuyBoxField[] = [
   {
     key: 'cash_flow_min', label: 'Cash Flow', color: '#10B981', scored: true,
     desc: 'Monthly profit after mortgage, taxes & expenses',
-    min: 0, max: 3000, step: 50, prefix: '$', suffix: '/mo',
+    min: -1000, max: 3000, step: 50, prefix: '$', suffix: '/mo', allowNegative: true,
   },
   {
     key: 'cap_rate_min', label: 'Cap Rate', color: '#0EA5E9', scored: true,
@@ -81,10 +84,24 @@ export const BUYBOX_FIELDS: BuyBoxField[] = [
   },
 ]
 
-/** Strip blank / zero / NaN entries so they never act as a filter. */
+// Fields where 0 / negatives are legitimate targets (not "off"), so cleanBuyBox
+// must keep them. Derived from BUYBOX_FIELDS so it stays in sync automatically.
+const ALLOW_NEGATIVE_KEYS = new Set<keyof BuyBox>(
+  BUYBOX_FIELDS.filter(f => f.allowNegative).map(f => f.key),
+)
+
+/**
+ * Strip blank / NaN entries so they never act as a filter. For most fields `0`
+ * also means "off" and is dropped; for allow-negative fields (cash flow) `0` and
+ * negatives are real targets and are kept — only an empty box (undefined) is off.
+ */
 export function cleanBuyBox(bb: BuyBox): BuyBox {
   return Object.fromEntries(
-    Object.entries(bb).filter(([, v]) => v != null && v !== 0 && !Number.isNaN(v)),
+    Object.entries(bb).filter(([k, v]) => {
+      if (v == null || Number.isNaN(v)) return false
+      if (ALLOW_NEGATIVE_KEYS.has(k as keyof BuyBox)) return true
+      return v !== 0
+    }),
   ) as BuyBox
 }
 

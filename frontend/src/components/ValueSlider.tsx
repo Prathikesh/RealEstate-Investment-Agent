@@ -21,23 +21,30 @@ export interface ValueSliderProps {
   prefix?: string
   suffix?: string
   compact?: boolean
+  // When true, 0 and negative values are valid targets (e.g. accept cash flow down
+  // to -$1,000/mo). "Off" is then an *empty* box only, not `<= 0`. Default false
+  // keeps every other field's "0 = off" behaviour byte-for-byte unchanged.
+  allowNegative?: boolean
 }
 
 export function ValueSlider({
   label, desc, color, value, onChange,
-  min, max, step, prefix, suffix, compact,
+  min, max, step, prefix, suffix, compact, allowNegative,
 }: ValueSliderProps) {
-  const active = value != null && value > 0
+  const active = allowNegative ? value != null : value != null && value > 0
   // The handle sits at min(value, max); the typed number can exceed the track max.
   const sliderVal = Math.min(Math.max(value ?? min, min), max)
   const pct = ((sliderVal - min) / (max - min)) * 100
   const fill = `linear-gradient(to right, ${color} 0%, ${color} ${pct}%, #E2E8F0 ${pct}%, #E2E8F0 100%)`
   // Size the number box to the widest value it can hold (digits + a little room),
-  // so 5-6 digit targets like a $100,000 price cut are never clipped.
-  const inputCh = Math.max(4, String(Math.max(max, value ?? 0)).length + 1)
+  // so 5-6 digit targets like a $100,000 price cut are never clipped. Account for a
+  // leading minus sign when negatives are allowed.
+  const inputCh = Math.max(4, String(Math.max(max, value ?? 0)).length + (allowNegative ? 2 : 1))
 
   const commit = (v: number | undefined) => {
-    if (v == null || Number.isNaN(v) || v <= 0) onChange(undefined)
+    // Empty / NaN always means "off". Non-positive is off only when negatives
+    // aren't allowed (preserves the original semantics for the other fields).
+    if (v == null || Number.isNaN(v) || (!allowNegative && v <= 0)) onChange(undefined)
     else onChange(v)
   }
 
@@ -59,8 +66,8 @@ export function ValueSlider({
           {prefix && <span className="pl-2.5 text-xs text-muted select-none">{prefix}</span>}
           <input
             type="number"
-            inputMode="numeric"
-            min={0}
+            inputMode={allowNegative ? 'text' : 'numeric'}
+            min={allowNegative ? min : 0}
             step={step}
             value={value ?? ''}
             placeholder="Off"

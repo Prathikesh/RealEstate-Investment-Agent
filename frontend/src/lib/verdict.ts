@@ -168,6 +168,73 @@ export function computeWeightedScore(
   return clamp(Math.round(total))
 }
 
+export interface YourVerdictRow {
+  factor: ScoreFactor
+  weightPct: number    // 0-100
+  score: number        // effective sub-score used (post target-relative + income clamp)
+  contribution: number // score × weight, rounded to 0.1 (the points it adds)
+  targeted: boolean    // scored against the broker's own buy-box number, not the global band
+  capped: boolean      // yield-factor income ceiling actually lowered this sub-score
+}
+
+export interface YourVerdictBreakdown {
+  rows: YourVerdictRow[]
+  total: number // === computeWeightedScore(...) for the same inputs
+}
+
+/**
+ * The per-factor breakdown behind "Your Verdict" — the transparency answer to the
+ * client's "I don't know how I got to 100 points". Replays computeWeightedScore's
+ * exact loop (target-relative sub-scores + the per-yield-factor income ceiling)
+ * and emits one row per factor plus the same total, so the rows visibly add up to
+ * the Your Verdict number. Kept beside computeWeightedScore so the two never drift;
+ * a test asserts `total` equals it for shared inputs.
+ */
+export function buildYourVerdictRows(
+  components: ScoreComponents,
+  weights: ScoreWeights,
+  buyBox?: Record<string, number | undefined> | null,
+  raw?: RawMetrics | null,
+): YourVerdictBreakdown {
+  const incomeEstimated = (components.unverified_income_cap ?? 0) > 0
+  const rows: YourVerdictRow[] = []
+  let total = 0
+  for (const factor of SCORE_FACTORS) {
+    const targetKey = FACTOR_TARGET_KEY[factor]
+    const target = targetKey && buyBox ? buyBox[targetKey] : undefined
+    const rawVal = raw ? raw[factor] : undefined
+    let comp: number | undefined
+    let targeted = false
+    if (target != null && target > 0 && rawVal != null) {
+      comp = clamp((rawVal / target) * 100)
+      targeted = true
+    } else {
+      comp = components[factor]
+    }
+    const weight = weights[factor] ?? 0
+    if (comp == null) {
+      rows.push({ factor, weightPct: Math.round(weight * 100), score: 0, contribution: 0, targeted, capped: false })
+      continue
+    }
+    let capped = false
+    if (INCOME_FACTORS.has(factor) && incomeEstimated) {
+      const clamped = Math.min(comp, UNVERIFIED_INCOME_FACTOR_CEILING)
+      capped = clamped < comp
+      comp = clamped
+    }
+    total += comp * weight
+    rows.push({
+      factor,
+      weightPct: Math.round(weight * 100),
+      score: Math.round(comp),
+      contribution: Math.round(comp * weight * 10) / 10,
+      targeted,
+      capped,
+    })
+  }
+  return { rows, total: clamp(Math.round(total)) }
+}
+
 export type VerdictCategory =
   | 'strong_opportunity'
   | 'worth_investigating'
