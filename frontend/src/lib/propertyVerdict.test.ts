@@ -29,6 +29,27 @@ describe('buildScoreLedger reconciliation invariant', () => {
     expect(l.rows.every(r => r.kind === 'rounding')).toBe(true)
   })
 
+  it('labels a material unexplained gap as an adjustment, not rounding (the live 82.4 -> 87 case)', () => {
+    // Legacy row: components reconstructed with risk=None, so the +4.6 risk/market
+    // context isn't itemised — it must read as an adjustment, never "rounding".
+    const l = buildScoreLedger(rows(82.4), comps({}), 87)
+    expect(reconciles(l)).toBe(true)
+    const gap = l.rows.find(r => r.kind === 'adjustment')!
+    expect(gap.delta).toBe(4.6)
+    expect(l.rows.some(r => r.kind === 'rounding')).toBe(false)
+  })
+
+  it('labels a negative unexplained gap as an adjustment too (the 69.9 -> 62 case)', () => {
+    const l = buildScoreLedger(rows(69.9), comps({}), 62)
+    expect(reconciles(l)).toBe(true)
+    expect(l.rows.find(r => r.kind === 'adjustment')!.delta).toBe(-7.9)
+  })
+
+  it('still calls a sub-0.5 residue plain rounding', () => {
+    const l = buildScoreLedger(rows(36.4), comps({}), 36)
+    expect(l.rows.find(r => r.kind === 'rounding')!.delta).toBe(-0.4)
+  })
+
   it('reconciles the 36 -> 21 case from the Loom (2+ high risks)', () => {
     const l = buildScoreLedger(rows(36.4), comps({ risk_modifier: -15 }), 21)
     expect(reconciles(l)).toBe(true)

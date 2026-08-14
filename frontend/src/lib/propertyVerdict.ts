@@ -85,7 +85,7 @@ export function buildFactorRows(
 
 const round1 = (n: number) => Math.round(n * 10) / 10
 
-export type LedgerRowKind = 'risk' | 'neighbourhood' | 'income' | 'rounding'
+export type LedgerRowKind = 'risk' | 'neighbourhood' | 'income' | 'adjustment' | 'rounding'
 
 export interface LedgerRow {
   kind: LedgerRowKind
@@ -109,9 +109,18 @@ export interface ScoreLedger {
  * `finalScore`, `subtotal + Σ rows === final` always — which is exactly what
  * makes "why is this a 21 when the factors add up to 36?" answerable on screen.
  *
+ * Important: many properties were scored before per-factor components were
+ * stored — their `score_components` were later reconstructed by a backfill that
+ * ran with risk=None / neighbourhood=None (scripts/backfill_score_components.py),
+ * so their stored `risk_modifier` / `neighbourhood_modifier` are 0 even though the
+ * authoritative `score` already includes those adjustments. We therefore can't
+ * always itemize the gap. Whatever's left after the modifiers we DO have is the
+ * AI's risk / neighbourhood / market context: labelled an "adjustment" when it's
+ * material, and plain "rounding" only when it's a sub-0.5 rounding artefact.
+ *
  * The client never gets risk items / neighbourhood percentiles, so this runs
- * only for the AI verdict, off the modifier values the backend already stored in
- * `score_components`. Your Verdict has no such modifiers by design.
+ * only for the AI verdict. Your Verdict is computed purely from components ×
+ * weights (no such modifiers), so its rows always sum exactly to its score.
  */
 export function buildScoreLedger(
   factors: VerdictFactorRow[],
@@ -147,9 +156,13 @@ export function buildScoreLedger(
     running = incomeCap
   }
 
-  // 4. Rounding — the residue to reach the authoritative integer score.
-  const roundingDelta = round1(finalScore - running)
-  if (Math.abs(roundingDelta) >= 0.1) rows.push({ kind: 'rounding', delta: roundingDelta })
+  // 4. Whatever's left to reach the authoritative score. A sub-0.5 residue is a
+  //    rounding artefact; anything larger is the AI's risk / neighbourhood /
+  //    market context that isn't itemised in this property's stored components
+  //    (see the backfill note above) — an honest "adjustment", never "rounding".
+  const residual = round1(finalScore - running)
+  if (Math.abs(residual) >= 0.5) rows.push({ kind: 'adjustment', delta: residual })
+  else if (Math.abs(residual) >= 0.1) rows.push({ kind: 'rounding', delta: residual })
 
   return { subtotal, rows, final: finalScore }
 }

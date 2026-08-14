@@ -987,7 +987,7 @@ function InvestmentReport({ prop }: { prop: PropertyDetail }) {
           <div className="flex items-start justify-between">
             <div>
               <h3 className="text-base font-bold text-ink">{t('pp_h_scoreBreakdown')}</h3>
-              <p className="text-sm text-muted mt-0.5">Each factor's points (sub-score × weight) add up to the score</p>
+              <p className="text-sm text-muted mt-0.5">Each factor's points (sub-score × weight) add up to the factor subtotal below</p>
             </div>
             {prop.score != null && (
               <div className="text-right">
@@ -1042,14 +1042,19 @@ function InvestmentReport({ prop }: { prop: PropertyDetail }) {
                   <span className="text-sm font-mono font-semibold text-ink">{ledger.subtotal.toFixed(1)}</span>
                 </div>
                 {ledger.rows.map((row, i) => (
-                  <div key={i} className="flex items-center justify-between">
-                    <span className="text-xs text-muted">{t(ledgerLabelKey(row))}</span>
-                    <span className={clsx(
-                      'text-sm font-mono font-semibold',
-                      row.delta < 0 ? 'text-red-600' : row.delta > 0 ? 'text-emerald-700' : 'text-muted',
-                    )}>
-                      {row.delta > 0 ? '+' : ''}{row.delta.toFixed(1)}
-                    </span>
+                  <div key={i}>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted">{t(ledgerLabelKey(row))}</span>
+                      <span className={clsx(
+                        'text-sm font-mono font-semibold',
+                        row.delta < 0 ? 'text-red-600' : row.delta > 0 ? 'text-emerald-700' : 'text-muted',
+                      )}>
+                        {row.delta > 0 ? '+' : ''}{row.delta.toFixed(1)}
+                      </span>
+                    </div>
+                    {row.kind === 'adjustment' && (
+                      <p className="text-[11px] text-muted/80 leading-snug mt-0.5 pr-16">{t('pp_led_adjustmentNote')}</p>
+                    )}
                   </div>
                 ))}
                 <div className="flex items-center justify-between pt-2 mt-0.5 border-t border-surface-border">
