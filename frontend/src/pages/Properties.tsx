@@ -90,27 +90,11 @@ export default function Properties() {
   const [suggestOpen, setSuggestOpen] = useState(false)
   const [debouncedAddress, setDebouncedAddress] = useState('')
 
-  // Seed the buy-box targets (set on Settings → My Scoring Criteria) into the
-  // filters ONCE on first mount — only when the URL carries no buy-box params
-  // yet, so it never fights a link the user followed or filters they cleared.
-  useEffect(() => {
-    const hasBuyBoxParam = BUYBOX_KEYS.some(k => params.has(k))
-    if (hasBuyBoxParam) return
-    // Account is the source of truth (syncs across devices); fall back to the
-    // localStorage cache before `user` has loaded.
-    // cleanBuyBox keeps 0 / negatives for allow-negative fields (cash flow) and
-    // drops null / NaN / zero elsewhere — same "is this a real target?" rule the
-    // rest of the app uses, so a cash-flow floor of $0 seeds too.
-    const bb = cleanBuyBox((user?.custom_buy_box ?? loadBuyBox()) as BuyBox)
-    const entries = BUYBOX_KEYS
-      .filter(k => bb[k] != null)
-      .map(k => [k, String(bb[k])] as [string, string])
-    if (entries.length === 0) return
-    const next = new URLSearchParams(params)
-    entries.forEach(([k, v]) => next.set(k, v))
-    setParams(next, { replace: true })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id])
+  // NOTE: the saved buy box is deliberately NOT auto-applied to the default view.
+  // Doing so silently hard-filtered every listing out (a strict buy box → "No
+  // properties found" for no visible reason, especially after navigating back).
+  // The buy box is now applied only when the broker explicitly switches to
+  // "My Metrics" (see rankBy) — and cleared when they switch back to AI.
 
   const filters: PropertyFilters = {
     city:          params.get('city') ?? undefined,
@@ -172,6 +156,23 @@ export default function Properties() {
     setParams(next)
   }
 
+  // Rank-by toggle. "My Metrics" applies the broker's saved buy box as their
+  // criteria; "AI" clears it so the default view never hides listings behind a
+  // buy box the user can't see.
+  function rankBy(mode: 'ai' | 'your') {
+    const next = new URLSearchParams(params)
+    next.delete('page')
+    if (mode === 'ai') {
+      next.set('sort_by', 'score')
+      BUYBOX_KEYS.forEach(k => next.delete(k))
+    } else {
+      next.set('sort_by', 'your_verdict')
+      const bb = cleanBuyBox((user?.custom_buy_box ?? loadBuyBox()) as BuyBox)
+      BUYBOX_KEYS.forEach(k => (bb[k] != null ? next.set(k, String(bb[k])) : next.delete(k)))
+    }
+    setParams(next)
+  }
+
   function setPage(p: number) {
     const next = new URLSearchParams(params)
     next.set('page', String(p))
@@ -220,7 +221,7 @@ export default function Properties() {
           {user && (
             <div className="flex items-center gap-0.5 p-0.5 bg-white border border-surface-border rounded-xl shadow-sm">
               <button
-                onClick={() => setFilter('sort_by', 'score')}
+                onClick={() => rankBy('ai')}
                 title={lang === 'fr' ? 'Classer par score IA' : 'Rank by the AI score'}
                 className={clsx(
                   'flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150',
@@ -230,7 +231,7 @@ export default function Properties() {
                 <Sparkles size={12} /> {lang === 'fr' ? 'IA' : 'AI'}
               </button>
               <button
-                onClick={() => setFilter('sort_by', 'your_verdict')}
+                onClick={() => rankBy('your')}
                 title={hasCustomWeights
                   ? (lang === 'fr' ? 'Classer selon vos critères' : 'Rank by your own metrics')
                   : (lang === 'fr' ? 'Définissez vos critères dans Réglages' : 'Set your metrics in Settings first')}
