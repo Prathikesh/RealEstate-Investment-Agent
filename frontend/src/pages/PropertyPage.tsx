@@ -1,6 +1,6 @@
 import { useState, useMemo, lazy, Suspense } from 'react'
 import { displayAddress } from '../lib/address'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   ArrowLeft, ExternalLink, RefreshCw, MapPin, Calendar,
@@ -124,6 +124,18 @@ const TAB_LABELS: Record<TabKey, string> = {
 export default function PropertyPage() {
   const { id } = useParams<{ id: string }>()
   const { t } = useLang()
+  const navigate = useNavigate()
+
+  // Return to the exact list the user came from — preserving their filters and
+  // scroll — instead of a bare /properties, which drops filters AND re-seeds the
+  // saved buy-box as hidden hard filters (that combo showed "No properties found"
+  // until Clear all). Fall back to /properties only for deep links with no
+  // in-app history to go back to.
+  const backToList = () => {
+    const idx = (window.history.state as { idx?: number } | null)?.idx ?? 0
+    if (idx > 0) navigate(-1)
+    else navigate('/properties')
+  }
   const [activeTab, setActiveTab] = useState<TabKey>('aiBrief')
   // Live financing scenario, shared across tabs so "Your Verdict" reacts to the
   // same down-payment / rate "what if" on the AI Verdict tab as in the workbench.
@@ -156,14 +168,15 @@ export default function PropertyPage() {
   return (
     <div className="p-6 space-y-5 max-w-[1600px] mx-auto animate-slide-up">
 
-      {/* Back */}
-      <Link
-        to="/properties"
+      {/* Back — preserves the list's filters/scroll (see backToList) */}
+      <button
+        type="button"
+        onClick={backToList}
         className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-ink transition-colors"
       >
         <ArrowLeft size={14} />
-        Back to properties
-      </Link>
+        {t('pp_backToProperties')}
+      </button>
 
       {/* ── Header ───────────────────────────────────────────────────────── */}
       <div className="card space-y-4">
