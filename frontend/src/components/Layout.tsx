@@ -38,7 +38,9 @@ function SideLink({ to, Icon, label }: { to: string; Icon: typeof Bookmark; labe
               <Icon size={20} />
             </span>
           </span>
-          <span className="text-sm font-semibold whitespace-nowrap">{label}</span>
+          {/* flex-1 + min-w-0 so long FR labels ("Recherches enregistrées") wrap
+              within the rail instead of clipping under overflow-hidden. */}
+          <span className="text-sm font-semibold leading-tight flex-1 min-w-0 pr-4">{label}</span>
         </>
       )}
     </NavLink>
