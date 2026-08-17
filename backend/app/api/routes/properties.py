@@ -79,7 +79,11 @@ def _build_cross_site_prices(sources: list) -> list[CrossSitePrice]:
 # Same PDF for every Laval zone; #page= is honoured by browser PDF viewers.
 _LAVAL_BYLAW_PDF_URL = "https://www.laval.ca/wp-content/uploads/2026/06/cdu-1-reglement-2026-06-08.pdf"
 _QUEBEC_CITY_ZONING_PORTAL_URL = "https://carte.ville.quebec.qc.ca/carteinteractive/"
-_MONTREAL_PUM_URL = "https://montreal.ca/articles/plan-durbanisme-et-de-mobilite-2050-72130"
+# The Montréal estimate is a PUM-2050 planning signal, not a per-lot bylaw — so the
+# most useful "verify this lot" link is the city's address-searchable interactive
+# planning maps (per-borough zoning), NOT the generic PUM article page (which the
+# client flagged as "going somewhere wrong").
+_MONTREAL_ZONING_MAP_URL = "https://montreal.ca/services/cartes-interactives-amenagement-du-territoire"
 
 
 def _source_document_url(city: str, decode_table_page: Optional[int]) -> Optional[str]:
@@ -88,7 +92,7 @@ def _source_document_url(city: str, decode_table_page: Optional[int]) -> Optiona
     if city == "quebec_city":
         return _QUEBEC_CITY_ZONING_PORTAL_URL
     if city == "montreal":
-        return _MONTREAL_PUM_URL
+        return _MONTREAL_ZONING_MAP_URL
     return None
 
 

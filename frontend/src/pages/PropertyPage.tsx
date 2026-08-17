@@ -1622,6 +1622,7 @@ const AFFECT_DESC: Record<string, string> = {
 }
 
 function ZoningExplainer({ prop, z }: { prop: PropertyDetail; z: NonNullable<PropertyDetail['zoning']> }) {
+  const { t } = useLang()
   const current = currentUnits(prop)
   const permitted = z.estimated_max_units ?? null
   const isEnvelope = z.estimate_method === 'envelope'
@@ -1817,7 +1818,7 @@ function ZoningExplainer({ prop, z }: { prop: PropertyDetail; z: NonNullable<Pro
             className="inline-flex items-center gap-1 text-xs font-semibold text-accent hover:underline"
           >
             <ExternalLink size={11} />
-            View the official source document
+            {t('pp_zoning_source_generic')}
           </a>
         )}
         <p className="text-xs text-muted italic">Indicative only — confirm with the municipality before acting.</p>
@@ -2104,12 +2105,66 @@ function FloodRiskCard({ prop }: { prop: PropertyDetail }) {
   )
 }
 
+// Answer-first banner — a mortgage broker sees the plain-language verdict and the
+// honesty caveat before any step-by-step derivation. The detailed "how" stays in
+// ZoningExplainer; this is only the "what". Green = verified per-lot upside, amber =
+// planning-grade signal (Montréal PUM), neutral = no added-unit upside.
+function ZoningHeadline({ prop, z }: { prop: PropertyDetail; z: NonNullable<PropertyDetail['zoning']> }) {
+  const { t } = useLang()
+  const current = currentUnits(prop)
+  const permitted = z.estimated_max_units ?? null
+  const hasEstimate = permitted != null
+  const hasUpside = hasEstimate && permitted > current
+  const isPlan = z.plan_name != null || z.estimate_method === 'density_target'
+
+  // "No estimate" (missing lot size / undecoded rules) is NOT the same as "no
+  // upside" — say so honestly instead of implying the lot is already maxed out.
+  const msg = !hasEstimate
+    ? t('pp_zh_unknown')
+    : isPlan
+      ? (hasUpside ? t('pp_zh_plan_upside') : t('pp_zh_plan_none'))
+      : hasUpside
+        ? (z.estimate_method === 'envelope' ? t('pp_zh_lot_envelope') : t('pp_zh_lot_permit'))
+        : t('pp_zh_lot_none')
+
+  const tone = !hasUpside ? 'neutral' : isPlan ? 'plan' : 'strong'
+  const box = tone === 'strong' ? 'bg-score-strong/[0.07] border-score-strong/25'
+            : tone === 'plan'   ? 'bg-score-market/[0.07] border-score-market/25'
+            :                     'bg-surface border-surface-border'
+  const numColor = tone === 'strong' ? 'text-score-strong' : tone === 'plan' ? 'text-score-market' : 'text-ink'
+  const approx = isPlan || z.estimate_method === 'envelope'
+
+  return (
+    <div className={clsx('rounded-xl border p-4 flex items-center gap-4 flex-wrap', box)}>
+      {hasUpside && permitted != null && (
+        <div className="flex items-center gap-3 shrink-0">
+          <div className="text-center">
+            <p className="text-2xl font-black tabular-nums text-ink leading-none">{current}</p>
+            <p className="text-[10.5px] text-muted mt-0.5">{t('pp_zh_today')}</p>
+          </div>
+          <ChevronRight size={18} className="text-muted/50" />
+          <div className="text-center">
+            <p className={clsx('text-2xl font-black tabular-nums leading-none', numColor)}>
+              {approx ? `~${permitted}` : permitted}
+            </p>
+            <p className="text-[10.5px] text-muted mt-0.5">{t('pp_zh_potential')}</p>
+          </div>
+        </div>
+      )}
+      <p className="text-[13px] leading-relaxed text-ink/90 flex-1 min-w-[240px]">{msg}</p>
+    </div>
+  )
+}
+
 function ZoningTab({ prop }: { prop: PropertyDetail }) {
+  const { t } = useLang()
   const z = prop.zoning
   const floodFlags = (prop.constraints || []).filter(c => c.type === 'flood')
   const hasFlood = floodFlags.length > 0
 
   if (!z) {
+    const cityName = prop.city?.split('(')[0].trim() || ''
+    const covered = /montr|laval/i.test(cityName)
     return (
       <div className="space-y-5">
         {prop.constraints && prop.constraints.length > 0 && <DealKillerBanner flags={prop.constraints} />}
@@ -2120,12 +2175,15 @@ function ZoningTab({ prop }: { prop: PropertyDetail }) {
           </div>
         )}
         <div className="card text-center py-10 space-y-2">
-          <p className="text-sm font-semibold text-ink">No zoning data available yet</p>
+          <p className="text-sm font-semibold text-ink">
+            {covered ? t('pp_zoning_empty_title_um') : t('pp_zoning_empty_title_nc')}
+          </p>
           <p className="text-xs text-muted max-w-md mx-auto">
-            {prop.city?.split('(')[0].trim() || 'This city'} isn't covered by our zoning
-            data yet. Coverage currently includes <span className="font-semibold text-ink">Montréal</span> and{' '}
-            <span className="font-semibold text-ink">Laval</span>, expanding city by city. Everything else on this
-            property — score, financials and alerts — still works.
+            {covered ? (
+              <>{t('pp_zoning_empty_um_a')}<span className="font-semibold text-ink">{cityName}</span>{t('pp_zoning_empty_um_b')}</>
+            ) : (
+              <><span className="font-semibold text-ink">{cityName || 'This city'}</span>{t('pp_zoning_empty_nc_b')}</>
+            )}
           </p>
         </div>
       </div>
@@ -2134,6 +2192,10 @@ function ZoningTab({ prop }: { prop: PropertyDetail }) {
 
   const isFullyDecoded = z.confidence === 'verified' || z.confidence === 'official'
   const isPartial = z.confidence === 'partial_decode'
+  // Montréal is a citywide PUM-2050 planning target, not a decoded per-lot bylaw —
+  // so it must NOT wear the green "Verified" badge (the client read that as a
+  // guaranteed per-lot number and found it wrong). Label it as a plan estimate.
+  const isPlanEstimate = z.plan_name != null || z.estimate_method === 'density_target'
 
   return (
     <div className="space-y-5">
@@ -2141,15 +2203,20 @@ function ZoningTab({ prop }: { prop: PropertyDetail }) {
         <h3 className="text-base font-bold text-ink">Zoning &amp; Development Potential</h3>
         <span className={clsx(
           'px-2 py-0.5 rounded-lg text-xs font-semibold border',
+          isPlanEstimate ? 'bg-score-market/10 text-score-market border-score-market/25' :
           isFullyDecoded ? 'bg-score-strong/10 text-score-strong border-score-strong/25' :
           isPartial      ? 'bg-score-market/10 text-score-market border-score-market/25' :
                            'bg-surface-hover text-muted border-surface-border',
         )}>
-          {isFullyDecoded ? 'Verified' : isPartial ? 'Partial data' : 'Basic zone info'}
+          {isPlanEstimate ? t('pp_zoning_badge_plan') : isFullyDecoded ? 'Verified' : isPartial ? 'Partial data' : 'Basic zone info'}
         </span>
       </div>
 
       {prop.constraints && prop.constraints.length > 0 && <DealKillerBanner flags={prop.constraints} />}
+
+      {/* Plain-language answer first — suppressed when a deal-killer constraint is
+          present, so we never cheerlead "build more" over a flood/agri warning. */}
+      {(!prop.constraints || prop.constraints.length === 0) && <ZoningHeadline prop={prop} z={z} />}
 
       {/* Left: map + real measurements  ·  Right: explainable reasoning.
           No items-start — grid stretches both columns to equal height, and the
@@ -2168,7 +2235,10 @@ function ZoningTab({ prop }: { prop: PropertyDetail }) {
               className="flex items-center justify-center gap-1.5 text-xs font-semibold text-accent hover:underline py-1"
             >
               <ExternalLink size={12} />
-              Verify on the official {z.city.replace('_', ' ')} government site
+              {z.city === 'montreal' ? t('pp_zoning_verify_montreal')
+               : z.city === 'laval' ? t('pp_zoning_verify_laval')
+               : z.city === 'quebec_city' ? t('pp_zoning_verify_qc')
+               : t('pp_zoning_verify_generic')}
             </a>
           )}
         </div>
