@@ -1464,21 +1464,12 @@ function FinancialsTab({ prop, t, pricePerSqft, onScenarioChange }: {
 
 // ── Zoning tab ─────────────────────────────────────────────────────────────────
 
+// Values are translation keys (see LanguageContext), resolved via t() at call sites.
 const TYPE_MILIEU_LABELS: Record<string, string> = {
-  T1: 'Natural — protected/low-impact areas',
-  T2: 'Agricultural — farming perimeter',
-  T3: 'Suburban — mostly single-family, low density',
-  T4: 'Urban — gentle densification, up to ~2-3 storeys',
-  T5: 'Urban compact — medium-high density, up to 25 storeys',
-  T6: 'Urban centrality — highest density zone',
-  CI: 'Institutional',
-  ZC: 'Commercial zone',
-  ZE: 'Ecological zone',
-  ZH: 'Housing zone',
-  ZI: 'Industrial zone',
-  ZM: 'Mixed zone',
-  ZP: 'Park zone',
-  SZD: 'Special development zone',
+  T1: 'zt_tm_T1', T2: 'zt_tm_T2', T3: 'zt_tm_T3', T4: 'zt_tm_T4',
+  T5: 'zt_tm_T5', T6: 'zt_tm_T6', CI: 'zt_tm_CI', ZC: 'zt_tm_ZC',
+  ZE: 'zt_tm_ZE', ZH: 'zt_tm_ZH', ZI: 'zt_tm_ZI', ZM: 'zt_tm_ZM',
+  ZP: 'zt_tm_ZP', SZD: 'zt_tm_SZD',
 }
 
 function typeMilieuLabel(code: string | null): string | null {
@@ -1500,6 +1491,7 @@ function currentUnits(prop: PropertyDetail): number {
 // Deliberately NOT showing "zone area" — a zone polygon covers many properties,
 // so that number would look like it's about this property when it isn't.
 function MeasurementsStrip({ prop, z }: { prop: PropertyDetail; z: NonNullable<PropertyDetail['zoning']> }) {
+  const { t } = useLang()
   // Prefer the scraped lot size; fall back to the official assessment-roll lot
   // (same figure the buildable estimate uses), converting m² → sqft.
   const lotFromRecord = z.estimate_lot_m2 != null ? Math.round(z.estimate_lot_m2 * 10.7639) : null
@@ -1509,11 +1501,11 @@ function MeasurementsStrip({ prop, z }: { prop: PropertyDetail; z: NonNullable<P
     <div className="grid grid-cols-3 gap-2">
       <div className="rounded-xl border border-surface-border p-3 text-center">
         <p className="text-lg font-bold tabular-nums text-ink">{lotSqft?.toLocaleString() ?? '—'}</p>
-        <p className="text-[11px] text-muted mt-0.5">lot sqft{lotIsOfficial && <span className="text-accent"> · official</span>}</p>
+        <p className="text-[11px] text-muted mt-0.5">{t('zt_lotSqft')}{lotIsOfficial && <span className="text-accent"> · {t('zt_official')}</span>}</p>
       </div>
       <div className="rounded-xl border border-surface-border p-3 text-center">
         <p className="text-lg font-bold tabular-nums text-ink">{prop.sqft_total?.toLocaleString() ?? '—'}</p>
-        <p className="text-[11px] text-muted mt-0.5">building sqft</p>
+        <p className="text-[11px] text-muted mt-0.5">{t('zt_buildingSqft')}</p>
       </div>
       {/* Montréal's internal PUM ids aren't meaningful to a user — show the land-use
           designation instead; Laval/QC keep their real zone code. */}
@@ -1521,7 +1513,7 @@ function MeasurementsStrip({ prop, z }: { prop: PropertyDetail; z: NonNullable<P
         <p className="text-base font-bold text-ink truncate" title={z.affectation ?? z.zone_code}>
           {z.affectation ?? z.zone_code}
         </p>
-        <p className="text-[11px] text-muted mt-0.5">{z.affectation ? 'land use' : 'zone code'}</p>
+        <p className="text-[11px] text-muted mt-0.5">{z.affectation ? t('zt_landUse') : t('zt_zoneCode')}</p>
       </div>
     </div>
   )
@@ -1529,20 +1521,22 @@ function MeasurementsStrip({ prop, z }: { prop: PropertyDetail; z: NonNullable<P
 
 // ── Explainer (right column) — walks through the reasoning, doesn't just assert it ──
 
+// label/detail are translation keys (resolved via t()); unknown fallbacks pass
+// through t() unchanged.
 const TIER_INFO: Record<string, { label: string; detail: string }> = {
-  '1 logement':               { label: 'Single dwelling', detail: 'One home on the lot — no added-unit potential here unless the zone also permits a higher tier.' },
-  '2 ou 3 logements':         { label: '2–3 dwellings',   detail: 'A duplex or triplex: up to three separate units in one building.' },
-  '4 logements ou plus':      { label: '4+ dwellings',    detail: 'A small apartment building — four units or more. The exact ceiling comes from the lot size, coverage and height limits.' },
-  'habitation (h2)':          { label: 'Duplex (H2)',     detail: 'A two-dwelling residential building.' },
-  'habitation collective (h2)': { label: 'Multi-unit (H2)', detail: 'A multi-dwelling residential building type.' },
-  'habitation (h3)':          { label: 'Triplex (H3)',    detail: 'A three-dwelling building type recognised by the bylaw.' },
-  'habitation (h4)':          { label: '4+ unit building (H4)', detail: 'A residential building of four or more dwellings.' },
+  '1 logement':               { label: 'zt_tier_1log_l', detail: 'zt_tier_1log_d' },
+  '2 ou 3 logements':         { label: 'zt_tier_2or3_l', detail: 'zt_tier_2or3_d' },
+  '4 logements ou plus':      { label: 'zt_tier_4plus_l', detail: 'zt_tier_4plus_d' },
+  'habitation (h2)':          { label: 'zt_tier_h2_l',  detail: 'zt_tier_h2_d' },
+  'habitation collective (h2)': { label: 'zt_tier_h2c_l', detail: 'zt_tier_h2c_d' },
+  'habitation (h3)':          { label: 'zt_tier_h3_l',  detail: 'zt_tier_h3_d' },
+  'habitation (h4)':          { label: 'zt_tier_h4_l',  detail: 'zt_tier_h4_d' },
 }
 
 const STRUCTURE_INFO: Record<string, { label: string; detail: string }> = {
-  'Isolé':   { label: 'Standalone', detail: 'A free-standing building that doesn’t touch its neighbours.' },
-  'Jumelé':  { label: 'Semi-detached', detail: 'Shares one wall with the building next door.' },
-  'Contigu': { label: 'Row-house', detail: 'Attached on both sides in a row — usually the cheapest form to build (shared walls).' },
+  'Isolé':   { label: 'zt_struct_iso_l',  detail: 'zt_struct_iso_d' },
+  'Jumelé':  { label: 'zt_struct_jum_l',  detail: 'zt_struct_jum_d' },
+  'Contigu': { label: 'zt_struct_con_l',  detail: 'zt_struct_con_d' },
 }
 
 function tierInfo(raw: string) {
@@ -1569,6 +1563,7 @@ function ExplainerStep({ n, title, children, last }: { n: number; title: string;
 
 // Clickable: tap a permitted use to reveal a plain-English explanation.
 function PermittedTierChip({ tier, structures }: { tier: string; structures: string[] }) {
+  const { t } = useLang()
   const [open, setOpen] = useState(false)
   const info = tierInfo(tier)
   const structs = structures.map(s => STRUCTURE_INFO[s] ?? { label: s, detail: '' })
@@ -1581,19 +1576,19 @@ function PermittedTierChip({ tier, structures }: { tier: string; structures: str
       )}
     >
       <div className="flex items-center justify-between gap-2">
-        <span className="text-sm font-bold text-ink">{info.label}</span>
+        <span className="text-sm font-bold text-ink">{t(info.label)}</span>
         <ChevronRight size={15} className={clsx('text-muted shrink-0 transition-transform duration-200', open && 'rotate-90')} />
       </div>
-      <p className="text-xs text-muted mt-0.5">{structs.map(s => s.label).join(' · ')}</p>
+      <p className="text-xs text-muted mt-0.5">{structs.map(s => t(s.label)).join(' · ')}</p>
       <div className={clsx('grid transition-all duration-200 ease-out', open ? 'grid-rows-[1fr] opacity-100 mt-2.5' : 'grid-rows-[0fr] opacity-0')}>
         <div className="overflow-hidden">
-          {info.detail && <p className="text-[13px] text-ink/80 leading-relaxed">{info.detail}</p>}
+          {info.detail && <p className="text-[13px] text-ink/80 leading-relaxed">{t(info.detail)}</p>}
           {structs.some(s => s.detail) && (
             <ul className="mt-2 space-y-1">
               {structs.filter(s => s.detail).map(s => (
                 <li key={s.label} className="text-xs text-muted flex gap-1.5">
-                  <span className="font-semibold text-ink/70 shrink-0">{s.label}:</span>
-                  <span>{s.detail}</span>
+                  <span className="font-semibold text-ink/70 shrink-0">{t(s.label)}:</span>
+                  <span>{t(s.detail)}</span>
                 </li>
               ))}
             </ul>
@@ -1604,21 +1599,21 @@ function PermittedTierChip({ tier, structures }: { tier: string; structures: str
   )
 }
 
-// Montréal PUM 2050 vocabulary → plain English (the plan is published in French).
+// Montréal PUM 2050 vocabulary → plain language. Values are translation keys.
 const INTENS_INFO: Record<string, { label: string; desc: string }> = {
-  'Douce':          { label: 'gentle',       desc: 'modest, incremental densification' },
-  'Intermédiaire':  { label: 'intermediate', desc: 'moderate densification is encouraged' },
-  'Élevée':         { label: 'high',         desc: 'the city is actively targeting densification here' },
+  'Douce':          { label: 'zt_intens_douce_l', desc: 'zt_intens_douce_d' },
+  'Intermédiaire':  { label: 'zt_intens_inter_l', desc: 'zt_intens_inter_d' },
+  'Élevée':         { label: 'zt_intens_high_l',  desc: 'zt_intens_high_d' },
 }
 const AFFECT_DESC: Record<string, string> = {
-  'Résidentiel':                                     'primarily housing',
-  'Mixte':                                           'mixed-use — housing alongside shops and services',
-  'Conservation':                                    'protected / conservation land',
-  'Agricole':                                        'agricultural',
-  'Activités économiques':                           'employment / economic activity',
-  'Activités diversifiées':                          'diversified activity',
-  'Récréation et accès aux rives':                   'recreation and waterfront access',
-  'Grande emprise ou grande infrastructure publique': 'major public infrastructure',
+  'Résidentiel':                                     'zt_affect_res',
+  'Mixte':                                           'zt_affect_mixte',
+  'Conservation':                                    'zt_affect_cons',
+  'Agricole':                                        'zt_affect_agri',
+  'Activités économiques':                           'zt_affect_econ',
+  'Activités diversifiées':                          'zt_affect_div',
+  'Récréation et accès aux rives':                   'zt_affect_recr',
+  'Grande emprise ou grande infrastructure publique': 'zt_affect_infra',
 }
 
 function ZoningExplainer({ prop, z }: { prop: PropertyDetail; z: NonNullable<PropertyDetail['zoning']> }) {
@@ -1643,50 +1638,48 @@ function ZoningExplainer({ prop, z }: { prop: PropertyDetail; z: NonNullable<Pro
   const intens = z.intensification ? INTENS_INFO[z.intensification] : null
   const affectDesc = z.affectation ? AFFECT_DESC[z.affectation] : null
 
+  // Pre-resolved fragments so the sentences below are single interpolated strings.
+  const unitW = (n: number) => (n === 1 ? t('zt_unit') : t('zt_units'))
+  const lotStr = lotSqft != null ? `${lotSqft.toLocaleString()} ${t('sqft')}` : ''
+  const officialTag = z.estimate_lot_source === 'assessment_roll' ? ` (${t('zt_officialRecord')})` : ''
+  const densityParen = z.min_density_per_ha != null ? t('zt_densityParen', { d: z.min_density_per_ha }) : ''
+  const intensParen = intens ? t('zt_intensParen', { level: t(intens.label) }) : ''
+  const affectDescStr = affectDesc ? ` — ${t(affectDesc)}` : ''
+  const intensStr = intens ? ` ${t('zt_ex_s2m_intens', { level: t(intens.label), desc: t(intens.desc) })}` : ''
+  const catLabelStr = categoryLabel ? ` — ${t(categoryLabel).toLowerCase()}` : ''
+  const pageStr = z.decode_table_page ? t('zt_ex_s3_page', { p: z.decode_table_page }) : ''
+
   return (
     <div className="card flex flex-col">
-      <h3 className="text-base font-bold text-ink mb-5">How we got this number</h3>
+      <h3 className="text-base font-bold text-ink mb-5">{t('zt_ex_title')}</h3>
 
       <div className="flex-1">
-        <ExplainerStep n={1} title="What's built here today">
-          This is a <span className="capitalize">{propTypeLabel}</span>
-          {prop.unit_count ? `, ${prop.unit_count} unit${prop.unit_count === 1 ? '' : 's'}` : ` (${current} unit assumed from the property type)`}.
+        <ExplainerStep n={1} title={t('zt_ex_s1_title')}>
+          {t('zt_ex_s1_lead')} <span className="capitalize">{propTypeLabel}</span>
+          {prop.unit_count ? t('zt_ex_s1_units', { n: prop.unit_count, u: unitW(prop.unit_count) }) : t('zt_ex_s1_assumed', { n: current, u: unitW(current) })}.
         </ExplainerStep>
 
         {isMontreal ? (
           <>
-            <ExplainerStep n={2} title="Its land-use designation">
-              Under Montréal's <span className="font-semibold text-ink">{z.plan_name}</span>, this lot is in
-              a <span className="font-semibold text-ink">{z.affectation}</span> area
-              {affectDesc && <> — {affectDesc}</>}.
-              {intens && <> The plan sets urban intensification here to <span className="font-semibold text-ink">{intens.label}</span> — {intens.desc}.</>}
+            <ExplainerStep n={2} title={t('zt_ex_s2m_title')}>
+              {t('zt_ex_s2m_body', { plan: z.plan_name ?? '', affect: z.affectation ?? '' })}{affectDescStr}.{intensStr}
             </ExplainerStep>
 
-            <ExplainerStep n={3} title="What the city plan targets">
-              {z.min_density_per_ha != null ? (
-                <>
-                  The plan sets a <strong className="text-ink">minimum average net density of {z.min_density_per_ha} dwellings per hectare</strong> for
-                  this area. Montréal's exact per-lot limits (height, units) are set by the borough zoning bylaw —
-                  this citywide layer shows the density the city is planning for.
-                </>
-              ) : (
-                <>This designation isn't residential, so the plan sets no dwelling-density target here.</>
-              )}
+            <ExplainerStep n={3} title={t('zt_ex_s3m_title')}>
+              {z.min_density_per_ha != null
+                ? t('zt_ex_s3m_density', { d: z.min_density_per_ha })
+                : t('zt_ex_s3m_nonres')}
             </ExplainerStep>
           </>
         ) : (
           <>
-            <ExplainerStep n={2} title="Its zoning classification">
-              This lot sits in zone <span className="font-mono font-semibold text-ink">{z.zone_code}</span>, category{' '}
-              <span className="font-semibold text-ink">{z.type_milieu}</span>
-              {categoryLabel && <> — {categoryLabel.toLowerCase()}</>}.
+            <ExplainerStep n={2} title={t('zt_ex_s2_title')}>
+              {t('zt_ex_s2_body', { zone: z.zone_code, cat: z.type_milieu ?? '' })}{catLabelStr}.
             </ExplainerStep>
 
             {tierEntries.length > 0 ? (
-              <ExplainerStep n={3} title="What the bylaw permits, and why">
-                <p className="mb-2">
-                  Per the Code de l'urbanisme{z.decode_table_page && <>, page {z.decode_table_page}</>}, this zone allows:
-                </p>
+              <ExplainerStep n={3} title={t('zt_ex_s3_title')}>
+                <p className="mb-2">{t('zt_ex_s3_intro', { page: pageStr })}</p>
                 <div className="space-y-1.5">
                   {tierEntries.map(([tier, structures]) => (
                     <PermittedTierChip key={tier} tier={tier} structures={structures} />
@@ -1694,15 +1687,14 @@ function ZoningExplainer({ prop, z }: { prop: PropertyDetail; z: NonNullable<Pro
                 </div>
               </ExplainerStep>
             ) : (
-              <ExplainerStep n={3} title="What the bylaw permits">
-                Zone data is on record, but the specific permitted-use table for this category hasn't
-                been decoded yet — coverage is expanding category by category.
+              <ExplainerStep n={3} title={t('zt_ex_s3_title_alt')}>
+                {t('zt_ex_s3_undecoded')}
               </ExplainerStep>
             )}
           </>
         )}
 
-        <ExplainerStep n={4} title="The opportunity" last>
+        <ExplainerStep n={4} title={t('zt_ex_s4_title')} last>
           {isMontreal ? (
             z.estimate_method === 'density_target' && permitted != null ? (
               hasUpside ? (
@@ -1710,107 +1702,75 @@ function ZoningExplainer({ prop, z }: { prop: PropertyDetail; z: NonNullable<Pro
                   <div className="flex items-center gap-4 my-1 mb-3 flex-wrap">
                     <div className="text-center">
                       <p className="text-3xl font-black tabular-nums text-ink leading-none">{current}</p>
-                      <p className="text-[11px] text-muted mt-1">built today</p>
+                      <p className="text-[11px] text-muted mt-1">{t('zt_builtToday')}</p>
                     </div>
                     <ChevronRight size={20} className="text-muted/50" />
                     <div className="text-center">
                       <p className="text-3xl font-black tabular-nums leading-none text-score-strong">~{permitted}</p>
-                      <p className="text-[11px] text-muted mt-1">planned density</p>
+                      <p className="text-[11px] text-muted mt-1">{t('zt_plannedDensity')}</p>
                     </div>
                     <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-score-strong/10 text-score-strong border border-score-strong/25">
-                      +{permitted - current} of upside
+                      {t('zt_ofUpside', { n: permitted - current })}
                     </span>
                   </div>
-                  <p>
-                    The plan's minimum density target of <strong className="text-ink">~{z.min_density_per_ha} dwellings/ha</strong> works
-                    out to about <strong className="text-ink">~{permitted} unit{permitted === 1 ? '' : 's'}</strong> on this{' '}
-                    <strong className="text-ink">{lotSqft != null ? `${lotSqft.toLocaleString()} sqft` : ''}</strong> lot
-                    {z.estimate_lot_source === 'assessment_roll' && <span className="text-muted"> (official record)</span>} — more
-                    than the {current} built today, signalling densification upside. A city planning target, not a per-lot
-                    permit; confirm exact limits with the borough.
-                  </p>
+                  <p>{t('zt_ex_op_mtl_upside', { d: z.min_density_per_ha ?? 0, n: permitted, u: unitW(permitted), lot: lotStr, official: officialTag, c: current })}</p>
                 </>
               ) : (
-                <p>
-                  This lot is already built at or above the city's minimum density target
-                  {z.min_density_per_ha != null && <> (<strong className="text-ink">~{z.min_density_per_ha} dwellings/ha</strong>)</>}.
-                  Any further upside would come from the borough's specific zoning bylaw (height, units) — not the
-                  citywide plan, which only sets a density floor.
-                </p>
+                <p>{t('zt_ex_op_mtl_none', { d: densityParen })}</p>
               )
             ) : z.estimate_method === 'non_residential' ? (
-              <p>
-                This area is designated <strong className="text-ink">{z.affectation}</strong> — not intended for
-                residential development, so there's no added-unit potential here.
-              </p>
+              <p>{t('zt_ex_op_nonres', { affect: z.affectation ?? '' })}</p>
             ) : z.min_density_per_ha != null ? (
-              <p>
-                This is a densification-friendly area — the plan targets{' '}
-                <strong className="text-ink">~{z.min_density_per_ha} dwellings/ha</strong>
-                {intens && <> ({intens.label} intensification)</>}. We don't have this lot's size on record yet, so we
-                can't estimate units, but the density target still signals the city wants more homes here.
-              </p>
+              <p>{t('zt_ex_op_mtl_nolot', { d: z.min_density_per_ha, intens: intensParen })}</p>
             ) : (
-              <p>Not enough data to estimate development potential for this area yet.</p>
+              <p>{t('zt_ex_op_insufficient_area')}</p>
             )
           ) : permittedLabel != null ? (
             <>
               <div className="flex items-center gap-4 my-1 mb-3 flex-wrap">
                 <div className="text-center">
                   <p className="text-3xl font-black tabular-nums text-ink leading-none">{current}</p>
-                  <p className="text-[11px] text-muted mt-1">built today</p>
+                  <p className="text-[11px] text-muted mt-1">{t('zt_builtToday')}</p>
                 </div>
                 <ChevronRight size={20} className="text-muted/50" />
                 <div className="text-center">
                   <p className={clsx('text-3xl font-black tabular-nums leading-none', hasUpside ? 'text-score-strong' : 'text-ink')}>
                     {permittedLabel}
                   </p>
-                  <p className="text-[11px] text-muted mt-1">{isEnvelope ? 'zoning capacity' : 'max permitted'}</p>
+                  <p className="text-[11px] text-muted mt-1">{isEnvelope ? t('zt_zoningCapacity') : t('zt_maxPermitted')}</p>
                 </div>
                 {hasUpside && permitted != null && (
                   <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-score-strong/10 text-score-strong border border-score-strong/25">
-                    +{permitted - current} of upside
+                    {t('zt_ofUpside', { n: permitted - current })}
                   </span>
                 )}
               </div>
 
               {isEnvelope ? (
-                <p>
-                  Estimated from the zoning envelope: a{' '}
-                  <strong className="text-ink">{lotSqft != null ? `${lotSqft.toLocaleString()} sqft` : ''}</strong> lot
-                  {z.estimate_lot_source === 'assessment_roll' && <span className="text-muted"> (official record)</span>} ×{' '}
-                  <strong className="text-ink">{z.max_coverage_pct}%</strong> coverage ×{' '}
-                  <strong className="text-ink">{z.max_storeys}</strong> storeys. A theoretical maximum, not a permit.
-                </p>
+                <p>{t('zt_ex_op_envelope', { lot: lotStr, official: officialTag, cov: z.max_coverage_pct ?? 0, st: z.max_storeys ?? 0 })}</p>
               ) : (
-                <p>
-                  This zone caps residential buildings at <strong className="text-ink">{permitted} dwelling{permitted === 1 ? '' : 's'}</strong>{' '}
-                  regardless of lot size, so there's {hasUpside ? 'limited' : 'no'} added-unit potential here
-                  {current <= 1 && permitted === 1 ? ' — value would come from a rebuild or subdivision, not more units' : ''}.
-                </p>
+                <p>{t('zt_ex_op_cap', { n: permitted ?? 0, u: unitW(permitted ?? 0), lim: hasUpside ? t('zt_limited') : t('zt_no'), sub: (current <= 1 && permitted === 1) ? t('zt_ex_op_cap_sub') : '' })}</p>
               )}
 
               {needsAssembly && (
                 <div className="mt-2.5 rounded-lg bg-score-market/10 border border-score-market/25 px-3 py-2">
                   <p className="text-[13px] text-score-market">
-                    <strong>Reality check:</strong> this lot is small ({lotSqft?.toLocaleString()} sqft). A building near
-                    the zone's full height would realistically need <strong>lot assembly</strong> with neighbouring
-                    properties — treat the figure as the zone's capacity, not what fits on this lot alone.
+                    <strong>{t('zt_realityCheck')}</strong> {t('zt_ex_assembly', { lot: lotSqft?.toLocaleString() ?? '' })}
                   </p>
                 </div>
               )}
-              {z.contigu_permitted && <p className="mt-2 text-[13px]">Row-house/contiguous form is also permitted — usually cheaper to build.</p>}
-              {!hasUpside && !isEnvelope && current > 1 && <p className="mt-2 text-[13px]">Already built at or near what zoning allows.</p>}
+              {z.contigu_permitted && <p className="mt-2 text-[13px]">{t('zt_ex_contigu')}</p>}
+              {!hasUpside && !isEnvelope && current > 1 && <p className="mt-2 text-[13px]">{t('zt_ex_alreadyBuilt')}</p>}
             </>
           ) : (
-            <p>Not enough data to estimate development potential for this zone yet.</p>
+            <p>{t('zt_ex_op_insufficient_zone')}</p>
           )}
         </ExplainerStep>
       </div>
 
       <div className="pt-3 border-t border-surface-border space-y-1">
         <p className="text-xs text-muted">
-          {z.bylaw_reference}{z.data_version && ` — data as of ${z.data_version}`}
+          {z.bylaw_reference}{z.data_version && t('zt_dataAsOf', { ver: z.data_version })}
         </p>
         {z.source_document_url && (
           <a
@@ -1821,7 +1781,7 @@ function ZoningExplainer({ prop, z }: { prop: PropertyDetail; z: NonNullable<Pro
             {t('pp_zoning_source_generic')}
           </a>
         )}
-        <p className="text-xs text-muted italic">Indicative only — confirm with the municipality before acting.</p>
+        <p className="text-xs text-muted italic">{t('zt_ex_indicative')}</p>
       </div>
     </div>
   )
@@ -1869,6 +1829,7 @@ function RebuildRow({ label, hint, children }: { label: string; hint?: string; c
 }
 
 function RebuildWorkbench({ prop, z }: { prop: PropertyDetail; z: NonNullable<PropertyDetail['zoning']> }) {
+  const { t } = useLang()
   const current = currentUnits(prop)
   const defaultTarget = Math.max(current, z.estimated_max_units ?? current)
 
@@ -1940,8 +1901,8 @@ function RebuildWorkbench({ prop, z }: { prop: PropertyDetail; z: NonNullable<Pr
             <CircleDollarSign size={17} className="text-accent" />
           </div>
           <div>
-            <h3 className="text-base font-bold text-ink">Rebuild Calculator</h3>
-            <p className="text-xs text-muted mt-0.5">Every number is yours to change — plug in real quotes and rents</p>
+            <h3 className="text-base font-bold text-ink">{t('zt_rb_title')}</h3>
+            <p className="text-xs text-muted mt-0.5">{t('zt_rb_sub')}</p>
           </div>
         </div>
         {modified && (
@@ -1949,41 +1910,41 @@ function RebuildWorkbench({ prop, z }: { prop: PropertyDetail; z: NonNullable<Pr
             type="button" onClick={reset}
             className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-accent/40 text-accent hover:bg-accent/10 active:scale-95 transition-all"
           >
-            <RefreshCw size={12} /> Reset
+            <RefreshCw size={12} /> {t('zt_rb_reset')}
           </button>
         )}
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 divide-y divide-surface-border sm:divide-y-0">
         <div className="divide-y divide-surface-border">
-          <RebuildRow label="Units to build" hint={`currently ${current}, estimated potential ${z.estimate_method === 'envelope' ? '~' : ''}${z.estimated_max_units ?? '—'}`}>
-            <RebuildField label="Units to build" value={targetUnits} onChange={setTargetUnits} width="w-16" />
+          <RebuildRow label={t('zt_rb_unitsToBuild')} hint={t('zt_rb_unitsHint', { current, est: `${z.estimate_method === 'envelope' ? '~' : ''}${z.estimated_max_units ?? '—'}` })}>
+            <RebuildField label={t('zt_rb_unitsToBuild')} value={targetUnits} onChange={setTargetUnits} width="w-16" />
           </RebuildRow>
-          <RebuildRow label="Avg. unit size">
-            <RebuildField label="Average unit size" value={unitSqft} onChange={setUnitSqft} suffix="sqft" width="w-24" />
+          <RebuildRow label={t('zt_rb_unitSize')}>
+            <RebuildField label={t('zt_rb_unitSize')} value={unitSqft} onChange={setUnitSqft} suffix="sqft" width="w-24" />
           </RebuildRow>
-          <RebuildRow label="Construction cost">
-            <RebuildField label="Construction cost per sqft" value={hardCost} onChange={setHardCost} suffix="$/sqft" width="w-24" />
+          <RebuildRow label={t('zt_rb_construction')}>
+            <RebuildField label={t('zt_rb_construction')} value={hardCost} onChange={setHardCost} suffix="$/sqft" width="w-24" />
           </RebuildRow>
-          <RebuildRow label="Demolition cost">
-            <RebuildField label="Demolition cost per sqft" value={demoCost} onChange={setDemoCost} suffix="$/sqft" width="w-24" />
+          <RebuildRow label={t('zt_rb_demolition')}>
+            <RebuildField label={t('zt_rb_demolition')} value={demoCost} onChange={setDemoCost} suffix="$/sqft" width="w-24" />
           </RebuildRow>
         </div>
         <div className="divide-y divide-surface-border">
-          <RebuildRow label="Soft costs" hint="design, permits, fees">
-            <RebuildField label="Soft costs percent" value={softPct} onChange={setSoftPct} suffix="%" width="w-16" />
+          <RebuildRow label={t('zt_rb_soft')} hint={t('zt_rb_softHint')}>
+            <RebuildField label={t('zt_rb_soft')} value={softPct} onChange={setSoftPct} suffix="%" width="w-16" />
           </RebuildRow>
-          <RebuildRow label="Contingency">
-            <RebuildField label="Contingency percent" value={contPct} onChange={setContPct} suffix="%" width="w-16" />
+          <RebuildRow label={t('zt_rb_contingency')}>
+            <RebuildField label={t('zt_rb_contingency')} value={contPct} onChange={setContPct} suffix="%" width="w-16" />
           </RebuildRow>
-          <RebuildRow label="Financing carry">
-            <RebuildField label="Financing carry percent" value={financePct} onChange={setFinancePct} suffix="%" width="w-16" />
+          <RebuildRow label={t('zt_rb_financing')}>
+            <RebuildField label={t('zt_rb_financing')} value={financePct} onChange={setFinancePct} suffix="%" width="w-16" />
           </RebuildRow>
-          <RebuildRow label="Rent per unit" hint="new construction often rents above old-stock average">
-            <RebuildField label="Rent per unit per month" value={rentPerUnit} onChange={setRentPerUnit} suffix="$/mo" width="w-24" />
+          <RebuildRow label={t('zt_rb_rent')} hint={t('zt_rb_rentHint')}>
+            <RebuildField label={t('zt_rb_rent')} value={rentPerUnit} onChange={setRentPerUnit} suffix="$/mo" width="w-24" />
           </RebuildRow>
-          <RebuildRow label="Valuation cap rate">
-            <RebuildField label="Valuation cap rate" value={capRatePct} onChange={setCapRatePct} suffix="%" width="w-16" />
+          <RebuildRow label={t('zt_rb_capRate')}>
+            <RebuildField label={t('zt_rb_capRate')} value={capRatePct} onChange={setCapRatePct} suffix="%" width="w-16" />
           </RebuildRow>
         </div>
       </div>
@@ -1993,11 +1954,11 @@ function RebuildWorkbench({ prop, z }: { prop: PropertyDetail; z: NonNullable<Pr
       <div className="pt-3 border-t border-surface-border space-y-2.5">
         {(() => {
           const items = [
-            { label: 'Demolition',                              value: demolitionCost, color: '#94A3B8' },
-            { label: `New construction (${newFloorArea.toLocaleString()} sqft)`, value: hardCostTotal,  color: '#0F766E' },
-            { label: 'Soft costs',                                value: softCosts,     color: '#D97706' },
-            { label: 'Contingency',                               value: contingency,   color: '#DC2626' },
-            { label: 'Financing carry',                           value: financingCarry, color: '#7c3aed' },
+            { label: t('zt_rb_demo'),                            value: demolitionCost, color: '#94A3B8' },
+            { label: t('zt_rb_newConstruction', { n: newFloorArea.toLocaleString() }), value: hardCostTotal,  color: '#0F766E' },
+            { label: t('zt_rb_softCosts'),                       value: softCosts,     color: '#D97706' },
+            { label: t('zt_rb_contingency'),                     value: contingency,   color: '#DC2626' },
+            { label: t('zt_rb_financingCarry'),                  value: financingCarry, color: '#7c3aed' },
           ]
           const safeTotal = totalRebuildCost || 1
           return (
@@ -2018,7 +1979,7 @@ function RebuildWorkbench({ prop, z }: { prop: PropertyDetail; z: NonNullable<Pr
                   </div>
                 ))}
                 <div className="flex justify-between pt-1.5 border-t border-surface-border font-semibold text-ink">
-                  <span>Total rebuild cost</span><span className="font-mono">{fmtCAD(totalRebuildCost)}</span>
+                  <span>{t('zt_rb_totalCost')}</span><span className="font-mono">{fmtCAD(totalRebuildCost)}</span>
                 </div>
               </div>
             </>
@@ -2028,14 +1989,14 @@ function RebuildWorkbench({ prop, z }: { prop: PropertyDetail; z: NonNullable<Pr
 
       <div className="grid grid-cols-2 gap-3">
         <div className="rounded-xl border border-surface-border p-3.5">
-          <p className="text-[10.5px] uppercase tracking-wide text-muted/80 font-semibold mb-1">Total investment</p>
+          <p className="text-[10.5px] uppercase tracking-wide text-muted/80 font-semibold mb-1">{t('zt_rb_totalInvestment')}</p>
           <p className="text-xl font-bold tabular-nums text-ink leading-none">{fmtCAD(totalInvestment)}</p>
-          <p className="text-[11px] text-muted mt-1.5">purchase price + rebuild cost</p>
+          <p className="text-[11px] text-muted mt-1.5">{t('zt_rb_totalInvestmentSub')}</p>
         </div>
         <div className="rounded-xl border border-surface-border p-3.5">
-          <p className="text-[10.5px] uppercase tracking-wide text-muted/80 font-semibold mb-1">Projected value</p>
+          <p className="text-[10.5px] uppercase tracking-wide text-muted/80 font-semibold mb-1">{t('zt_rb_projectedValue')}</p>
           <p className="text-xl font-bold tabular-nums text-ink leading-none">{fmtCAD(projectedValue)}</p>
-          <p className="text-[11px] text-muted mt-1.5">income approach, at your inputs</p>
+          <p className="text-[11px] text-muted mt-1.5">{t('zt_rb_projectedValueSub')}</p>
         </div>
       </div>
 
@@ -2047,42 +2008,42 @@ function RebuildWorkbench({ prop, z }: { prop: PropertyDetail; z: NonNullable<Pr
           {(netProfit >= 0 ? '+' : '−') + fmtCAD(Math.abs(netProfit))}
         </p>
         <p className="text-xs text-muted mt-1.5">
-          {hasProfit ? 'Estimated profit at these numbers' : 'Estimated loss at these numbers'} — change any input to test your own assumptions
+          {hasProfit ? t('zt_rb_profit') : t('zt_rb_loss')} {t('zt_rb_testHint')}
         </p>
       </div>
 
       <p className="text-xs text-muted italic pt-1 border-t border-surface-border">
-        Nothing here is a quote or appraisal — it's a calculator seeded with reasonable starting
-        numbers. Replace them with a real contractor estimate and local rent data before acting on this.
+        {t('zt_rb_disclaimer')}
       </p>
     </div>
   )
 }
 
 const CONSTRAINT_TITLE: Record<string, string> = {
-  agricultural: 'Agricultural zone (CPTAQ)',
-  flood:        'Regulated flood zone',
-  heritage:     'Heritage-protected',
+  agricultural: 'zt_ct_agri',
+  flood:        'zt_ct_flood',
+  heritage:     'zt_ct_heritage',
 }
 
 function DealKillerBanner({ flags }: { flags: NonNullable<PropertyDetail['constraints']> }) {
+  const { t } = useLang()
   return (
     <div className="rounded-xl border border-red-300 bg-red-50 p-4 space-y-3">
       <div className="flex items-center gap-2">
         <AlertCircle size={18} className="text-red-600 shrink-0" />
         <h4 className="text-sm font-bold text-red-700">
-          Development constraint{flags.length > 1 ? 's' : ''} — check before counting on any upside
+          {flags.length > 1 ? t('zt_dk_title_plural') : t('zt_dk_title')}
         </h4>
       </div>
       <div className="space-y-2">
         {flags.map(f => (
           <div key={f.type} className="text-sm">
-            <p className="font-semibold text-red-700">{CONSTRAINT_TITLE[f.type] ?? f.type}</p>
+            <p className="font-semibold text-red-700">{t(CONSTRAINT_TITLE[f.type] ?? f.type)}</p>
             <p className="text-red-900/80 leading-snug">{f.explanation}</p>
             {f.source_url && (
               <a href={f.source_url} target="_blank" rel="noopener noreferrer"
                  className="inline-flex items-center gap-1 text-xs font-semibold text-red-700 hover:underline mt-0.5">
-                <ExternalLink size={11} /> official source
+                <ExternalLink size={11} /> {t('zt_dk_source')}
               </a>
             )}
           </div>
@@ -2093,9 +2054,10 @@ function DealKillerBanner({ flags }: { flags: NonNullable<PropertyDetail['constr
 }
 
 function FloodRiskCard({ prop }: { prop: PropertyDetail }) {
+  const { t } = useLang()
   return (
     <div className="card flex flex-col gap-4">
-      <h3 className="text-base font-bold text-ink">Flood risk</h3>
+      <h3 className="text-base font-bold text-ink">{t('zt_floodRisk')}</h3>
       <div className="flex-1">
         <Suspense fallback={<div className="shimmer rounded-xl border border-surface-border h-full min-h-[380px]" />}>
           <FloodZoneMap propertyId={prop.id} />
@@ -2200,7 +2162,7 @@ function ZoningTab({ prop }: { prop: PropertyDetail }) {
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <h3 className="text-base font-bold text-ink">Zoning &amp; Development Potential</h3>
+        <h3 className="text-base font-bold text-ink">{t('zt_tab_title')}</h3>
         <span className={clsx(
           'px-2 py-0.5 rounded-lg text-xs font-semibold border',
           isPlanEstimate ? 'bg-score-market/10 text-score-market border-score-market/25' :
@@ -2208,7 +2170,7 @@ function ZoningTab({ prop }: { prop: PropertyDetail }) {
           isPartial      ? 'bg-score-market/10 text-score-market border-score-market/25' :
                            'bg-surface-hover text-muted border-surface-border',
         )}>
-          {isPlanEstimate ? t('pp_zoning_badge_plan') : isFullyDecoded ? 'Verified' : isPartial ? 'Partial data' : 'Basic zone info'}
+          {isPlanEstimate ? t('pp_zoning_badge_plan') : isFullyDecoded ? t('zt_badge_verified') : isPartial ? t('zt_badge_partial') : t('zt_badge_basic')}
         </span>
       </div>
 
@@ -2258,6 +2220,7 @@ function ZoningTab({ prop }: { prop: PropertyDetail }) {
 function OfficialRecordsCard({ a, listedUnits, propType }: {
   a: NonNullable<PropertyDetail['assessment']>; listedUnits: number | null; propType: string
 }) {
+  const { t } = useLang()
   const lotSqft = a.lot_area_m2 != null ? Math.round(a.lot_area_m2 * 10.7639) : null
   const listed = listedUnits ?? UNIT_COUNT_BY_TYPE[propType] ?? null
   const correction = a.num_dwellings != null && listed != null && a.num_dwellings !== listed
@@ -2268,7 +2231,7 @@ function OfficialRecordsCard({ a, listedUnits, propType }: {
       {value != null ? (
         <p className="text-xl font-bold tabular-nums text-ink leading-none">{value}</p>
       ) : (
-        <p className="text-sm text-muted/60 italic leading-none pt-1">not on record</p>
+        <p className="text-sm text-muted/60 italic leading-none pt-1">{t('zt_notOnRecord')}</p>
       )}
       {value != null && sub && <p className="text-[11px] text-muted mt-1">{sub}</p>}
     </div>
@@ -2277,37 +2240,33 @@ function OfficialRecordsCard({ a, listedUnits, propType }: {
   return (
     <div className="card space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <h3 className="text-base font-bold text-ink">Official municipal records</h3>
+        <h3 className="text-base font-bold text-ink">{t('zt_or_title')}</h3>
         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-semibold border bg-score-strong/10 text-score-strong border-score-strong/25">
-          <ShieldCheck size={12} /> Government-verified
+          <ShieldCheck size={12} /> {t('zt_or_verified')}
         </span>
       </div>
-      <p className="text-[13px] text-muted leading-relaxed">
-        From Quebec's property assessment roll (rôle d'évaluation foncière) — the authoritative source
-        for lot size and current dwelling count, independent of the listing.
-      </p>
+      <p className="text-[13px] text-muted leading-relaxed">{t('zt_or_desc')}</p>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Stat label="Lot area" value={lotSqft != null ? `${lotSqft.toLocaleString()} sqft` : null}
+        <Stat label={t('zt_or_lotArea')} value={lotSqft != null ? `${lotSqft.toLocaleString()} sqft` : null}
               sub={a.lot_area_m2 != null ? `${Math.round(a.lot_area_m2).toLocaleString()} m²` : undefined} />
-        <Stat label="Current dwellings" value={a.num_dwellings != null ? String(a.num_dwellings) : null} />
-        <Stat label="Frontage" value={a.frontage_m != null ? `${a.frontage_m.toFixed(1)} m` : null} />
-        <Stat label="Year built" value={a.year_built != null ? String(a.year_built) : null} />
+        <Stat label={t('zt_or_dwellings')} value={a.num_dwellings != null ? String(a.num_dwellings) : null} />
+        <Stat label={t('zt_or_frontage')} value={a.frontage_m != null ? `${a.frontage_m.toFixed(1)} m` : null} />
+        <Stat label={t('zt_or_yearBuilt')} value={a.year_built != null ? String(a.year_built) : null} />
       </div>
 
       {correction && (
         <p className="text-xs text-score-market bg-score-market/10 border border-score-market/25 rounded-lg px-3 py-2">
-          Note: the listing implies {listed} unit{listed === 1 ? '' : 's'}, but the official record shows{' '}
-          <strong>{a.num_dwellings}</strong> — worth verifying which is current.
+          {t('zt_or_correction', { listed: listed ?? 0, u: (listed === 1 ? t('zt_unit') : t('zt_units')), n: a.num_dwellings ?? 0 })}
         </p>
       )}
 
       <p className="text-xs text-muted pt-1 border-t border-surface-border">
-        Source: Rôle d'évaluation foncière {a.roll_year}
+        {t('zt_or_source', { year: a.roll_year ?? '' })}
         {a.source_url && (
           <> · <a href={a.source_url} target="_blank" rel="noopener noreferrer"
                   className="inline-flex items-center gap-1 text-accent hover:underline">
-            <ExternalLink size={11} /> official data
+            <ExternalLink size={11} /> {t('zt_or_officialData')}
           </a></>
         )}
       </p>
