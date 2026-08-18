@@ -86,7 +86,12 @@ class ComparableFinder:
         return None
 
     async def _query_radius(self, prop: Property, radius_km: float) -> list[Property]:
-        """PostGIS ST_DWithin query using geography type for accurate km distances."""
+        """PostGIS ST_DWithin query using geography type for accurate km distances.
+        listing_type-scoped so a rental only compares against nearby rentals
+        (rent-to-rent) and a for-sale listing only against other for-sale
+        listings — without this, a $2,000/mo rent would be compared against
+        $600k+ asking prices and the ±40% price-ratio filter below would
+        reject nearly everything."""
         # Use ST_GeomFromEWKB to correctly deserialize the WKBElement loaded from DB.
         # cast(WKBElement, Geography) generates ST_GeogFromText(hex) which fails on binary WKB.
         prop_geo = cast(ST_GeomFromEWKB(prop.location), Geography)
@@ -101,6 +106,7 @@ class ComparableFinder:
             .where(Property.asking_price.isnot(None))
             .where(Property.status.in_([PropertyStatus.ACTIVE, PropertyStatus.PRICE_CHANGED]))
             .where(Property.property_type == prop.property_type)
+            .where(Property.listing_type == prop.listing_type)
             .where(
                 ST_DWithin(
                     cast(Property.location, Geography),
@@ -136,6 +142,7 @@ class ComparableFinder:
             .where(Property.asking_price.isnot(None))
             .where(Property.status.in_([PropertyStatus.ACTIVE, PropertyStatus.PRICE_CHANGED]))
             .where(Property.property_type == prop.property_type)
+            .where(Property.listing_type == prop.listing_type)
             .limit(30)
         )
         candidates = list((await self.session.scalars(stmt)).all())

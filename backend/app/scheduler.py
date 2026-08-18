@@ -194,7 +194,63 @@ async def scrape_job() -> None:
 
     keys = _api_keys()
 
-    # ── 1. Realtor.ca ─────────────────────────────────────────────────────────
+    # ── 1. Centris ────────────────────────────────────────────────────────────
+    # Primary for-sale target (client priority: Centris first, then Realtor —
+    # ReMax is no longer a for-sale source at all, see Part 3 below).
+    scrape_progress.current_source = "centris"
+    scrape_progress.sources["centris"].status  = "running"
+    scrape_progress.sources["centris"].message = "Connecting..."
+    scrape_progress.message = "Scraping Centris..."
+    logger.info("--- Centris ---")
+
+    try:
+        async with CentrisScraper(api_keys=keys) as scraper:
+            centris_new = 0
+
+            # Centris categorizes search by property type (SEARCH_URLS has no
+            # "all types" option) — loop across all three so plex/condo/house
+            # are all covered. city=None (default) already means province-wide.
+            for category in ("plex", "condo", "house"):
+                if centris_new >= CENTRIS_TARGET:
+                    break
+
+                consecutive_empty = 0
+                for page in range(1, MAX_PAGES_PER_SOURCE + 1):
+                    if centris_new >= CENTRIS_TARGET or consecutive_empty >= CONSECUTIVE_EMPTY_LIMIT_CENTRIS:
+                        break
+                    try:
+                        scrape_progress.sources["centris"].message = f"{category} page {page}..."
+                        raw_list = await scraper.scrape_listings(category=category, page=page)
+                        if not raw_list:
+                            break
+
+                        new, _, _ = await _save(raw_list, "centris")
+                        centris_new += new
+                        consecutive_empty = 0 if new > 0 else consecutive_empty + 1
+                        logger.info(f"[centris] {category} page {page}: {len(raw_list)} processed, {new} new → total new={centris_new}")
+                        await asyncio.sleep(3)
+
+                    except Exception as exc:
+                        logger.error(f"[centris] {category} page {page} error: {exc}")
+                        scrape_progress.total_errors += 1
+                        break
+
+                logger.info(f"[centris] {category} done — running total new={centris_new}")
+
+            if centris_new < CENTRIS_TARGET:
+                logger.warning(f"[centris] only found {centris_new}/{CENTRIS_TARGET} new properties across all categories (sources exhausted or caught up)")
+
+        scrape_progress.sources["centris"].status = "done"
+
+    except Exception as exc:
+        scrape_progress.sources["centris"].status  = "error"
+        scrape_progress.sources["centris"].message = str(exc)[:80]
+        logger.error(f"Centris scraper error: {exc}")
+
+    scrape_progress.elapsed_seconds = (datetime.now(timezone.utc) - now).total_seconds()
+    await asyncio.sleep(3)
+
+    # ── 2. Realtor.ca ─────────────────────────────────────────────────────────
     scrape_progress.current_source = "realtor"
     scrape_progress.sources["realtor"].status  = "running"
     scrape_progress.sources["realtor"].message = "Connecting..."
@@ -269,61 +325,8 @@ async def scrape_job() -> None:
     scrape_progress.elapsed_seconds = (datetime.now(timezone.utc) - now).total_seconds()
     await asyncio.sleep(3)
 
-    # ── 2. Centris ────────────────────────────────────────────────────────────
-    scrape_progress.current_source = "centris"
-    scrape_progress.sources["centris"].status  = "running"
-    scrape_progress.sources["centris"].message = "Connecting..."
-    scrape_progress.message = "Scraping Centris..."
-    logger.info("--- Centris ---")
-
-    try:
-        async with CentrisScraper(api_keys=keys) as scraper:
-            centris_new = 0
-
-            # Centris categorizes search by property type (SEARCH_URLS has no
-            # "all types" option) — loop across all three so plex/condo/house
-            # are all covered. city=None (default) already means province-wide.
-            for category in ("plex", "condo", "house"):
-                if centris_new >= CENTRIS_TARGET:
-                    break
-
-                consecutive_empty = 0
-                for page in range(1, MAX_PAGES_PER_SOURCE + 1):
-                    if centris_new >= CENTRIS_TARGET or consecutive_empty >= CONSECUTIVE_EMPTY_LIMIT_CENTRIS:
-                        break
-                    try:
-                        scrape_progress.sources["centris"].message = f"{category} page {page}..."
-                        raw_list = await scraper.scrape_listings(category=category, page=page)
-                        if not raw_list:
-                            break
-
-                        new, _, _ = await _save(raw_list, "centris")
-                        centris_new += new
-                        consecutive_empty = 0 if new > 0 else consecutive_empty + 1
-                        logger.info(f"[centris] {category} page {page}: {len(raw_list)} processed, {new} new → total new={centris_new}")
-                        await asyncio.sleep(3)
-
-                    except Exception as exc:
-                        logger.error(f"[centris] {category} page {page} error: {exc}")
-                        scrape_progress.total_errors += 1
-                        break
-
-                logger.info(f"[centris] {category} done — running total new={centris_new}")
-
-            if centris_new < CENTRIS_TARGET:
-                logger.warning(f"[centris] only found {centris_new}/{CENTRIS_TARGET} new properties across all categories (sources exhausted or caught up)")
-
-        scrape_progress.sources["centris"].status = "done"
-
-    except Exception as exc:
-        scrape_progress.sources["centris"].status  = "error"
-        scrape_progress.sources["centris"].message = str(exc)[:80]
-        logger.error(f"Centris scraper error: {exc}")
-
-    scrape_progress.elapsed_seconds = (datetime.now(timezone.utc) - now).total_seconds()
-    await asyncio.sleep(3)
-
-    # ── 3. ReMax (remax-quebec.com) ───────────────────────────────────────────
+    # ── 3. ReMax (remax-quebec.com) — rentals only, see remax.py's sitemap ──────
+    # filter (for-sale URLs are never fetched at all).
     scrape_progress.current_source = "remax"
     scrape_progress.sources["remax"].status  = "running"
     scrape_progress.sources["remax"].message = "Loading sitemap..."

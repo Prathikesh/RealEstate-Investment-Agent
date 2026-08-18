@@ -171,6 +171,21 @@ class RemaxScraper(BaseScraper):
         # this portal instead of remax.ca), so no further city/type filtering is
         # needed — every URL in the sitemap is a Quebec listing. Property type is
         # determined per-listing in _parse_presentation() from the actual page.
+
+        # For-sale listings only: ReMax is no longer trusted as a for-sale
+        # source (agent-only dedup matches, no unit number in the address text,
+        # and several confirmed wrong cross-source merges this session — see
+        # scripts/remove_remax_for_sale.py). Rentals are unaffected and still
+        # scraped normally. Every ReMax URL path reliably contains either
+        # "-for-sale" or "-for-rent" (confirmed across all categories: plex,
+        # condo, house, land, commercial, even an oddly-named
+        # "block-sale-for-sale"), so this is a safe, cheap pre-filter that
+        # avoids ever fetching (and paying Scrapfly credits for) a for-sale
+        # detail page in the first place.
+        before = len(all_urls)
+        all_urls = [u for u in all_urls if "-for-rent" in u]
+        self.logger.info(f"[remax] For-sale filter: {before} listings → {len(all_urls)} for-rent")
+
         if known_source_urls:
             new_urls = [u for u in all_urls if u not in known_source_urls]
             self.logger.info(

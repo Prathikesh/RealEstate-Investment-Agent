@@ -87,6 +87,16 @@ class PropertyDeduplicator:
             logger.debug(f"skip out-of-scope city: {raw.city}")
             return None, False
 
+        # ReMax is no longer trusted as a for-sale source (see
+        # scripts/remove_remax_for_sale.py) — remax.py's sitemap walk already
+        # filters these out before fetching, but this is the one choke point
+        # every scrape path passes through (including scripts that call
+        # scrape_detail() directly), so it's a hard backstop against ever
+        # re-introducing this data by any route.
+        if raw.source == "remax" and raw.listing_type == "for_sale":
+            logger.debug(f"skip remax for-sale listing: {raw.source_url}")
+            return None, False
+
         now = datetime.now(timezone.utc)
         changes: dict = {}
 

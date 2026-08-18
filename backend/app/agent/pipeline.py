@@ -83,7 +83,13 @@ class InvestmentPipeline:
         # so running them would produce meaningless cap rate / cash flow /
         # score numbers. Keep the physical/regulatory facts (assessment roll,
         # development constraints, zoning) since those are just as relevant
-        # to a renter and don't depend on asking_price at all, then stop.
+        # to a renter and don't depend on asking_price at all. Comparables DO
+        # run for rentals too — ComparableFinder is listing_type-scoped (see
+        # comparables.py), so a rental only gets compared against nearby
+        # rentals (rent-to-rent), never against for-sale prices. Everything
+        # that interprets a comp set as a financial signal (value_gap,
+        # discount_pct, cap_rate, score, etc.) still doesn't apply to a rent
+        # value and stays cleared below.
         if prop.listing_type == ListingType.FOR_RENT:
             # Clear any stale sale-oriented analysis — a property that was
             # scraped as for_sale before (e.g. before the ReMax rental-tagging
@@ -107,12 +113,22 @@ class InvestmentPipeline:
             prop.welcome_tax = None
             prop.down_payment_20pct = None
             prop.monthly_mortgage = None
-            prop.comparable_count = None
-            prop.comparable_median_price = None
-            prop.comparable_mean_price = None
-            prop.comparable_ids = None
             prop.ai_brief_en = None
             prop.ai_brief_fr = None
+
+            try:
+                comp_set = await self.comp_finder.find(prop)
+                prop.comparable_count = comp_set.count
+                prop.comparable_median_price = comp_set.median_price
+                prop.comparable_mean_price = comp_set.mean_price
+                prop.comparable_ids = [str(c.property_id) for c in comp_set.comparables]
+                logger.info(f"  Comps (rental): {comp_set.count} found | median={comp_set.median_price}")
+            except Exception as exc:
+                logger.warning(f"  Comparable search failed: {exc}")
+                prop.comparable_count = None
+                prop.comparable_median_price = None
+                prop.comparable_mean_price = None
+                prop.comparable_ids = None
 
             try:
                 assessment = await self.assessment_matcher.match(prop)
