@@ -140,6 +140,12 @@ async def main(apply: bool) -> None:
                         if p.sqft_total and p.sqft_total > 0 else None
                     )
                 p.primary_source = keep.source.value
+                # Confirmed live: this was missing on the first run — a
+                # property correctly switched to primary_source="centris"
+                # still had listing_url pointing at the old ReMax page, so
+                # "View on Centris" silently redirected to ReMax.
+                if keep.source_url:
+                    p.listing_url = keep.source_url
                 p.needs_reanalysis = True
                 detached += 1
             except Exception as exc:
