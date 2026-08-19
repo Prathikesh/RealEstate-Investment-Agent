@@ -176,6 +176,10 @@ class Property(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
     last_scraped_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    # NULL = never run through the verification pipeline (app/agent/verifier.py).
+    # Used to pick each nightly batch: recently-touched properties first, then
+    # the oldest-never-verified backlog — see scheduler.py's verification_job.
+    last_verified_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
     # ── AI Analysis Results ───────────────────────────────────────────────────
     score: Mapped[Optional[int]] = mapped_column(Integer)
@@ -266,6 +270,7 @@ class Property(Base):
         Index("ix_properties_score_status", "score", "status"),
         Index("ix_properties_needs_reanalysis", "needs_reanalysis"),
         Index("ix_properties_listing_type", "listing_type"),
+        Index("ix_properties_last_verified_at", "last_verified_at"),
     )
 
     def __repr__(self) -> str:

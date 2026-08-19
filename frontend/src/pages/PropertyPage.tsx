@@ -1453,6 +1453,7 @@ function FinancialsTab({ prop, t, pricePerSqft, onScenarioChange }: {
               <div>
                 <p className="text-xs text-muted mb-1">This property</p>
                 <p className="font-mono font-bold text-ink text-lg">{mb.property_cap_rate.toFixed(2)}%</p>
+                <p className="text-[10px] text-muted/60 mt-0.5">Same cap rate as above</p>
               </div>
               <div>
                 <p className="text-xs text-muted mb-1">{cityLabel} Multifamily ({gradeLabel})</p>

@@ -38,6 +38,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from scrapfly import ScrapeConfig
 
@@ -47,6 +48,7 @@ from app.scrapers.centris import CentrisScraper
 from app.scrapers.realtor import RealtorScraper, API_URL, API_HEADERS, QUEBEC_CITY_BBOXES
 from app.scrapers.deduplicator import PropertyDeduplicator
 from app.agent.pipeline import InvestmentPipeline
+from app.agent.verifier import verify_batch
 from app.scrape_state import scrape_progress, multiunit_scrape_progress, ScrapeProgress
 
 logger = logging.getLogger(__name__)
@@ -614,6 +616,100 @@ async def pipeline_job() -> None:
         pipeline_running = False
 
 
+# ── Verification job ───────────────────────────────────────────────────────────
+# Nightly re-fetch-and-reconcile pass — see app/agent/verifier.py. Runs after
+# the day's scraping is done (03:00 UTC) and pauses the three scrape/pipeline
+# jobs for its duration so nothing writes to a property mid-verification.
+#
+# Self-pacing: each run pulls up to NIGHTLY_VERIFY_BATCH_SIZE properties,
+# priority 1 = anything scraped/updated since it was last verified (the
+# steady-state ongoing work), priority 2 = the oldest never-verified backlog.
+# While the backlog is large, most of a night's budget goes to priority 2;
+# once it's empty, each run naturally shrinks to just priority 1 — no code
+# change needed to "transition," it falls out of the query.
+
+NIGHTLY_VERIFY_BATCH_SIZE = 300
+verification_running = False
+
+# Set by create_scheduler() so verification_job can pause/resume the other
+# jobs around its run. Only this module needs it — main.py just calls
+# create_scheduler() and starts it.
+_scheduler_ref: AsyncIOScheduler | None = None
+
+PAUSABLE_JOB_IDS = ["scrape_job", "pipeline_job", "scrape_multiunit_job"]
+
+
+async def _select_verification_batch(session, limit: int) -> list:
+    from sqlalchemy import or_, select
+    from app.models.property import Property
+
+    stale_stmt = (
+        select(Property)
+        .where(
+            Property.last_scraped_at.isnot(None),
+            or_(
+                Property.last_verified_at.is_(None),
+                Property.last_scraped_at > Property.last_verified_at,
+            ),
+        )
+        .order_by(Property.last_scraped_at.asc())
+        .limit(limit)
+    )
+    stale = list((await session.execute(stale_stmt)).scalars().all())
+    if len(stale) >= limit:
+        return stale
+
+    remaining = limit - len(stale)
+    seen_ids = {p.id for p in stale}
+    backlog_stmt = (
+        select(Property)
+        .where(Property.last_verified_at.is_(None))
+        .order_by(Property.first_seen_at.asc())
+        .limit(remaining + len(seen_ids))
+    )
+    backlog = [p for p in (await session.execute(backlog_stmt)).scalars().all() if p.id not in seen_ids]
+    return stale + backlog[:remaining]
+
+
+async def verification_job() -> None:
+    global verification_running
+    if verification_running:
+        logger.warning("Verification job requested but one is already running — skipping")
+        return
+    verification_running = True
+
+    paused_ids: list[str] = []
+    if _scheduler_ref is not None:
+        for job_id in PAUSABLE_JOB_IDS:
+            if _scheduler_ref.get_job(job_id) is not None:
+                _scheduler_ref.pause_job(job_id)
+                paused_ids.append(job_id)
+        logger.info(f"=== Verification job started — paused {paused_ids} ===")
+    else:
+        logger.info("=== Verification job started (no scheduler ref — nothing to pause) ===")
+
+    start = datetime.now(timezone.utc)
+    try:
+        async with AsyncSessionLocal() as session:
+            batch = await _select_verification_batch(session, NIGHTLY_VERIFY_BATCH_SIZE)
+            if not batch:
+                logger.info("=== Verification job: nothing to verify ===")
+                return
+
+            stats = await verify_batch(session, batch, _api_keys())
+
+        elapsed = round((datetime.now(timezone.utc) - start).total_seconds(), 1)
+        logger.info(
+            "=== Verification job done in %ss — %d properties: %s ===",
+            elapsed, len(batch), stats,
+        )
+    finally:
+        if _scheduler_ref is not None:
+            for job_id in paused_ids:
+                _scheduler_ref.resume_job(job_id)
+        verification_running = False
+
+
 # ── Scheduler setup ────────────────────────────────────────────────────────────
 
 def create_scheduler() -> AsyncIOScheduler:
@@ -657,5 +753,19 @@ def create_scheduler() -> AsyncIOScheduler:
         replace_existing=True,
         misfire_grace_time=300,
     )
+
+    # Nightly re-fetch-and-reconcile pass, off-peak. Pauses the three jobs
+    # above for its duration — see verification_job().
+    scheduler.add_job(
+        verification_job,
+        trigger=CronTrigger(hour=3, minute=0, timezone="UTC"),
+        id="verification_job",
+        name="Nightly data verification (re-fetch + reconcile)",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+
+    global _scheduler_ref
+    _scheduler_ref = scheduler
 
     return scheduler

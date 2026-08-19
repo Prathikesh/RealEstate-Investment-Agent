@@ -259,6 +259,30 @@ export default function FinancingWorkbench({ prop, pricePerSqft, onScenarioChang
   const cashToClose = dAmt + (transferTax ?? 0)
   const coc         = cashToClose > 0 ? (annualCF / cashToClose) * 100 : 0
 
+  // At rest (no what-if edits yet), show the one stored analysis everywhere on
+  // the page — not this panel's own live recompute — so NOI/cash-flow/cap-rate/
+  // CoC/GRM here are always identical to the top summary and AI-verdict figures
+  // by construction, never by coincidence. Once the user changes a term, switch
+  // to the live numbers computed above (the "Your Scenario" labeling below makes
+  // that divergence intentional and self-explanatory, not a bug).
+  const hasStoredNoi     = prop.noi_annual != null
+  const hasStoredCF      = prop.monthly_cash_flow != null
+  const hasStoredCapRate = prop.cap_rate != null
+  const hasStoredCoc     = prop.cash_on_cash_return != null
+  const hasStoredGrm     = prop.grm != null
+
+  const displayNoi       = modified ? noi       : (prop.noi_annual ?? 0)
+  const displayMonthlyCF = modified ? monthlyCF : (prop.monthly_cash_flow ?? 0)
+  const displayAnnualCF  = modified ? annualCF  : (prop.monthly_cash_flow ?? 0) * 12
+  const displayCapRate   = modified ? capRate   : (prop.cap_rate ?? 0)
+  const displayCoc       = modified ? coc       : (prop.cash_on_cash_return ?? 0)
+  const displayGrm       = modified ? grm       : prop.grm
+  const noiKnown         = modified ? hasRent : hasStoredNoi
+  const cfKnown          = modified ? hasRent : hasStoredCF
+  const capRateKnown     = modified ? hasRent : hasStoredCapRate
+  const cocKnown         = modified ? hasRent : hasStoredCoc
+  const grmKnown         = modified ? grm != null : hasStoredGrm
+
   // Persist the scenario (per property) and lift the live values up so the AI
   // Verdict tab reacts to the same "what if" numbers. Only the derived cap-rate/
   // cash-flow matter to the verdict; we gate on `modified` to stay identical to
@@ -423,23 +447,34 @@ export default function FinancingWorkbench({ prop, pricePerSqft, onScenarioChang
               {toNum(mgmtPct) > 0 && (
                 <Line label={`Management, ${toNum(mgmtPct).toFixed(1)}%`} source="assumption" value={fmt$(mgmtFee)} negative indent />
               )}
-              <Line label={t("fw_noi")} value={hasRent ? fmt$(noi) : '—'} bold red={hasRent && noi < 0} />
+              <Line label={t("fw_noi")} value={noiKnown ? fmt$(displayNoi) : '—'} bold red={noiKnown && displayNoi < 0} />
               <Line
                 label={t("fw_cashFlowAnnual")}
-                value={hasRent ? `${fmt$(annualCF)}${monthlyCF !== 0 ? `  ·  ${fmt$(monthlyCF)}/mo` : ''}` : '—'}
-                bold red={hasRent && annualCF < 0}
+                value={cfKnown ? `${fmt$(displayAnnualCF)}${displayMonthlyCF !== 0 ? `  ·  ${fmt$(displayMonthlyCF)}/mo` : ''}` : '—'}
+                bold red={cfKnown && displayAnnualCF < 0}
               />
             </div>
           </Section>
 
-          <Section icon={Percent} title={t("fw_keyRatios")}>
+          <Section icon={Percent} title={t("fw_keyRatios")}
+                   aside={
+                     <span
+                       className="text-[10px] font-medium uppercase tracking-wide"
+                       style={{ color: modified ? TEAL : '#94a3b8' }}
+                       title={modified
+                         ? 'Recalculated live from the terms you changed above'
+                         : 'Matches the stored analysis shown at the top of this page'}
+                     >
+                       {modified ? 'Your Scenario' : 'Listing Analysis'}
+                     </span>
+                   }>
             <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-slate-100 -mx-4">
               {[
-                { label: t("fw_capRate"), value: hasRent ? `${capRate.toFixed(2)}%` : '—', red: hasRent && capRate < 4.5,
+                { label: t("fw_capRate"), value: capRateKnown ? `${displayCapRate.toFixed(2)}%` : '—', red: capRateKnown && displayCapRate < 4.5,
                   formula: t("fw_f_capRate") },
-                { label: t("fw_coc"), value: hasRent ? `${coc.toFixed(1)}%` : '—', red: hasRent && coc < 0,
+                { label: t("fw_coc"), value: cocKnown ? `${displayCoc.toFixed(1)}%` : '—', red: cocKnown && displayCoc < 0,
                   formula: t("fw_f_coc") },
-                { label: t("fw_grm"), value: grm != null ? `${grm.toFixed(1)}×` : '—', red: false,
+                { label: t("fw_grm"), value: grmKnown && displayGrm != null ? `${displayGrm.toFixed(1)}×` : '—', red: false,
                   formula: t("fw_f_grm") },
               ].map(m => (
                 <div key={m.label} className="px-4 py-3">

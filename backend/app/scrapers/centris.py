@@ -180,45 +180,125 @@ class CentrisScraper(BaseScraper):
         listings' pages have no #CalculTaxe div at all). ignore_if_not_visible
         makes the click a no-op in that case rather than failing the whole
         detail scrape (and losing sqft/rent/tax data along with it).
-        """
-        try:
-            full = ScrapeConfig(
-                url=url, asp=True, render_js=True, country="ca",
-                session=f"centris-detail-{uuid.uuid4().hex[:8]}",
-                rendering_wait=3000,
-                js_scenario=[
-                    {"click": {"selector": "#Calcul_btTotalMutation", "ignore_if_not_visible": True}},
-                    {"wait": 1500},
-                ],
-            )
-            result = await self.client.async_scrape(full)
-            cost = result.context.get("cost", {}).get("total", 0)
-            final_url = result.context.get("url", "") or ""
-            self.logger.info(
-                f"[centris] detail-full: {result.upstream_status_code} "
-                f"| credits={cost} | {url[-55:]}"
-            )
 
-            # Centris redirects to "...?listingnotfound=<mls>" when a listing has
-            # been sold/removed since we last scraped it — the resulting page has
-            # no real listing content (no price, no calculator, nothing to parse).
-            # Signal this back rather than returning None, so the caller can mark
-            # the existing property delisted instead of silently retrying forever.
-            if "listingnotfound=" in final_url:
-                mls = url.rstrip("/").rsplit("/", 1)[-1]
-                self.logger.info(f"[centris] listing delisted: {mls}")
-                return RawProperty(
-                    source=self.SOURCE, source_url=url, mls_number=mls, is_delisted=True,
+        wait_for_selector on .carac-container: confirmed live (verification
+        pipeline investigation) that the "Taxes municipales (2026)" row in
+        this section renders measurably later than its sibling "Taxes
+        scolaires (2025)" row — a fixed rendering_wait alone caught school
+        tax ~98% of the time but municipal tax only ~10% of the time on the
+        exact same page, across ~9,800 properties. Gating the wait on this
+        selector (rather than just a flat timer starting from page-load)
+        shifts the whole countdown window later, giving slow-to-populate
+        rows like this one enough margin to actually appear before capture.
+        """
+        # The post-click wait is a race against Scrapfly's rendering, not a
+        # fixed cost — confirmed live (verification pipeline testing) that
+        # 1500ms alone leaves welcome_tax null on a real minority of fetches
+        # of the exact same page that succeed on a second attempt. Retry once
+        # with a longer wait before giving up, rather than silently returning
+        # a null the page actually has a real value for.
+        for attempt, post_click_wait in enumerate((1500, 3000), start=1):
+            try:
+                full = ScrapeConfig(
+                    url=url, asp=True, render_js=True, country="ca",
+                    session=f"centris-detail-{uuid.uuid4().hex[:8]}",
+                    wait_for_selector=".carac-container",
+                    rendering_wait=4000,
+                    js_scenario=[
+                        {"click": {"selector": "#Calcul_btTotalMutation", "ignore_if_not_visible": True}},
+                        {"wait": post_click_wait},
+                    ],
+                )
+                result = await self.client.async_scrape(full)
+                cost = result.context.get("cost", {}).get("total", 0)
+                final_url = result.context.get("url", "") or ""
+                self.logger.info(
+                    f"[centris] detail-full (attempt {attempt}): {result.upstream_status_code} "
+                    f"| credits={cost} | {url[-55:]}"
                 )
 
-            if result.upstream_status_code == 200:
-                prop = self._parse_detail_page(result.content, source_url=url)
-                if prop:
-                    await self._geocode_prop(prop)
-                return prop
-        except Exception as exc:
-            self.logger.error(f"Full detail failed: {url} — {exc}")
+                # Centris redirects to "...?listingnotfound=<mls>" when a listing has
+                # been sold/removed since we last scraped it — the resulting page has
+                # no real listing content (no price, no calculator, nothing to parse).
+                # Signal this back rather than returning None, so the caller can mark
+                # the existing property delisted instead of silently retrying forever.
+                if "listingnotfound=" in final_url:
+                    mls = url.rstrip("/").rsplit("/", 1)[-1]
+                    self.logger.info(f"[centris] listing delisted: {mls}")
+                    return RawProperty(
+                        source=self.SOURCE, source_url=url, mls_number=mls, is_delisted=True,
+                    )
 
+                if result.upstream_status_code == 200:
+                    prop = self._parse_detail_page(result.content, source_url=url)
+                    if prop and (prop.welcome_tax or "#Calcul_btTotalMutation" not in result.content):
+                        # Got a real value, or the calculator genuinely isn't on
+                        # this page at all — either way, no retry needed.
+                        if prop:
+                            await self._geocode_prop(prop)
+                        return prop
+                    if prop and attempt == 1:
+                        self.logger.info(f"[centris] welcome_tax still null after attempt 1, retrying with longer wait: {url[-55:]}")
+                        continue
+                    if prop:
+                        await self._geocode_prop(prop)
+                    return prop
+            except Exception as exc:
+                self.logger.error(f"Full detail failed (attempt {attempt}): {url} — {exc}")
+
+        return None
+
+    async def search_by_address(
+        self, full_address: str, city: Optional[str], property_type: Optional[str] = None,
+        max_pages: int = 3,
+    ) -> Optional[RawProperty]:
+        """
+        Best-effort search for a property on Centris by address, for
+        properties scraped from a source with no built-in transfer-tax
+        calculator (Realtor) — used by the verification pipeline to still get
+        an authoritative welcome-tax figure by cross-checking Centris when the
+        same property is listed there too, even though it isn't our primary
+        source for it.
+
+        Centris has no public address-search API to call directly (confirmed
+        by testing — no autocomplete/search endpoint responds), so this reuses
+        the same category+city listing walk the general scraper already uses
+        and matches on the normalized civic+street key (same helper used to
+        match scraped listings to the assessment roll). Bounded to
+        `max_pages` per category to keep cost predictable — this is a
+        best-effort cross-check, not an exhaustive search, so a miss here
+        just means "not found on Centris," not "verification failed."
+        """
+        import unicodedata
+        from app.services.quebec_address import full_address_match_key
+
+        target_key = full_address_match_key(full_address)
+        if not target_key or not city:
+            return None
+
+        # Centris city slugs are unaccented, lowercase, hyphenated, and use
+        # only the base city (a borough like "Montréal (Saint-Laurent)"
+        # becomes "montreal" here, not "montreal-saint-laurent") — scoping to
+        # the base city still narrows the search far more than city=None
+        # (province-wide) without needing Centris's exact borough-slug list.
+        base_city = city.split("(")[0].strip()
+        normalized = unicodedata.normalize("NFKD", base_city).encode("ascii", "ignore").decode()
+        city_slug = re.sub(r"[^a-z0-9]+", "-", normalized.lower()).strip("-")
+
+        categories = [property_type] if property_type in ("condo", "house") else ["plex", "condo", "house"]
+        for category in categories:
+            for page in range(1, max_pages + 1):
+                try:
+                    candidates = await self.scrape_listings(category=category, city=city_slug, page=page)
+                except Exception as exc:
+                    self.logger.warning(f"[centris] address search failed ({category} p{page}): {exc}")
+                    break
+                if not candidates:
+                    break
+                for cand in candidates:
+                    if cand.full_address and full_address_match_key(cand.full_address) == target_key:
+                        self.logger.info(f"[centris] address search matched: {cand.full_address} -> {cand.source_url}")
+                        return cand
         return None
 
     async def scrape_photos(self, url: str) -> list[str]:
@@ -356,12 +436,22 @@ class CentrisScraper(BaseScraper):
         lat, lng = self._extract_coordinates(soup)
 
         # ── Price ─────────────────────────────────────────────────────────────
-        price_tag = (
-            soup.select_one(".price") or
-            soup.select_one(".price-section") or
-            soup.select_one("[class*='asking-price']")
-        )
-        asking_price = self._parse_price(price_tag.get_text() if price_tag else "")
+        # meta[itemprop='price'] is the current site's reliable numeric source
+        # (plain digits, no formatting to strip) — the old class selectors
+        # below (.price/.price-section/[class*='asking-price']) no longer
+        # match anything on the current page and are kept only as a last-ditch
+        # fallback in case the meta tag is ever missing.
+        price_meta = soup.select_one("meta[itemprop='price']")
+        if price_meta and price_meta.get("content"):
+            asking_price = self._parse_price(price_meta["content"])
+        else:
+            price_tag = (
+                soup.select_one(".property-summary-header__price-value") or
+                soup.select_one(".price") or
+                soup.select_one(".price-section") or
+                soup.select_one("[class*='asking-price']")
+            )
+            asking_price = self._parse_price(price_tag.get_text() if price_tag else "")
 
         # ── Address ───────────────────────────────────────────────────────────
         name_meta = (
@@ -406,18 +496,26 @@ class CentrisScraper(BaseScraper):
         parking = self._lookup_int(carac,
             "stationnement total", "stationnement", "parking", "garage")
 
-        # Bedrooms/bathrooms — check schema.org microdata first (most reliable on Centris)
+        # Bedrooms/bathrooms — check schema.org microdata first (most reliable
+        # on plex pages, via the "Unité principale" carac row), then the
+        # dedicated .cac/.sdb summary tags condo/house pages use instead
+        # (e.g. "1 chambre" / "1 salle de bain", no "Unité principale" row
+        # exists on those page types at all).
+        cac_tag = soup.select_one(".cac")
+        sdb_tag = soup.select_one(".sdb")
         bedrooms  = self._extract_microdata_int(soup, "numberOfBedrooms", "numberOfRooms") or \
                     self._parse_bedrooms(
                         carac.get("unité principale") or carac.get("unite principale") or
                         carac.get("chambre", "") or carac.get("chambres", "") or ""
                     ) or \
+                    self._parse_bedrooms(cac_tag.get_text() if cac_tag else "") or \
                     self._lookup_int(carac, "chambres", "chambre", "bedrooms", "bedroom")
         bathrooms = self._extract_microdata_float(soup, "numberOfBathroomsTotal", "numberOfBathrooms") or \
                     self._parse_bathrooms(
                         carac.get("unité principale") or carac.get("unite principale") or
                         carac.get("salle de bain", "") or ""
                     ) or \
+                    self._parse_bathrooms(sdb_tag.get_text() if sdb_tag else "") or \
                     self._lookup_int(carac, "salles de bain", "salle de bain", "bathrooms", "bathroom")
 
         # ── Financial fields ──────────────────────────────────────────────────
