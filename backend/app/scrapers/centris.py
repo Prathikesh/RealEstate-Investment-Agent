@@ -207,10 +207,12 @@ class CentrisScraper(BaseScraper):
         # The post-click wait is a race against Scrapfly's rendering, not a
         # fixed cost — confirmed live (verification pipeline testing) that
         # 1500ms alone leaves welcome_tax null on a real minority of fetches
-        # of the exact same page that succeed on a second attempt. Retry once
-        # with a longer wait before giving up, rather than silently returning
-        # a null the page actually has a real value for.
-        for attempt, post_click_wait in enumerate((1500, 3000), start=1):
+        # of the exact same page that succeed on a later attempt. Bumped
+        # from 2 to 3 attempts after live testing at scale showed a
+        # meaningful share of properties still needed a third try — the
+        # first two attempts are far more common failures than a genuine
+        # "no calculator on this page" case.
+        for attempt, post_click_wait in enumerate((1500, 3000, 5000), start=1):
             try:
                 full = ScrapeConfig(
                     url=url, asp=True, render_js=True, country="ca",
@@ -250,8 +252,8 @@ class CentrisScraper(BaseScraper):
                         if prop:
                             await self._geocode_prop(prop)
                         return prop
-                    if prop and attempt == 1:
-                        self.logger.info(f"[centris] welcome_tax still null after attempt 1, retrying with longer wait: {url[-55:]}")
+                    if prop and attempt < 3:
+                        self.logger.info(f"[centris] welcome_tax still null after attempt {attempt}, retrying with longer wait: {url[-55:]}")
                         continue
                     if prop:
                         await self._geocode_prop(prop)

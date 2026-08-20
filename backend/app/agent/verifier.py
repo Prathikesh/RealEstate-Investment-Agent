@@ -60,6 +60,15 @@ REANALYSIS_FIELDS = {
 
 NUMERIC_TOLERANCE = 0.01  # 1% — absorbs rounding noise, not real drift
 
+# A manual_review outcome doesn't advance last_verified_at (see verify_property)
+# so the property stays in the backlog and gets retried on a later pass — most
+# cases are the Centris calculator failing to render, not a real conflict, so
+# another independent attempt usually resolves it for free. Capped so a
+# genuinely persistent disagreement (or a page that's reproducibly hard to
+# render) doesn't retry forever; after this many straight manual_review
+# outcomes it's left for report_verification_issues.py instead.
+MAX_MANUAL_REVIEW_RETRIES = 3
+
 SCRAPER_CLASSES = {
     ScraperSource.CENTRIS.value: CentrisScraper,
     ScraperSource.REALTOR.value: RealtorScraper,
@@ -78,9 +87,63 @@ SOURCE_COMPARABLE_FIELDS = {
     },
 }
 
+# Two independent fetches agreeing is normally enough evidence to trust a
+# correction — but that only catches rendering flakiness, not bad data baked
+# into the source page itself. Confirmed live: a Realtor.ca listing's own
+# "Total Units" field said 1469 on a 31,000 sqft lot (vs. a real dataset max
+# of 29) — both fetches agreed because the page is just wrong, and it got
+# auto-applied straight into the database before this check existed. These
+# are generous outer bounds for this dataset (Quebec residential/plex), not
+# tight validation — anything outside them almost certainly isn't real and
+# gets sent to manual_review instead of applied.
+FIELD_SANITY_BOUNDS: dict[str, tuple[float, float]] = {
+    "unit_count": (1, 50),
+    "bedrooms_total": (0, 20),
+    "bathrooms_total": (0, 15),
+    "sqft_total": (100, 100_000),
+    "asking_price": (10_000, 100_000_000),  # for_sale only — see _within_sanity_bounds
+    "municipal_taxes_annual": (0, 500_000),
+    "school_taxes_annual": (0, 100_000),
+    "welcome_tax": (0, 500_000),
+}
+
+# asking_price on a for_rent property holds monthly rent, not a sale price
+# (confirmed live: 936 legitimate rental listings under $10k triggered the
+# for-sale bound before this carve-out existed) — skip the check there
+# rather than trying to guess a sensible rent range.
+RENT_EXEMPT_BOUNDS_FIELDS = {"asking_price"}
+
+
+def _within_sanity_bounds(field: str, value, listing_type: Optional[str] = None) -> bool:
+    if field in RENT_EXEMPT_BOUNDS_FIELDS and listing_type == "for_rent":
+        return True
+    bounds = FIELD_SANITY_BOUNDS.get(field)
+    if bounds is None or value is None:
+        return True
+    lo, hi = bounds
+    return lo <= value <= hi
+
 
 def _comparable_fields(source: Optional[str]) -> set[str]:
     return SOURCE_COMPARABLE_FIELDS.get(source, set(VERIFIABLE_FIELDS) - {"welcome_tax"})
+
+
+async def _manual_review_streak(session: AsyncSession, property_id) -> int:
+    """How many of this property's most recent verification runs, counting
+    back from the latest, were manual_review in a row. Stops at the first
+    non-manual_review outcome (or when logs run out)."""
+    result = await session.execute(
+        select(PropertyVerificationLog.outcome)
+        .where(PropertyVerificationLog.property_id == property_id)
+        .order_by(PropertyVerificationLog.verified_at.desc())
+        .limit(MAX_MANUAL_REVIEW_RETRIES + 1)
+    )
+    streak = 0
+    for (outcome,) in result.all():
+        if outcome != VerificationOutcome.MANUAL_REVIEW:
+            break
+        streak += 1
+    return streak
 
 
 def make_scrapers(api_keys: list[str]) -> dict[str, BaseScraper]:
@@ -292,10 +355,19 @@ async def verify_property(
         entry = fields_checked[f]
         entry["fetch2"] = f2
 
-        if f2 is not None and _values_match(f1, f2):
+        if f2 is not None and _values_match(f1, f2) and _within_sanity_bounds(f, f2, prop.listing_type):
             setattr(prop, f, f2)
             entry["corrected"] = True
             corrected_any = True
+        elif f2 is not None and _values_match(f1, f2):
+            # Both fetches agree, but the value itself is outside plausible
+            # bounds — that means the source page has bad data baked in, not
+            # a rendering glitch a re-fetch would fix. Never auto-apply this;
+            # route to manual_review like any other unresolved mismatch.
+            entry["corrected"] = False
+            entry["out_of_bounds"] = True
+            entry["manual_review"] = True
+            manual_review_any = True
         elif f2 is not None and _values_match(stored, f2):
             entry["corrected"] = False
         else:
@@ -312,10 +384,31 @@ async def verify_property(
     else:
         outcome = VerificationOutcome.VERIFIED_MATCH
 
+    # Checked before adding this run's own log row below, so it only counts
+    # prior runs.
+    prior_manual_review_streak = (
+        await _manual_review_streak(session, prop.id) if outcome == VerificationOutcome.MANUAL_REVIEW else 0
+    )
+
     session.add(PropertyVerificationLog(
         property_id=prop.id, source=_source_enum(prop), fields_checked=fields_checked,
         outcome=outcome, verified_at=now,
     ))
+
+    if outcome == VerificationOutcome.MANUAL_REVIEW and prior_manual_review_streak < MAX_MANUAL_REVIEW_RETRIES:
+        # Nothing was actually confirmed — leave last_verified_at untouched
+        # (most often still NULL, or from a prior real verification) so this
+        # property stays in the self-pacing backlog priority and gets
+        # retried on a future pass instead of being silently treated as
+        # "done" with an unresolved field. Most manual_review cases so far
+        # are the Centris calculator failing to render in time, not a real
+        # data conflict — an independent later attempt has a good chance of
+        # resolving it with no extra code needed. Capped so a genuinely
+        # persistent disagreement doesn't retry forever — after
+        # MAX_MANUAL_REVIEW_RETRIES straight manual_review outcomes it's
+        # left for the report script instead.
+        return outcome
+
     prop.last_verified_at = now
     return outcome
 
