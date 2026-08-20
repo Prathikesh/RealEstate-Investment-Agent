@@ -23,6 +23,7 @@ class VerificationOutcome(str, enum.Enum):
     MANUAL_REVIEW  = "manual_review"     # stored/fetch1/fetch2 all disagreed — untouched
     FETCH_FAILED   = "fetch_failed"      # couldn't re-fetch the source page at all
     NO_CENTRIS_MATCH = "no_centris_match"  # Realtor-only property, no match found on Centris either
+    DELISTED       = "delisted"          # source confirmed the listing is gone (sold/removed)
 
 
 class PropertyVerificationLog(Base):

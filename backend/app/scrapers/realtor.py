@@ -10,13 +10,14 @@ Address format in response:
   "5950 Boul. Cavendish|#105|Côte-Saint-Luc, Quebec H4W3H1"
   Pipe-separated: street | unit (optional) | "City, Province PostalCode"
 """
+import asyncio
 import re
 from typing import Optional
 from urllib.parse import urlencode
 
 from bs4 import BeautifulSoup
 
-from app.scrapers.base import BaseScraper, RawProperty
+from app.scrapers.base import BaseScraper, RawProperty, SCRAPFLY_CALL_TIMEOUT
 
 
 # Realtor.ca building type → our PropertyType enum
@@ -152,13 +153,16 @@ class RealtorScraper(BaseScraper):
         """
         from scrapfly import ScrapeConfig
         self.logger.info("Establishing Realtor.ca browser session ...")
-        await self.client.async_scrape(ScrapeConfig(
-            url="https://www.realtor.ca",
-            asp=True,
-            render_js=True,
-            session=session_id,
-            country="ca",
-        ))
+        await asyncio.wait_for(
+            self.client.async_scrape(ScrapeConfig(
+                url="https://www.realtor.ca",
+                asp=True,
+                render_js=True,
+                session=session_id,
+                country="ca",
+            )),
+            timeout=SCRAPFLY_CALL_TIMEOUT,
+        )
         self.logger.info("Session established.")
 
     async def _post_and_parse(
@@ -176,7 +180,7 @@ class RealtorScraper(BaseScraper):
             asp=False,
             render_js=False,
         )
-        result = await self.client.async_scrape(config)
+        result = await asyncio.wait_for(self.client.async_scrape(config), timeout=SCRAPFLY_CALL_TIMEOUT)
 
         if result.upstream_status_code != 200:
             self.logger.error(f"API returned {result.upstream_status_code}")
@@ -224,15 +228,21 @@ class RealtorScraper(BaseScraper):
         # on the page, covering Realtor.ca's two main HTML patterns.
         label_map: dict[str, str] = {}
 
-        # Pattern 1: <li> with label/value span children
-        for li in soup.select("li"):
+        # Pattern 1: label/value pairs wrapped in a container element — confirmed
+        # live (verification pipeline testing) that Realtor.ca now wraps these
+        # in <div class="propertyDetailsSectionContentSubCon">, not <li> as
+        # this used to assume; every "li" match silently found nothing, so
+        # taxes/sqft/unit-count/etc. were never actually extracted. Selecting
+        # both the current div wrapper and the old li (in case some sections
+        # still use it, or it reverts) rather than picking one blindly.
+        for container in soup.select(".propertyDetailsSectionContentSubCon, li"):
             label_el = (
-                li.select_one(".propertyDetailsSectionContentLabel") or
-                li.select_one("[class*='label']")
+                container.select_one(".propertyDetailsSectionContentLabel") or
+                container.select_one("[class*='label']")
             )
             value_el = (
-                li.select_one(".propertyDetailsSectionContentValue") or
-                li.select_one("[class*='value']")
+                container.select_one(".propertyDetailsSectionContentValue") or
+                container.select_one("[class*='value']")
             )
             if label_el and value_el:
                 label_map[label_el.get_text(strip=True).lower()] = value_el.get_text(strip=True)
@@ -260,13 +270,20 @@ class RealtorScraper(BaseScraper):
                             return int(nums[0])
             return None
 
+        # Confirmed live (verification pipeline testing) that Realtor.ca's
+        # current labels are "Square Footage", "Maintenance Fees", and
+        # "Built in" — none of which the old key lists matched at all (e.g.
+        # "living area" is not a substring of "square footage"), so these
+        # fields were silently always None even once the container-selector
+        # bug above was fixed. Keeping the old candidates too in case of
+        # regional/listing-type label variation this one page doesn't show.
         rental_annual   = _money(["annual rental", "rental income", "revenus locatifs", "revenu annuel"])
         municipal_tax   = _money(["municipal tax", "taxe municipal", "taxes municipal"])
         school_tax      = _money(["school tax", "taxe scolaire", "taxes scolaire"])
-        condo_fees      = _money(["condo fee", "frais de condo", "monthly fee", "frais mensuels"])
-        year_built      = _int(["year built", "année de construction", "construit", "year of construction"])
+        condo_fees      = _money(["maintenance fee", "condo fee", "frais de condo", "monthly fee", "frais mensuels"])
+        year_built      = _int(["built in", "year built", "année de construction", "construit", "year of construction"])
         unit_count      = _int(["number of unit", "nombre de logement", "total unit", "logements"])
-        sqft            = _int(["living area", "interior size", "superficie habitable", "sq. ft", "pi²"])
+        sqft            = _int(["square footage", "living area", "interior size", "superficie habitable", "sq. ft", "pi²"])
         lot_sqft        = _int(["lot size", "lot area", "terrain", "land size", "superficie du terrain"])
 
         return RawProperty(

@@ -80,6 +80,17 @@ class PropertyDeduplicator:
         Upsert one RawProperty into the database.
         Returns (property, is_new). Out-of-scope cities are skipped -> (None, False).
         """
+        now = datetime.now(timezone.utc)
+
+        # Checked before the city-scope gate below — a delisted signal
+        # carries no real field data by design (city included), so it would
+        # otherwise always get misread as "out of scope" and silently
+        # dropped, never actually marking the existing property delisted
+        # (confirmed live: this was happening on every delisted listing,
+        # from any scrape path, until this check was moved up).
+        if raw.is_delisted:
+            return await self._mark_delisted(raw, now)
+
         # Only ingest listings we can fully serve (zoning coverage). A bbox can't
         # exclude on-island suburbs, so we filter by city here — the single choke
         # point every scrape path goes through.
@@ -97,11 +108,7 @@ class PropertyDeduplicator:
             logger.debug(f"skip remax for-sale listing: {raw.source_url}")
             return None, False
 
-        now = datetime.now(timezone.utc)
         changes: dict = {}
-
-        if raw.is_delisted:
-            return await self._mark_delisted(raw, now)
 
         existing = await self._find_existing(raw)
 

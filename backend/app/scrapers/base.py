@@ -7,6 +7,7 @@ Dual-key support:
   If key1 returns a credit-exhaustion error, it automatically switches
   to key2 for the rest of that session and logs a warning.
 """
+import asyncio
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -14,6 +15,15 @@ from typing import Optional, Union
 
 from scrapfly import ScrapflyClient, ScrapeConfig, ScrapeApiResponse
 from scrapfly.errors import ScrapflyError
+
+# Scrapfly has its own internal operation timeout (seen in practice as a 504
+# ERR::SCRAPE::OPERATION_TIMEOUT after ~15-45s), but that's not a guarantee —
+# a request can also just hang with no response at all (confirmed live: a
+# verification run sat on one open connection for 3+ hours with zero
+# progress). This is a hard client-side backstop so a single bad call can
+# never block a whole batch indefinitely; every self.client.async_scrape()
+# call in this module and the site-specific scrapers is wrapped in it.
+SCRAPFLY_CALL_TIMEOUT = 90
 
 
 # ── Normalized output from any scraper ────────────────────────────────────────
@@ -186,17 +196,20 @@ class BaseScraper:
             config_kwargs["geolocation"] = geolocation
         config = ScrapeConfig(**config_kwargs)
         try:
-            result = await self.client.async_scrape(config)
+            result = await asyncio.wait_for(self.client.async_scrape(config), timeout=SCRAPFLY_CALL_TIMEOUT)
             cost = result.context.get("cost", "?")
             self.logger.info(
                 f"[{self.SOURCE}] {result.upstream_status_code} "
                 f"| credits={cost} | key#{self._key_idx + 1} | {url[:90]}"
             )
             return result
+        except asyncio.TimeoutError:
+            self.logger.error(f"[{self.SOURCE}] Timed out after {SCRAPFLY_CALL_TIMEOUT}s — {url}")
+            raise
         except ScrapflyError as exc:
             if _is_credit_error(exc) and self._switch_to_next_key():
                 self.logger.info(f"[{self.SOURCE}] Retrying with new key: {url[:90]}")
-                result = await self.client.async_scrape(config)
+                result = await asyncio.wait_for(self.client.async_scrape(config), timeout=SCRAPFLY_CALL_TIMEOUT)
                 return result
             self.logger.error(f"[{self.SOURCE}] Scrapfly error — {url}: {exc}")
             raise

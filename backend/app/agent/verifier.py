@@ -27,6 +27,7 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.database import AsyncSessionLocal
 from app.models.property import Property
 from app.models.snapshot import ScraperSource
 from app.models.source import PropertySource
@@ -193,6 +194,24 @@ async def verify_property(
 
     primary_raw = await _fetch_primary(prop, scrapers)
 
+    if primary_raw is not None and primary_raw.is_delisted:
+        # The source confirmed this listing is gone (sold/removed) — route
+        # through PropertyDeduplicator's existing _mark_delisted path (only
+        # touches status, never overwrites real field data with the all-None
+        # payload a delisted signal carries) rather than running it through
+        # field-by-field comparison, which would otherwise flag every stored
+        # value as a "mismatch" against nothing and waste a second re-fetch
+        # confirming what's already certain.
+        dedup = PropertyDeduplicator(session)
+        await dedup.process(primary_raw)
+        outcome = VerificationOutcome.DELISTED
+        session.add(PropertyVerificationLog(
+            property_id=prop.id, source=_source_enum(prop), fields_checked={},
+            outcome=outcome, verified_at=now,
+        ))
+        prop.last_verified_at = now
+        return outcome
+
     if prop.primary_source == ScraperSource.CENTRIS.value and primary_raw is None:
         # Primary source IS Centris and the fetch already failed (scrape_detail
         # already retries internally once) — the welcome-tax calculator lives
@@ -302,38 +321,72 @@ async def verify_property(
 
 
 async def verify_batch(
-    session: AsyncSession,
     properties: list[Property],
     api_keys: list[str],
-    commit_every: int = 25,
     delay_seconds: float = 1.5,
+    concurrency: int = 1,
+    progress_cb=None,
 ) -> dict[str, int]:
+    """
+    A rollback expires every object in a SQLAlchemy session's identity map,
+    not just the one that failed — so sharing one long-lived session across
+    a whole batch means a single dropped connection on item N turns every
+    subsequent item's attribute access (even `prop.id`) into a lazy-load
+    that crashes with MissingGreenlet outside of an awaited context. Fixed
+    by giving each property its own fresh session and commit (mirrors
+    scheduler.py's `_save()` pattern, just at per-item granularity — each
+    item already costs several seconds of network time, so a session per
+    item is negligible overhead and far more resilient here). This is also
+    what makes `concurrency` > 1 safe: every concurrent task owns its own
+    session, so there's no shared-transaction state to corrupt.
+
+    `scrapers` (the Scrapfly-backed client instances) ARE shared across
+    concurrent tasks — each detail fetch uses its own one-off Scrapfly
+    session id, so concurrent detail fetches don't collide. The one
+    exception is CentrisScraper.search_by_address()'s underlying
+    scrape_listings() calls, which reuse a single shared search session for
+    cookie continuity — concurrent searches can interleave that session's
+    state. Worst case is a slightly less efficient search, never a wrong
+    match (still gated by the exact address-key check), so this is an
+    accepted tradeoff rather than something worth a dedicated session pool.
+
+    progress_cb(done, total, stats), if given, is called after every item
+    completes — used by the backfill script to print live progress.
+    """
     stats: dict[str, int] = {o.value: 0 for o in VerificationOutcome}
     stats["errors"] = 0
 
+    property_ids = [p.id for p in properties]  # capture before any lazy-load risk
+    total = len(property_ids)
     scrapers = make_scrapers(api_keys)
-    try:
-        for i, prop in enumerate(properties, 1):
-            pid = prop.id
+    sem = asyncio.Semaphore(max(1, concurrency))
+    done = 0
+    lock = asyncio.Lock()
+
+    async def _run_one(i: int, pid) -> None:
+        nonlocal done
+        async with sem:
             try:
-                outcome = await verify_property(session, prop, scrapers)
-                stats[outcome.value] += 1
+                async with AsyncSessionLocal() as item_session:
+                    prop = await item_session.get(Property, pid)
+                    if prop is not None:
+                        outcome = await verify_property(item_session, prop, scrapers)
+                        await item_session.commit()
+                        async with lock:
+                            stats[outcome.value] += 1
             except Exception as exc:
-                logger.warning(f"[verify] {i}/{len(properties)} failed for property {pid}: {exc}")
-                stats["errors"] += 1
-                await session.rollback()
-
-            if i % commit_every == 0:
-                try:
-                    await session.commit()
-                except Exception as exc:
-                    logger.warning(f"[verify] commit at {i}/{len(properties)} failed: {exc}")
-                    await session.rollback()
+                logger.warning(f"[verify] {i}/{total} failed for property {pid}: {exc}")
+                async with lock:
                     stats["errors"] += 1
-
             await asyncio.sleep(delay_seconds)
+            async with lock:
+                done += 1
+                current_done = done
+            if progress_cb:
+                progress_cb(current_done, total, stats)
 
-        await session.commit()
+    try:
+        await asyncio.gather(*(_run_one(i, pid) for i, pid in enumerate(property_ids, 1)))
     finally:
         await close_scrapers(scrapers)
 

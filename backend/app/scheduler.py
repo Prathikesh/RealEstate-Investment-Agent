@@ -44,6 +44,7 @@ from scrapfly import ScrapeConfig
 
 from app.config import settings
 from app.database import AsyncSessionLocal
+from app.scrapers.base import SCRAPFLY_CALL_TIMEOUT
 from app.scrapers.centris import CentrisScraper
 from app.scrapers.realtor import RealtorScraper, API_URL, API_HEADERS, QUEBEC_CITY_BBOXES
 from app.scrapers.deduplicator import PropertyDeduplicator
@@ -288,7 +289,7 @@ async def scrape_job() -> None:
                     url=API_URL, method="POST", body=body,
                     headers=API_HEADERS, country="ca", asp=False, render_js=False,
                 )
-                result = await scraper.client.async_scrape(config)
+                result = await asyncio.wait_for(scraper.client.async_scrape(config), timeout=SCRAPFLY_CALL_TIMEOUT)
 
                 if result.upstream_status_code != 200:
                     logger.error(f"[realtor] {city_name} HTTP {result.upstream_status_code}")
@@ -466,7 +467,7 @@ async def scrape_multiunit_job() -> None:
                     url=API_URL, method="POST", body=body,
                     headers=API_HEADERS, country="ca", asp=False, render_js=False,
                 )
-                result = await scraper.client.async_scrape(config)
+                result = await asyncio.wait_for(scraper.client.async_scrape(config), timeout=SCRAPFLY_CALL_TIMEOUT)
 
                 if result.upstream_status_code != 200:
                     logger.error(f"[realtor-multiunit] {city_name} HTTP {result.upstream_status_code}")
@@ -629,6 +630,7 @@ async def pipeline_job() -> None:
 # change needed to "transition," it falls out of the query.
 
 NIGHTLY_VERIFY_BATCH_SIZE = 300
+VERIFY_CONCURRENCY = 6
 verification_running = False
 
 # Set by create_scheduler() so verification_job can pause/resume the other
@@ -692,11 +694,14 @@ async def verification_job() -> None:
     try:
         async with AsyncSessionLocal() as session:
             batch = await _select_verification_batch(session, NIGHTLY_VERIFY_BATCH_SIZE)
-            if not batch:
-                logger.info("=== Verification job: nothing to verify ===")
-                return
+        if not batch:
+            logger.info("=== Verification job: nothing to verify ===")
+            return
 
-            stats = await verify_batch(session, batch, _api_keys())
+        # Not run inside the session above — verify_batch opens its own fresh
+        # session per property (see its docstring) rather than holding one
+        # connection open for a run that can take hours.
+        stats = await verify_batch(batch, _api_keys(), concurrency=VERIFY_CONCURRENCY)
 
         elapsed = round((datetime.now(timezone.utc) - start).total_seconds(), 1)
         logger.info(

@@ -20,6 +20,7 @@ Detail page key patterns:
   table rows in #divRevenuDepense                   ← income/expense financials
   script[type="application/ld+json"]               ← coordinates (GeoCoordinates)
 """
+import asyncio
 import json as _json
 import re
 import uuid
@@ -29,7 +30,7 @@ from typing import Optional
 from bs4 import BeautifulSoup, Tag
 from scrapfly import ScrapeConfig
 
-from app.scrapers.base import BaseScraper, RawProperty
+from app.scrapers.base import BaseScraper, RawProperty, SCRAPFLY_CALL_TIMEOUT
 
 
 def hi_res_photo(url: str) -> str:
@@ -83,7 +84,7 @@ class CentrisScraper(BaseScraper):
 
     # ── Public API ────────────────────────────────────────────────────────────
 
-    async def _set_sort_newest(self) -> None:
+    async def _set_sort_newest(self, session_id: Optional[str] = None) -> None:
         """
         Ask Centris to sort search results newest-first (by publication date,
         descending) for this session.
@@ -110,9 +111,9 @@ class CentrisScraper(BaseScraper):
                 method="POST",
                 data={"sort": 3, "mode": "Result"},
                 headers={"Content-Type": "application/json"},
-                asp=True, country="ca", session=self._SESSION,
+                asp=True, country="ca", session=session_id or self._SESSION,
             )
-            result = await self.client.async_scrape(config)
+            result = await asyncio.wait_for(self.client.async_scrape(config), timeout=SCRAPFLY_CALL_TIMEOUT)
             self.logger.info(f"[centris] sort→newest: {(result.content or '')[:80]}")
         except Exception as exc:
             self.logger.warning(f"[centris] could not set newest-first sort: {exc}")
@@ -122,6 +123,7 @@ class CentrisScraper(BaseScraper):
         category: str = "plex",
         city: Optional[str] = None,
         page: int = 1,
+        session_id: Optional[str] = None,
     ) -> list[RawProperty]:
         """
         Fetch one page of search results (~20 properties).
@@ -130,20 +132,31 @@ class CentrisScraper(BaseScraper):
 
         On page 1 we (re)assert newest-first sort for the session so new
         listings cluster toward the front — see _set_sort_newest().
+
+        session_id overrides the shared self._SESSION (used by the main
+        scrape_job's long multi-page walk) — required for any caller that
+        might run concurrently with other scrape_listings calls, since
+        Scrapfly rejects concurrent access to the same named session with a
+        429 (confirmed live: CentrisScraper.search_by_address() collided
+        with itself across concurrent verification-pipeline properties
+        before this param existed). Sort order doesn't matter for a bounded
+        address search, so callers passing session_id can skip needing it
+        set at all — only the main scrape_job cares about newest-first.
         """
         base = SEARCH_URLS.get(category, SEARCH_URLS["plex"])
         if city:
             base = f"{base}~{city.lower().replace(' ', '-')}"
         url = base if page == 1 else f"{base}?view=Thumbnail&uc={page}"
 
-        if page == 1:
+        effective_session = session_id or self._SESSION
+        if page == 1 and session_id is None:
             await self._set_sort_newest()
 
         config = ScrapeConfig(
             url=url, asp=True, render_js=True, country="ca",
-            session=self._SESSION,
+            session=effective_session,
         )
-        result = await self.client.async_scrape(config)
+        result = await asyncio.wait_for(self.client.async_scrape(config), timeout=SCRAPFLY_CALL_TIMEOUT)
         cost = result.context.get("cost", {})
         self.logger.info(
             f"[centris] {result.upstream_status_code} "
@@ -209,7 +222,7 @@ class CentrisScraper(BaseScraper):
                         {"wait": post_click_wait},
                     ],
                 )
-                result = await self.client.async_scrape(full)
+                result = await asyncio.wait_for(self.client.async_scrape(full), timeout=SCRAPFLY_CALL_TIMEOUT)
                 cost = result.context.get("cost", {}).get("total", 0)
                 final_url = result.context.get("url", "") or ""
                 self.logger.info(
@@ -245,6 +258,29 @@ class CentrisScraper(BaseScraper):
                     return prop
             except Exception as exc:
                 self.logger.error(f"Full detail failed (attempt {attempt}): {url} — {exc}")
+
+        # Both full-render attempts failed outright (not just a parse issue —
+        # an exception, most often ERR::SCRAPE::DOM_SELECTOR_NOT_FOUND). That
+        # error fires when .carac-container never appears, which is exactly
+        # what happens on Centris's "listingnotfound=" redirect page for a
+        # delisted/sold property — wait_for_selector throws before we ever
+        # get a response to inspect. Without render_js's page requirements,
+        # a cheap plain fetch can still see the final redirect URL, so check
+        # for that specifically before giving up — otherwise every delisted
+        # listing (common in an old backlog) gets misreported as a fetch
+        # failure instead of being cleanly marked delisted.
+        try:
+            cheap = ScrapeConfig(url=url, asp=True, country="ca")
+            result = await asyncio.wait_for(self.client.async_scrape(cheap), timeout=SCRAPFLY_CALL_TIMEOUT)
+            final_url = result.context.get("url", "") or ""
+            if "listingnotfound=" in final_url:
+                mls = url.rstrip("/").rsplit("/", 1)[-1]
+                self.logger.info(f"[centris] listing delisted (confirmed via cheap fallback): {mls}")
+                return RawProperty(
+                    source=self.SOURCE, source_url=url, mls_number=mls, is_delisted=True,
+                )
+        except Exception as exc:
+            self.logger.error(f"Delisted-check fallback also failed: {url} — {exc}")
 
         return None
 
@@ -285,11 +321,20 @@ class CentrisScraper(BaseScraper):
         normalized = unicodedata.normalize("NFKD", base_city).encode("ascii", "ignore").decode()
         city_slug = re.sub(r"[^a-z0-9]+", "-", normalized.lower()).strip("-")
 
+        # A dedicated per-call session, not self._SESSION — search_by_address
+        # can run concurrently (multiple properties verified in parallel),
+        # and Scrapfly 429s on any concurrent access to the same named
+        # session. Still shared across this one call's own pages/categories
+        # so cookies persist within a single search.
+        search_session = f"centris-search-{uuid.uuid4().hex[:8]}"
+
         categories = [property_type] if property_type in ("condo", "house") else ["plex", "condo", "house"]
         for category in categories:
             for page in range(1, max_pages + 1):
                 try:
-                    candidates = await self.scrape_listings(category=category, city=city_slug, page=page)
+                    candidates = await self.scrape_listings(
+                        category=category, city=city_slug, page=page, session_id=search_session,
+                    )
                 except Exception as exc:
                     self.logger.warning(f"[centris] address search failed ({category} p{page}): {exc}")
                     break
@@ -315,7 +360,7 @@ class CentrisScraper(BaseScraper):
                 session=f"centris-photos-{uuid.uuid4().hex[:8]}",
                 rendering_wait=1500,
             )
-            result = await self.client.async_scrape(config)
+            result = await asyncio.wait_for(self.client.async_scrape(config), timeout=SCRAPFLY_CALL_TIMEOUT)
             cost = result.context.get("cost", {}).get("total", 0)
             self.logger.info(
                 f"[centris] photos: {result.upstream_status_code} "
