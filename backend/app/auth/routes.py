@@ -114,7 +114,7 @@ class PreferencesUpdate(BaseModel):
 # The real-number targets a broker can set on their buy box. Mirrors frontend
 # lib/buybox.ts BUYBOX_KEYS + the query params the properties route accepts.
 BUY_BOX_KEYS = {
-    "cash_flow_min", "cap_rate_min", "discount_min", "days_on_market_min",
+    "cash_flow_min", "cap_rate_min", "discount_min", "days_on_market_min", "grm_max",
     "price_drop_min", "price_drop_pct_min", "price_max",
 }
 

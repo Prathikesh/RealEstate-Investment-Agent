@@ -10,8 +10,7 @@ import { useCompare } from '../context/CompareContext'
 import { useAuth } from '../auth/AuthContext'
 import { useMemo } from 'react'
 import ScoreBadge from '../components/ScoreBadge'
-import { computeWeightedScore, weightsAreValid, STRATEGY_WEIGHTS, type ScoreWeights } from '../lib/verdict'
-import { componentsForProperty } from '../lib/propertyVerdict'
+import { computeFitScore } from '../lib/verdict'
 
 function fmtCAD(v: number | null | undefined): string {
   if (v == null) return '—'
@@ -90,24 +89,21 @@ export default function Compare() {
   const { items, remove, clear } = useCompare()
   const { user } = useAuth()
 
-  // Resolve the broker's Your Verdict weights (custom → strategy preset → both),
-  // matching VerdictCompare, then splice a "Your Verdict" row in next to "AI Score"
-  // so the comparison shows both the platform's and the investor's own scores.
+  // "Your Verdict" = buy-box FIT (matches VerdictCompare + the server ranking).
+  // Spliced in next to "AI Score" so the comparison shows both the platform's and
+  // the investor's own scores.
   const rows = useMemo<Row[]>(() => {
-    const strategy = user?.investment_strategy ?? 'both'
-    const customValid = user?.custom_score_weights && weightsAreValid(user.custom_score_weights)
-    const weights: ScoreWeights = customValid
-      ? (user!.custom_score_weights as ScoreWeights)
-      : STRATEGY_WEIGHTS[strategy]
     const buyBox = user?.custom_buy_box ?? undefined
-    const yourScore = (p: PropertyDetail) => computeWeightedScore(
-      componentsForProperty(p), weights, buyBox,
-      { discount: p.discount_pct, cap_rate: p.cap_rate, cash_flow: p.monthly_cash_flow, dom_bonus: p.days_on_market },
+    const yourScore = (p: PropertyDetail) => computeFitScore(
+      buyBox,
+      { discount: p.discount_pct, cap_rate: p.cap_rate, cash_flow: p.monthly_cash_flow, days: p.days_on_market, grm: p.grm },
+      (p.score_components?.unverified_income_cap ?? 0) > 0,
+      p.score,
     )
     const yourRow: Row = {
       group: 'Returns', label: 'Your Verdict', higherIsBetter: true,
-      getValue: p => `${yourScore(p)}/100`,
-      getRaw: p => yourScore(p),
+      getValue: p => { const s = yourScore(p); return s == null ? '—' : `${s}/100` },
+      getRaw: p => yourScore(p) ?? 0,
     }
     const out = [...ROWS]
     const aiIdx = out.findIndex(r => r.label === 'AI Score')

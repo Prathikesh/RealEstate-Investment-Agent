@@ -1,119 +1,74 @@
-/**
- * Twin tests for computeWeightedScore — these mirror backend/tests/test_verdict.py
- * case-for-case, so if the frontend Your Verdict math ever drifts from the server
- * (the two are hand-kept in sync, no codegen) a test breaks. Run: npm test
- */
 import { describe, it, expect } from 'vitest'
-import {
-  SCORE_FACTORS, UNVERIFIED_INCOME_FACTOR_CEILING,
-  computeWeightedScore, buildYourVerdictRows, type ScoreComponents, type ScoreWeights,
-} from './verdict'
+import { computeFitScore, buildFitRows, INCOME_FACTOR_CEILING } from './verdict'
 
-const only = (factor: string): ScoreWeights =>
-  Object.fromEntries(SCORE_FACTORS.map(f => [f, f === factor ? 1 : 0])) as ScoreWeights
+// Frontend twin of backend/tests/test_verdict.py — the two must agree.
 
-const base = (overrides: Partial<ScoreComponents> = {}): ScoreComponents => ({
-  discount: 30, cap_rate: 30, cash_flow: 30, grm: 30,
-  confidence: 30, dom_bonus: 30, price_history: 30,
-  unverified_income_cap: 0,
-  ...overrides,
-})
-
-describe('days-listed strategy (the client bug)', () => {
-  it('scores 100 on the days factor when the target is beaten', () => {
-    const score = computeWeightedScore(
-      base({ dom_bonus: 30 }), only('dom_bonus'),
-      { days_on_market_min: 30 }, { dom_bonus: 60 },
-    )
-    expect(score).toBe(100)
+describe('computeFitScore — buy-box fit', () => {
+  it('scores full when a target is met', () => {
+    expect(computeFitScore({ days_on_market_min: 30 }, { days: 60 })).toBe(100)
   })
 
-  it('lets a days-driven verdict exceed 59 even with estimated income', () => {
-    const score = computeWeightedScore(
-      base({ dom_bonus: 30, unverified_income_cap: 59 }), only('dom_bonus'),
-      { days_on_market_min: 30 }, { dom_bonus: 90 },
-    )
-    expect(score).toBe(100) // not clamped to 59
+  it('honours a NEGATIVE cash-flow target (old model ignored target<=0)', () => {
+    expect(computeFitScore({ cash_flow_min: -600 }, { cash_flow: 100 })).toBe(100)
   })
-})
 
-describe('estimated income still cannot inflate the yield factors', () => {
-  it('caps a yield factor at the neutral ceiling', () => {
-    const score = computeWeightedScore(base({ cash_flow: 90, unverified_income_cap: 59 }), only('cash_flow'))
-    expect(score).toBe(UNVERIFIED_INCOME_FACTOR_CEILING) // 90 -> 50
+  it('scores proportionally below target', () => {
+    // cap target=6 (bad=1); 3.5% -> (3.5-1)/(6-1) = 50%
+    expect(computeFitScore({ cap_rate_min: 6 }, { cap_rate: 3.5 })).toBe(50)
+  })
+
+  it('treats GRM as lower-is-better', () => {
+    // grm target<=10 (bad=18); grm=14 -> (18-14)/(18-10) = 50%
+    expect(computeFitScore({ grm_max: 10 }, { grm: 14 })).toBe(50)
+  })
+
+  it('pulls the score toward the weakest factor', () => {
+    // cap (6-1)/(5-1)=125 ; discount (0+10)/(20+10)=33.33
+    // avg=79.17, worst=33.33 -> 0.65*79.17 + 0.35*33.33 = 63.1 -> 63
+    expect(computeFitScore(
+      { cap_rate_min: 5, discount_min: 20 },
+      { cap_rate: 6, discount: 0 },
+    )).toBe(63)
+  })
+
+  it('caps a yield factor when income is estimated', () => {
+    expect(computeFitScore({ cash_flow_min: 500 }, { cash_flow: 2000 }, true)).toBe(INCOME_FACTOR_CEILING)
   })
 
   it('does not cap disclosed income', () => {
-    const score = computeWeightedScore(base({ cash_flow: 90, unverified_income_cap: 0 }), only('cash_flow'))
-    expect(score).toBe(90)
+    expect(computeFitScore({ cash_flow_min: 500 }, { cash_flow: 2000 }, false)).toBe(100)
   })
 
-  it('is scoped, not global — a discount-driven half still exceeds 59', () => {
-    const weights = { ...only('discount') } as ScoreWeights
-    weights.discount = 0.5
-    weights.cash_flow = 0.5
-    const score = computeWeightedScore(base({ discount: 100, cash_flow: 100, unverified_income_cap: 59 }), weights)
-    expect(score).toBe(75) // 0.5*100 + 0.5*min(100,50)
+  it('scopes the income guard to yield factors only', () => {
+    expect(computeFitScore({ discount_min: 10 }, { discount: 20 }, true)).toBe(100)
   })
 
-  it('caps a target-relative yield factor too', () => {
-    const score = computeWeightedScore(
-      base({ cash_flow: 10, unverified_income_cap: 59 }), only('cash_flow'),
-      { cash_flow_min: 500 }, { cash_flow: 2000 }, // 400 -> clamp 100 -> cap 50
-    )
-    expect(score).toBe(UNVERIFIED_INCOME_FACTOR_CEILING)
+  it('falls back to the AI score when no targets are set', () => {
+    expect(computeFitScore({}, {}, false, 73)).toBe(73)
+    expect(computeFitScore({}, {})).toBe(null)
   })
-})
 
-describe('invariants', () => {
-  it('matches the stored component when no buy box is set', () => {
-    expect(computeWeightedScore(base({ discount: 80 }), only('discount'))).toBe(80)
+  it('scores a missing raw metric as 0, not a crash', () => {
+    expect(computeFitScore({ cap_rate_min: 6 }, { cap_rate: null })).toBe(0)
+  })
+
+  it('treats days=0 as "no target" -> AI fallback', () => {
+    expect(computeFitScore({ days_on_market_min: 0 }, { days: 40 }, false, 55)).toBe(55)
   })
 })
 
-describe('buildYourVerdictRows — the "how did I get to 100?" breakdown', () => {
-  const even: ScoreWeights =
-    Object.fromEntries(SCORE_FACTORS.map((f, i) => [f, i === 0 ? 0.28 : 0.12])) as ScoreWeights
-  // weights: discount .28 + six × .12 = 1.0
-
-  it('total always equals computeWeightedScore for the same inputs', () => {
-    const cases: Array<[ScoreComponents, ScoreWeights, any, any]> = [
-      [base(), even, null, null],
-      [base({ discount: 80 }), only('discount'), null, null],
-      [base({ dom_bonus: 30 }), only('dom_bonus'), { days_on_market_min: 30 }, { dom_bonus: 60 }],
-      [base({ cash_flow: 90, unverified_income_cap: 59 }), only('cash_flow'), null, null],
-      [base({ cash_flow: 10, unverified_income_cap: 59 }), only('cash_flow'), { cash_flow_min: 500 }, { cash_flow: 2000 }],
-    ]
-    for (const [c, w, bb, raw] of cases) {
-      expect(buildYourVerdictRows(c, w, bb, raw).total).toBe(computeWeightedScore(c, w, bb, raw))
-    }
+describe('buildFitRows — breakdown', () => {
+  it('total equals computeFitScore for the same inputs', () => {
+    const buyBox = { cap_rate_min: 5, discount_min: 20 }
+    const raw = { cap_rate: 6, discount: 0 }
+    const { rows, total } = buildFitRows(buyBox, raw)
+    expect(total).toBe(computeFitScore(buyBox, raw))
+    expect(rows).toHaveLength(2)
+    // the weakest factor (discount) is flagged
+    expect(rows.find(r => r.key === 'discount_min')?.isWorst).toBe(true)
   })
 
-  it('emits one row per factor with weights that total 100%', () => {
-    const { rows } = buildYourVerdictRows(base(), even)
-    expect(rows).toHaveLength(SCORE_FACTORS.length)
-    expect(rows.reduce((s, r) => s + r.weightPct, 0)).toBe(100)
-  })
-
-  it('flags a factor scored against the broker\'s own target', () => {
-    const { rows } = buildYourVerdictRows(
-      base(), only('dom_bonus'), { days_on_market_min: 30 }, { dom_bonus: 60 },
-    )
-    const dom = rows.find(r => r.factor === 'dom_bonus')!
-    expect(dom.targeted).toBe(true)
-    expect(dom.score).toBe(100) // 60/30 -> clamp 100
-  })
-
-  it('flags a yield factor capped by estimated income', () => {
-    const { rows } = buildYourVerdictRows(base({ cash_flow: 90, unverified_income_cap: 59 }), only('cash_flow'))
-    const cf = rows.find(r => r.factor === 'cash_flow')!
-    expect(cf.capped).toBe(true)
-    expect(cf.score).toBe(UNVERIFIED_INCOME_FACTOR_CEILING) // 90 -> 50
-  })
-
-  it('rows contributions are within rounding of the total', () => {
-    const { rows, total } = buildYourVerdictRows(base({ discount: 73, cap_rate: 41, cash_flow: 88 }), even)
-    const sum = rows.reduce((s, r) => s + r.contribution, 0)
-    expect(Math.abs(sum - total)).toBeLessThanOrEqual(0.5)
+  it('is empty with no targets', () => {
+    expect(buildFitRows({}, {}).rows).toHaveLength(0)
   })
 })

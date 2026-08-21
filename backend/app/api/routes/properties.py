@@ -26,7 +26,7 @@ from app.agent.full_analysis import run_full_analysis
 from app.agent.pipeline import InvestmentPipeline
 from app.agent.scorer import WEIGHTS
 from app.agent.verdict import (
-    effective_weights, weighted_score_expr, clamp_round, your_verdict_category,
+    weighted_score_expr, clamp_round, your_verdict_category,
     days_on_market_expr as _dom_expr,
 )
 from app.agent.zoning_matcher import current_units as _current_units
@@ -172,6 +172,7 @@ async def list_properties(
     # request): keep only listings that actually hit these thresholds.
     discount_min:  Optional[float] = Query(None),  # % below comparable sales
     days_on_market_min: Optional[int] = Query(None, ge=0),  # min days listed
+    grm_max:       Optional[float] = Query(None, ge=0),  # max GRM (lower = better)
     # Price-drop targets — the observable motivated-seller signal the client asked
     # for "in numbers" (a vendor who has cut their price is more motivated). Backed
     # by price_history: original = first recorded price, current = asking_price.
@@ -202,14 +203,15 @@ async def list_properties(
         "cap_rate_min":       cap_rate_min,
         "discount_min":       discount_min,
         "days_on_market_min": days_on_market_min,
+        "grm_max":            grm_max,
     }
 
-    # Your Verdict — only meaningful for a logged-in broker. When present we
-    # compute their personalized score in-DB (from stored score_components, plus
-    # target-relative overrides from the active buy box) so we can both surface it
-    # on every card AND rank the whole set by it.
+    # Your Verdict — only meaningful for a logged-in broker. We compute their
+    # buy-box FIT score in-DB (how well each listing meets their real-number
+    # targets) so we can both surface it on every card AND rank the whole set by
+    # it. With no targets set it falls back to the AI score (see fit_score_expr).
     your_expr = (
-        weighted_score_expr(effective_weights(user), active_buy_box)
+        weighted_score_expr(active_buy_box)
         if user is not None else None
     )
 
@@ -249,11 +251,20 @@ async def list_properties(
     if mls_number:
         stmt = stmt.where(func.lower(Property.mls_number).contains(mls_number.lower()))
     if property_type:
-        try:
-            pt = PropertyType(property_type)
-            stmt = stmt.where(Property.property_type == pt)
-        except ValueError:
-            pass
+        # Accept one or several types (comma-separated), so the broker's multi-type
+        # preference from Settings (e.g. triplex,quadruplex,quintuplex_plus) actually
+        # filters the list instead of being dropped.
+        wanted = []
+        for raw_pt in property_type.split(","):
+            raw_pt = raw_pt.strip()
+            if not raw_pt:
+                continue
+            try:
+                wanted.append(PropertyType(raw_pt))
+            except ValueError:
+                pass
+        if wanted:
+            stmt = stmt.where(Property.property_type.in_(wanted))
     if listing_type:
         try:
             lt = ListingType(listing_type)
@@ -270,15 +281,20 @@ async def list_properties(
         stmt = stmt.where(Property.asking_price >= price_min)
     if price_max:
         stmt = stmt.where(Property.asking_price <= price_max)
-    if cap_rate_min is not None:
+    # Buy-box targets: FILTER in AI mode, but only SCORE (never hide) in My Metrics.
+    # In "your_verdict" mode the same numbers anchor the fit ranking below
+    # (weighted_score_expr) and every listing stays visible, best-fit first — so a
+    # strict buy box ranks the list instead of emptying it to "No properties found".
+    buy_box_filters_active = sort_by != "your_verdict"
+    if buy_box_filters_active and cap_rate_min is not None:
         stmt = stmt.where(Property.cap_rate.isnot(None)).where(Property.cap_rate >= cap_rate_min)
-    if cash_flow_min is not None:
+    if buy_box_filters_active and cash_flow_min is not None:
         stmt = stmt.where(Property.monthly_cash_flow.isnot(None)).where(Property.monthly_cash_flow >= cash_flow_min)
-    if discount_min is not None:
+    if buy_box_filters_active and discount_min is not None:
         stmt = stmt.where(Property.discount_pct.isnot(None)).where(Property.discount_pct >= discount_min)
-    if days_on_market_min is not None:
+    if buy_box_filters_active and days_on_market_min is not None:
         stmt = stmt.where(days_on_market_expr >= days_on_market_min)
-    if price_drop_min is not None or price_drop_pct_min is not None:
+    if buy_box_filters_active and (price_drop_min is not None or price_drop_pct_min is not None):
         # original list price = first price_history entry; current = asking_price.
         # Requires a history with a starting price and a known current price.
         original_price = cast(Property.price_history[0]["price"].astext, Float)
