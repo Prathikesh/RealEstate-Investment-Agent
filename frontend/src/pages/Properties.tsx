@@ -60,11 +60,11 @@ const SORT_OPTIONS = [
 // panel's buy box localizes just like the Settings one.
 const PF_BUYBOX_LABEL: Record<string, string> = {
   cash_flow_min: 'factor_cash_flow', cap_rate_min: 'factor_cap_rate', discount_min: 'factor_discount',
-  days_on_market_min: 'factor_dom_bonus', price_drop_min: 'factor_price_cut',
+  days_on_market_min: 'factor_dom_bonus', grm_max: 'factor_grm', price_drop_min: 'factor_price_cut',
 }
 const PF_BUYBOX_DESC: Record<string, string> = {
   cash_flow_min: 'fdesc_cash_flow', cap_rate_min: 'fdesc_cap_rate', discount_min: 'fdesc_discount',
-  days_on_market_min: 'fdesc_dom_bonus', price_drop_min: 'fdesc_price_cut',
+  days_on_market_min: 'fdesc_dom_bonus', grm_max: 'fdesc_grm', price_drop_min: 'fdesc_price_cut',
 }
 
 // ── Format helpers ────────────────────────────────────────────────────────────
@@ -112,6 +112,7 @@ export default function Properties() {
     cap_rate_min:       params.get('cap_rate_min') ? Number(params.get('cap_rate_min')) : undefined,
     discount_min:       params.get('discount_min') ? Number(params.get('discount_min')) : undefined,
     days_on_market_min: params.get('days_on_market_min') ? Number(params.get('days_on_market_min')) : undefined,
+    grm_max:            params.get('grm_max') ? Number(params.get('grm_max')) : undefined,
     price_drop_min:     params.get('price_drop_min') ? Number(params.get('price_drop_min')) : undefined,
     price_drop_pct_min: params.get('price_drop_pct_min') ? Number(params.get('price_drop_pct_min')) : undefined,
     page:          params.get('page') ? Number(params.get('page')) : 1,
@@ -185,7 +186,7 @@ export default function Properties() {
     filters.listing_type || filters.score_min || filters.multi_site || filters.has_sqft || filters.flood_zone ||
     filters.listed_within || filters.price_min || filters.price_max ||
     filters.cash_flow_min || filters.cap_rate_min || filters.discount_min || filters.days_on_market_min ||
-    filters.price_drop_min || filters.price_drop_pct_min
+    filters.grm_max || filters.price_drop_min || filters.price_drop_pct_min
   )
 
   // Rank-by mode: "your" ranks the whole set by the broker's own metrics
@@ -423,20 +424,33 @@ export default function Properties() {
       {/* ── Expanded filters ───────────────────────────────────────────── */}
       {showFilters && (
         <div className="card flex flex-wrap gap-4 items-end">
-          {/* Property type */}
-          <label className="flex flex-col gap-1">
+          {/* Property type — multi-select (a broker often buys several plex types) */}
+          <div className="flex flex-col gap-1">
             <span className="text-xs font-medium text-muted">{t('pf_propertyType')}</span>
-            <select
-              value={filters.property_type ?? ''}
-              onChange={e => setFilter('property_type', e.target.value)}
-              className="select"
-            >
-              <option value="">{t('allTypes')}</option>
-              {PROPERTY_TYPES.map(tp => (
-                <option key={tp.value} value={tp.value}>{t(tp.labelKey)}</option>
-              ))}
-            </select>
-          </label>
+            <div className="flex flex-wrap gap-1.5 max-w-[420px]">
+              {PROPERTY_TYPES.map(tp => {
+                const selected = (filters.property_type?.split(',').filter(Boolean) ?? [])
+                const isOn = selected.includes(tp.value)
+                return (
+                  <button
+                    key={tp.value}
+                    type="button"
+                    onClick={() => {
+                      const next = isOn ? selected.filter(v => v !== tp.value) : [...selected, tp.value]
+                      setFilter('property_type', next.join(','))
+                    }}
+                    className={clsx(
+                      'px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition-all',
+                      isOn ? 'bg-accent/10 text-accent border-accent/40 ring-1 ring-accent/20'
+                           : 'bg-white text-muted border-surface-border hover:border-accent/40 hover:text-ink',
+                    )}
+                  >
+                    {t(tp.labelKey)}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
 
           {/* Listing type — for-sale vs for-rent (rentals have no score/cap-rate) */}
           <label className="flex flex-col gap-1">
@@ -540,6 +554,7 @@ export default function Properties() {
                   prefix={cfg.prefix}
                   suffix={cfg.suffix}
                   allowNegative={cfg.allowNegative}
+                  direction={cfg.direction}
                 />
               ))}
             </div>
@@ -617,18 +632,47 @@ export default function Properties() {
       )}
 
       {/* ── Empty state ────────────────────────────────────────────────── */}
-      {view !== 'map' && !isLoading && data?.items.length === 0 && (
-        <div className="card py-12 text-center space-y-2">
-          <p className="text-ink font-medium">{t('pf_noResults')}</p>
-          <p className="text-sm text-muted">{t('pf_noResultsHint')}</p>
-          <button
-            onClick={() => setParams(new URLSearchParams())}
-            className="mt-4 text-sm text-accent hover:underline"
-          >
-            {t('pf_clearAllFilters')}
-          </button>
-        </div>
-      )}
+      {view !== 'map' && !isLoading && data?.items.length === 0 && (() => {
+        // A My-Metrics search never empties on the buy box (that only ranks). So
+        // when it's empty, the cause is the HARD filters (budget / type / city) —
+        // say so and offer one-tap loosening instead of a dead "no results".
+        const hardFilters = !!(filters.price_min || filters.price_max || filters.property_type ||
+          filters.listing_type || filters.city || filters.listed_within)
+        const drop = (...keys: string[]) => {
+          const next = new URLSearchParams(params)
+          keys.forEach(k => next.delete(k))
+          next.delete('page')
+          setParams(next)
+        }
+        return (
+          <div className="card py-12 text-center space-y-2">
+            <p className="text-ink font-medium">{t('pf_noResults')}</p>
+            <p className="text-sm text-muted max-w-md mx-auto">
+              {hardFilters ? t('pf_noResultsHardHint') : t('pf_noResultsHint')}
+            </p>
+            {hardFilters && (
+              <div className="flex flex-wrap items-center justify-center gap-2 pt-3">
+                {(filters.price_min || filters.price_max) && (
+                  <button onClick={() => drop('price_min', 'price_max')} className="btn-ghost text-xs">
+                    {t('pf_dropBudget')}
+                  </button>
+                )}
+                {filters.property_type && (
+                  <button onClick={() => drop('property_type')} className="btn-ghost text-xs">
+                    {t('pf_dropType')}
+                  </button>
+                )}
+              </div>
+            )}
+            <button
+              onClick={() => setParams(new URLSearchParams())}
+              className="mt-4 text-sm text-accent hover:underline"
+            >
+              {t('pf_clearAllFilters')}
+            </button>
+          </div>
+        )
+      })()}
 
       {/* ── Pagination ─────────────────────────────────────────────────── */}
       {view !== 'map' && data && data.pages > 1 && (

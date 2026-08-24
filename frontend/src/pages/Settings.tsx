@@ -3,84 +3,26 @@ import { useNavigate } from 'react-router-dom'
 import {
   Bell, MapPin, Home, TrendingUp, Globe, CheckCircle2, ShieldCheck,
   Smartphone, MessageCircle, Wrench, Building2, Mail, SlidersHorizontal,
-  ChevronDown, Check, Search, Layers, Gauge, RotateCcw, Scale, CircleDollarSign,
+  ChevronDown, Check, Search, Layers, Gauge, CircleDollarSign,
   HelpCircle, X, Plus,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useLang } from '../context/LanguageContext'
 import { useAuth } from '../auth/AuthContext'
 import { updatePreferences, type PreferencesPayload, type User } from '../auth/api'
-import {
-  SCORE_FACTORS, STRATEGY_WEIGHTS,
-  type ScoreFactor, type ScoreWeights,
-} from '../lib/verdict'
 import { InfoModal } from '../components/InfoModal'
 import { ValueSlider } from '../components/ValueSlider'
 import { type BuyBox, BUYBOX_FIELDS, loadBuyBox, cacheBuyBox, cleanBuyBox } from '../lib/buybox'
 
-// Factor → translation-key maps (labels + descriptions) for the advanced sliders
-// and the buy box, so both localize. See LanguageContext factor_* / fdesc_* keys.
-const FACTOR_LABEL_KEY: Record<ScoreFactor, string> = {
-  discount: 'factor_discount', cap_rate: 'factor_cap_rate', cash_flow: 'factor_cash_flow',
-  grm: 'factor_grm', confidence: 'factor_confidence', dom_bonus: 'factor_dom_bonus',
-  price_history: 'factor_price_history',
-}
-const FACTOR_DESC_KEY: Record<ScoreFactor, string> = {
-  discount: 'fdesc_discount', cap_rate: 'fdesc_cap_rate', cash_flow: 'fdesc_cash_flow',
-  grm: 'fdesc_grm', confidence: 'fdesc_confidence', dom_bonus: 'fdesc_dom_bonus',
-  price_history: 'fdesc_price_cut',
-}
-// Buy-box field key → translation keys (fields come from lib/buybox.ts).
+// Buy-box field key → translation keys (fields come from lib/buybox.ts), so the
+// Settings buy box and the Properties filter panel localize identically.
 const BUYBOX_LABEL_KEY: Record<string, string> = {
   cash_flow_min: 'factor_cash_flow', cap_rate_min: 'factor_cap_rate', discount_min: 'factor_discount',
-  days_on_market_min: 'factor_dom_bonus', price_drop_min: 'factor_price_cut',
+  days_on_market_min: 'factor_dom_bonus', grm_max: 'factor_grm', price_drop_min: 'factor_price_cut',
 }
 const BUYBOX_DESC_KEY: Record<string, string> = {
   cash_flow_min: 'fdesc_cash_flow', cap_rate_min: 'fdesc_cap_rate', discount_min: 'fdesc_discount',
-  days_on_market_min: 'fdesc_dom_bonus', price_drop_min: 'fdesc_price_cut',
-}
-
-// The buy-box real-number targets — the client's "in numbers, not percentages"
-// request, now the PRIMARY control (each factor is a real-value slider + linked
-// number box, see ValueSlider). Config is shared with the Properties filter panel
-// via lib/buybox.ts BUYBOX_FIELDS so the two surfaces never drift apart.
-
-// Distinct colour per factor — ties the weight donut to its slider row.
-const FACTOR_COLOR: Record<ScoreFactor, string> = {
-  discount:      '#2563EB',
-  cap_rate:      '#0EA5E9',
-  cash_flow:     '#10B981',
-  grm:           '#8B5CF6',
-  confidence:    '#F59E0B',
-  dom_bonus:     '#EC4899',
-  price_history: '#64748B',
-}
-
-// One-tap starting points. The three strategy presets mirror the backend's
-// weight sets; "Cash-flow" is an income-first tilt for buy-and-hold investors.
-const WEIGHT_PRESETS: { id: string; labelKey: string; icon: typeof Scale; weights: ScoreWeights }[] = [
-  { id: 'balanced', labelKey: 'preset_balanced', icon: Scale,           weights: STRATEGY_WEIGHTS.both },
-  { id: 'cashflow', labelKey: 'preset_cashflow', icon: CircleDollarSign, weights: { discount: 0.12, cap_rate: 0.28, cash_flow: 0.30, grm: 0.10, confidence: 0.08, dom_bonus: 0.07, price_history: 0.05 } },
-  { id: 'income',   labelKey: 'preset_buyhold',  icon: TrendingUp,      weights: STRATEGY_WEIGHTS.buy_and_hold },
-  { id: 'value',    labelKey: 'preset_value',    icon: Wrench,          weights: STRATEGY_WEIGHTS.buy_fix_sell },
-]
-
-// Seed slider points from stored fractional weights (×100). Points are a
-// direct 0-100 percentage that always sums to exactly 100 — the last factor
-// absorbs rounding drift so the invariant holds even after ×100 rounding.
-function pointsFromWeights(w: ScoreWeights): Record<ScoreFactor, number> {
-  const pts = {} as Record<ScoreFactor, number>
-  let acc = 0
-  SCORE_FACTORS.forEach((f, i) => {
-    if (i === SCORE_FACTORS.length - 1) {
-      pts[f] = Math.max(0, 100 - acc)
-    } else {
-      const v = Math.round((w[f] ?? 0) * 100)
-      pts[f] = v
-      acc += v
-    }
-  })
-  return pts
+  days_on_market_min: 'fdesc_dom_bonus', grm_max: 'fdesc_grm', price_drop_min: 'fdesc_price_cut',
 }
 
 // ── Option data ──────────────────────────────────────────────────────────────
@@ -162,12 +104,6 @@ export default function Settings() {
   const [goals, setGoals]             = useState<string[]>(goalsFromStrategy(user?.investment_strategy))
   const [minScore, setMinScore]       = useState(user?.min_score_for_alert ?? 60)
   const [emailAlerts, setEmailAlerts] = useState(user?.email_alerts_enabled ?? true)
-  // Custom scoring weights → "Your Verdict". Points are relative (0-100 each);
-  // normalized to fractions summing to 1.0 on save. Seeded from the user's saved
-  // custom weights, else their strategy preset.
-  const [weightPoints, setWeightPoints] = useState<Record<ScoreFactor, number>>(
-    pointsFromWeights(user?.custom_score_weights ?? STRATEGY_WEIGHTS[user?.investment_strategy ?? 'both']),
-  )
   // Buy-box real-number targets (client's "in numbers" request). Account-synced:
   // seed from the user's saved custom_buy_box, falling back to the localStorage
   // cache before the user object has loaded. Applied both as filters AND as the
@@ -182,9 +118,6 @@ export default function Settings() {
   const [saved, setSaved]   = useState(false)
   const [saving, setSaving] = useState(false)
   const [showScoringHelp, setShowScoringHelp] = useState(false)
-  // Numbers-first: the weight sliders are secondary ("advanced ranking"), collapsed
-  // by default so the real-number buy box leads (the client's explicit request).
-  const [showWeights, setShowWeights] = useState(false)
 
   // Re-seed if the account arrives/changes after mount.
   useEffect(() => {
@@ -198,36 +131,8 @@ export default function Settings() {
     setGoals(goalsFromStrategy(user.investment_strategy))
     setMinScore(user.min_score_for_alert ?? 60)
     setEmailAlerts(user.email_alerts_enabled ?? true)
-    setWeightPoints(pointsFromWeights(user.custom_score_weights ?? STRATEGY_WEIGHTS[user.investment_strategy ?? 'both']))
     if (user.custom_buy_box) setBuyBox(user.custom_buy_box)
   }, [user?.id]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Each importance slider is INDEPENDENT (0-100) — dragging one never moves the
-  // others (that live proportional redistribution was the "sliders jump / can't
-  // hit a value" bug from the client's Loom). We normalize to shares only for
-  // display + on save, so the handle position always equals its own value.
-  const totalPoints = SCORE_FACTORS.reduce((s, f) => s + weightPoints[f], 0)
-  const sharePct = (f: ScoreFactor) =>
-    totalPoints > 0 ? Math.round((weightPoints[f] / totalPoints) * 100) : 0
-  // Normalized share map for the donut + preset matching.
-  const pctMap = Object.fromEntries(SCORE_FACTORS.map(f => [f, sharePct(f)])) as Record<ScoreFactor, number>
-  // Highlight whichever preset the current mix matches (±2pt share), else "Custom".
-  const activePreset = WEIGHT_PRESETS.find(p =>
-    SCORE_FACTORS.every(f => Math.abs(pctMap[f] - Math.round((p.weights[f] ?? 0) * 100)) <= 2),
-  )?.id ?? null
-
-  function applyPreset(weights: ScoreWeights) {
-    setWeightPoints(pointsFromWeights(weights))
-  }
-  function resetWeightsToStrategy() {
-    setWeightPoints(pointsFromWeights(STRATEGY_WEIGHTS[strategyFromGoals(goals)]))
-  }
-
-  // Set one factor's importance directly — no redistribution, so nothing else moves.
-  function adjustWeight(f: ScoreFactor, nextValue: number) {
-    const P = Math.max(0, Math.min(100, Math.round(nextValue)))
-    setWeightPoints(prev => ({ ...prev, [f]: P }))
-  }
 
   const phoneNeeded = (smsAlerts || whatsappAlerts) && digits(phone).length < 10
   const emailValid = !emailAlerts || (user?.email ? EMAIL_RE.test(user.email) : false)
@@ -235,27 +140,6 @@ export default function Settings() {
 
   function toggleType(v: string) {
     setTypes(prev => prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v])
-  }
-
-  // Convert the independent slider points to fractions summing to exactly 1.0,
-  // as the backend requires (see auth/routes.py custom_score_weights validation).
-  // Divide each by the running total; the last factor absorbs rounding drift.
-  // If every slider is 0, fall back to the strategy preset so we never save all-zero.
-  function normalizedWeights(): ScoreWeights {
-    const sum = SCORE_FACTORS.reduce((s, f) => s + weightPoints[f], 0)
-    if (sum <= 0) return STRATEGY_WEIGHTS[strategyFromGoals(goals)]
-    const w = {} as ScoreWeights
-    let acc = 0
-    SCORE_FACTORS.forEach((f, i) => {
-      if (i === SCORE_FACTORS.length - 1) {
-        w[f] = Math.round((1 - acc) * 1000) / 1000
-      } else {
-        const v = Math.round((weightPoints[f] / sum) * 1000) / 1000
-        w[f] = v
-        acc += v
-      }
-    })
-    return w
   }
 
   // Resolve the selected budget (preset bucket OR the custom min/max inputs).
@@ -279,7 +163,6 @@ export default function Settings() {
       min_score_for_alert: minScore,
       email_alerts_enabled: emailAlerts,
       language: lang,
-      custom_score_weights: normalizedWeights(),
       custom_buy_box: cleanBuyBox(buyBox),
     }
   }
@@ -310,7 +193,20 @@ export default function Settings() {
     if (cities[0]?.trim()) p.set('city', cities[0].trim())
     if (range.min != null) p.set('price_min', String(range.min))
     if (range.max != null) p.set('price_max', String(range.max))
-    if (types.length === 1) p.set('property_type', types[0])
+    // Pass ALL chosen property types (comma-separated) so the search is limited to
+    // the plex types the broker buys — not just when exactly one is selected.
+    if (types.length) p.set('property_type', types.join(','))
+    // Buy box is a purchase decision → show for-sale only (rentals have no cap
+    // rate / cash flow, so they don't belong in a buy ranking).
+    p.set('listing_type', 'for_sale')
+    // Land in "My Metrics" with the buy box carried through, so the broker's
+    // saved criteria are visible + drive the ranking (never an empty AI list).
+    const bb = cleanBuyBox(buyBox)
+    const hasTargets = Object.keys(bb).length > 0
+    if (hasTargets) {
+      p.set('sort_by', 'your_verdict')
+      for (const [k, v] of Object.entries(bb)) if (v != null) p.set(k, String(v))
+    }
     navigate(p.toString() ? `/properties?${p}` : '/properties')
   }
 
@@ -491,102 +387,11 @@ export default function Settings() {
                 prefix={cfg.prefix}
                 suffix={cfg.suffix}
                 allowNegative={cfg.allowNegative}
+                direction={cfg.direction}
               />
             ))}
           </div>
           <p className="text-[11px] text-muted/70 mt-2.5">{t('set_buyBoxHint')}</p>
-
-          {/* ── Advanced: ranking weights (secondary, collapsed by default) ──── */}
-          <button
-            type="button"
-            onClick={() => setShowWeights(v => !v)}
-            className="mt-5 w-full flex items-center gap-2 text-left text-xs font-semibold text-muted hover:text-ink transition-colors border-t border-surface-border pt-4"
-            aria-expanded={showWeights}
-          >
-            <ChevronDown size={14} className={clsx('transition-transform', showWeights && 'rotate-180')} />
-            {t('set_advanced')}
-          </button>
-
-          {showWeights && (
-          <div className="mt-4">
-          {/* Preset chips — one tap to start, then fine-tune below */}
-          <div className="flex flex-wrap items-center gap-2">
-            {WEIGHT_PRESETS.map(p => {
-              const Icon = p.icon
-              const active = activePreset === p.id
-              return (
-                <button
-                  key={p.id} type="button" onClick={() => applyPreset(p.weights)}
-                  className={clsx(
-                    'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-semibold transition-all',
-                    active ? 'bg-accent/10 text-accent border-accent/40 ring-1 ring-accent/20'
-                           : 'bg-white text-muted border-surface-border hover:border-accent/40 hover:text-ink',
-                  )}
-                >
-                  <Icon size={13} /> {t(p.labelKey)}
-                </button>
-              )
-            })}
-            <span className={clsx(
-              'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-semibold',
-              activePreset === null ? 'bg-accent/10 text-accent border-accent/40 ring-1 ring-accent/20'
-                                    : 'border-dashed border-surface-border text-muted/70',
-            )}>
-              <SlidersHorizontal size={13} /> {t('preset_custom')}
-            </span>
-            <button
-              type="button" onClick={resetWeightsToStrategy}
-              className="btn-ghost text-xs ml-auto"
-            >
-              <RotateCcw size={13} /> {t('set_reset')}
-            </button>
-          </div>
-
-          {/* Donut + sliders */}
-          <div className="flex flex-col lg:flex-row gap-8 pt-4">
-            {/* Weight distribution donut */}
-            <div className="flex lg:flex-col items-center gap-4 shrink-0 mx-auto lg:mx-0">
-              <WeightDonut pct={pctMap} />
-              <div className="text-center">
-                <p className="text-[11px] font-semibold text-muted uppercase tracking-wider">{t('set_yourMix')}</p>
-                <p className="text-[11px] text-muted mt-0.5 max-w-[150px]">{t('set_yourMix_desc')}</p>
-              </div>
-            </div>
-
-            {/* Sliders — two columns on wide screens now that it's full-width */}
-            <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3.5 min-w-0 content-start">
-              {SCORE_FACTORS.map(f => {
-                const pct = weightPoints[f] // already 0-100
-                const fill = `linear-gradient(to right, ${FACTOR_COLOR[f]} 0%, ${FACTOR_COLOR[f]} ${pct}%, #E2E8F0 ${pct}%, #E2E8F0 100%)`
-                return (
-                  <div key={f}>
-                    <div className="flex items-center justify-between gap-3 mb-1.5">
-                      <div className="min-w-0 flex items-start gap-2">
-                        <span className="w-2.5 h-2.5 rounded-full shrink-0 mt-1" style={{ backgroundColor: FACTOR_COLOR[f] }} />
-                        <div className="min-w-0">
-                          <span className="text-sm font-semibold text-ink">{t(FACTOR_LABEL_KEY[f])}</span>
-                          <span className="block text-[11px] text-muted leading-snug">{t(FACTOR_DESC_KEY[f])}</span>
-                        </div>
-                      </div>
-                      <span className="text-xs font-semibold shrink-0 tabular-nums text-right" style={{ color: FACTOR_COLOR[f] }}>
-                        {sharePct(f)}%
-                      </span>
-                    </div>
-                    <input
-                      type="range" min={0} max={100} step={1}
-                      value={weightPoints[f]}
-                      onChange={e => adjustWeight(f, Number(e.target.value))}
-                      aria-label={t(FACTOR_LABEL_KEY[f])}
-                      className="range-fill"
-                      style={{ background: fill, ['--range-color' as string]: FACTOR_COLOR[f] }}
-                    />
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-          </div>
-          )}
         </SectionCard>
         </div>
       </div>
@@ -633,44 +438,6 @@ function ScoringCriteriaHelp() {
       </div>
 
       <p className="text-[11px] text-muted leading-relaxed">{t('help_note')}</p>
-    </div>
-  )
-}
-
-// ── Weight distribution donut ─────────────────────────────────────────────────
-// Inline SVG (no chart lib): one arc segment per factor, coloured to match its
-// slider row, sized to its share of the total.
-function WeightDonut({ pct }: { pct: Record<ScoreFactor, number> }) {
-  const { t } = useLang()
-  const size = 160, stroke = 24
-  const r = (size - stroke) / 2
-  const C = 2 * Math.PI * r
-  const top = [...SCORE_FACTORS].sort((a, b) => (pct[b] ?? 0) - (pct[a] ?? 0))[0]
-  let offset = 0
-  return (
-    <div className="relative" style={{ width: size, height: size }}>
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-        <g transform={`rotate(-90 ${size / 2} ${size / 2})`}>
-          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#E2E8F0" strokeWidth={stroke} />
-          {SCORE_FACTORS.map(f => {
-            const len = ((pct[f] ?? 0) / 100) * C
-            const seg = (
-              <circle
-                key={f} cx={size / 2} cy={size / 2} r={r} fill="none"
-                stroke={FACTOR_COLOR[f]} strokeWidth={stroke}
-                strokeDasharray={`${len} ${C - len}`} strokeDashoffset={-offset}
-              />
-            )
-            offset += len
-            return seg
-          })}
-        </g>
-      </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-6">
-        <span className="text-[10px] font-semibold text-muted uppercase tracking-wider">{t('set_topFactor')}</span>
-        <span className="text-xs font-bold text-ink leading-tight mt-0.5">{t(FACTOR_LABEL_KEY[top])}</span>
-        <span className="text-sm font-black font-mono" style={{ color: FACTOR_COLOR[top] }}>{pct[top]}%</span>
-      </div>
     </div>
   )
 }

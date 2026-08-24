@@ -1,65 +1,32 @@
 /**
- * Verdict scoring — mirrors the backend OpportunityScorer (app/agent/scorer.py).
+ * Verdict scoring.
  *
- * The backend computes a property's score as a weighted sum of 7 factors, each
- * normalized 0-100, then applies risk/neighbourhood/unverified-income modifiers.
- * It stores BOTH the final `score` and the per-factor `score_components`.
+ * TWO separate things live here:
  *
- * On the frontend we reuse those stored components to:
- *   1. Show an accurate "Score Breakdown" (previously the panel guessed weights).
- *   2. Compute a broker's personalized "Your Verdict" by recombining the same
- *      components with their own custom weights.
- *   3. Live-recompute the cap_rate/cash_flow components (the only two that move
- *      when a user changes financing assumptions in the FinancingWorkbench) and
- *      re-run the weighted sum so both verdicts update as they type.
+ *  1. AI-score helpers (SCORE_FACTORS, STRATEGY_WEIGHTS, ScoreComponents, normalize,
+ *     FACTOR_LABEL) — the platform's fixed score. Used by lib/propertyVerdict.ts to
+ *     render the "how is this an 87?" AI breakdown. UNCHANGED.
  *
- * Keep the constants here in sync with app/agent/scorer.py.
+ *  2. "Your Verdict" — the broker-personalized BUY-BOX FIT score. The broker sets
+ *     real-number targets (buy box); a listing scores how well it FITS them. No
+ *     hidden weights, no hard filters. This is the twin of backend app/agent/verdict.py
+ *     — keep the constants and math in sync with it.
  */
 
-// The 7 weighted scoring factors (keys must match backend WEIGHTS + components).
+// ── AI-score factors (platform score; unchanged) ──────────────────────────────
 export const SCORE_FACTORS = [
-  'discount',
-  'cap_rate',
-  'cash_flow',
-  'grm',
-  'confidence',
-  'dom_bonus',
-  'price_history',
+  'discount', 'cap_rate', 'cash_flow', 'grm',
+  'confidence', 'dom_bonus', 'price_history',
 ] as const
 
 export type ScoreFactor = (typeof SCORE_FACTORS)[number]
 
-// Yield factors derived from the listing's rental income. When rent is only
-// ESTIMATED (not disclosed), Your Verdict clamps each of these to a neutral
-// ceiling — instead of hard-capping the whole score — so fabricated rent can't
-// inflate the yield factors while a discount-/days-driven verdict stays free to
-// exceed 59. Mirrors backend verdict.py INCOME_FACTORS; the AI score keeps its
-// own global cap in scorer.py. Keep in sync with backend/app/agent/verdict.py.
-export const INCOME_FACTORS: ReadonlySet<ScoreFactor> = new Set(['cap_rate', 'cash_flow', 'grm'])
-export const UNVERIFIED_INCOME_FACTOR_CEILING = 50
-
-/** Weight per factor (0-1). Must sum to 1.0. Matches backend WEIGHTS. */
+/** Weight per factor (0-1). Must sum to 1.0. Matches backend scorer.py WEIGHTS. */
 export type ScoreWeights = Record<ScoreFactor, number>
 
-// ── Target-relative scoring ("in numbers") ────────────────────────────────────
-// Mirrors backend verdict.py _TARGET_KEY. When a broker sets a real-number buy-box
-// target for one of these factors, that factor scores clamp(raw / target * 100)
-// instead of its stored global component — their number defines "fully satisfies
-// me" (=100). Keys must match lib/buybox.ts BuyBox + backend verdict.py.
-export const FACTOR_TARGET_KEY: Partial<Record<ScoreFactor, string>> = {
-  discount:  'discount_min',        // % below comparable median
-  cap_rate:  'cap_rate_min',        // % cap rate
-  cash_flow: 'cash_flow_min',       // $/mo cash flow
-  dom_bonus: 'days_on_market_min',  // days listed
-}
-
-/** Same-unit raw metric per target-relative factor, for a single property. */
-export type RawMetrics = Partial<Record<ScoreFactor, number | null | undefined>>
-
 /**
- * Per-factor normalized 0-100 sub-scores from the backend. Also carries the
- * post-weighting modifier fields the backend records; those are informational
- * only here (we never re-derive risk/neighbourhood on the client).
+ * Per-factor normalized 0-100 sub-scores from the backend AI scorer, plus the
+ * post-weighting modifier fields it records (used by the AI-score ledger).
  */
 export type ScoreComponents = Partial<Record<ScoreFactor, number>> & {
   risk_modifier?: number
@@ -67,10 +34,8 @@ export type ScoreComponents = Partial<Record<ScoreFactor, number>> & {
   unverified_income_cap?: number
 }
 
-// Strategy weight presets — mirror app/agent/scorer.py WEIGHTS. Used as the
-// default "Your Verdict" weights when a broker hasn't set custom ones, and to
-// seed the Settings sliders. Prefer the backend's `ai_weights` when available;
-// this is the offline fallback so the UI never shows a blank slider set.
+// AI strategy weight presets — mirror scorer.py WEIGHTS. Used only by the AI-score
+// breakdown fallback (prop.ai_weights ?? STRATEGY_WEIGHTS.both) in propertyVerdict.
 export const STRATEGY_WEIGHTS: Record<'buy_and_hold' | 'buy_fix_sell' | 'both', ScoreWeights> = {
   buy_and_hold: {
     discount: 0.18, cap_rate: 0.27, cash_flow: 0.22, grm: 0.1,
@@ -86,8 +51,7 @@ export const STRATEGY_WEIGHTS: Record<'buy_and_hold' | 'buy_fix_sell' | 'both', 
   },
 }
 
-// Human-readable labels for each factor (English keys map to i18n keys used in
-// PropertyPage's existing "Score Breakdown"; see factorPriceDiscount etc.).
+// Human-readable labels for each AI factor (i18n keys handled in the components).
 export const FACTOR_LABEL: Record<ScoreFactor, string> = {
   discount: 'Price Discount',
   cap_rate: 'Cap Rate',
@@ -108,131 +72,12 @@ export function normalize(value: number, bad: number, good: number): number {
   return clamp(((value - bad) / (good - bad)) * 100)
 }
 
-// Normalization bands, copied verbatim from app/agent/scorer.py so the live
-// client recompute matches the server exactly.
-export function capRateComponent(capRatePct: number | null | undefined): number {
-  if (capRatePct == null) return 0
-  return Math.round(normalize(capRatePct, 1.0, 6.0) * 10) / 10
-}
-
-export function cashFlowComponent(monthlyCashFlow: number | null | undefined): number {
-  if (monthlyCashFlow == null) return 0
-  return Math.round(normalize(monthlyCashFlow, -3000, 500) * 10) / 10
-}
-
-/**
- * Weighted sum of components × weights, clamped 0-100. This is the base score
- * before backend-only modifiers (risk/neighbourhood/unverified-income cap).
- *
- * We deliberately do NOT re-apply the risk/neighbourhood modifiers on the client:
- * they depend on data the client doesn't fully have (risk items, neighbourhood
- * percentiles). The one exception is the unverified-income cap, whose value IS
- * carried in the stored components, so we honour it (see below) to avoid ranking
- * fabricated-income listings above disclosed-income ones. Otherwise "Your Verdict"
- * is a transparent weighted blend of the same factor scores — the "move the
- * numbers around" tool the client asked for — not a claim to reproduce the AI's
- * risk overrides. For the AI verdict we still show the authoritative stored `score`.
- */
-export function computeWeightedScore(
-  components: ScoreComponents,
-  weights: ScoreWeights,
-  buyBox?: Record<string, number | undefined> | null,
-  raw?: RawMetrics | null,
-): number {
-  // Guard flag: unverified_income_cap > 0 means the listing's rent was estimated,
-  // not disclosed. We clamp only the yield factors below (not the whole score) so
-  // fabricated rent can't inflate cap_rate/cash_flow/grm while a discount-/days-
-  // driven verdict is still free to exceed 59. Mirrors backend verdict.py.
-  const incomeEstimated = (components.unverified_income_cap ?? 0) > 0
-  let total = 0
-  for (const factor of SCORE_FACTORS) {
-    const targetKey = FACTOR_TARGET_KEY[factor]
-    const target = targetKey && buyBox ? buyBox[targetKey] : undefined
-    const rawVal = raw ? raw[factor] : undefined
-    // Target-relative: the broker's own number defines "fully satisfies me" (=100).
-    // Falls back to the stored component when there's no target or no raw value —
-    // so a broker with no buy box scores identically to before.
-    let comp: number | undefined
-    if (target != null && target > 0 && rawVal != null) {
-      comp = clamp((rawVal / target) * 100)
-    } else {
-      comp = components[factor]
-    }
-    if (comp == null) continue
-    // Neutralize a yield factor when income is only estimated — see INCOME_FACTORS.
-    if (INCOME_FACTORS.has(factor) && incomeEstimated) {
-      comp = Math.min(comp, UNVERIFIED_INCOME_FACTOR_CEILING)
-    }
-    total += comp * weights[factor]
-  }
-  return clamp(Math.round(total))
-}
-
-export interface YourVerdictRow {
-  factor: ScoreFactor
-  weightPct: number    // 0-100
-  score: number        // effective sub-score used (post target-relative + income clamp)
-  contribution: number // score × weight, rounded to 0.1 (the points it adds)
-  targeted: boolean    // scored against the broker's own buy-box number, not the global band
-  capped: boolean      // yield-factor income ceiling actually lowered this sub-score
-}
-
-export interface YourVerdictBreakdown {
-  rows: YourVerdictRow[]
-  total: number // === computeWeightedScore(...) for the same inputs
-}
-
-/**
- * The per-factor breakdown behind "Your Verdict" — the transparency answer to the
- * client's "I don't know how I got to 100 points". Replays computeWeightedScore's
- * exact loop (target-relative sub-scores + the per-yield-factor income ceiling)
- * and emits one row per factor plus the same total, so the rows visibly add up to
- * the Your Verdict number. Kept beside computeWeightedScore so the two never drift;
- * a test asserts `total` equals it for shared inputs.
- */
-export function buildYourVerdictRows(
-  components: ScoreComponents,
-  weights: ScoreWeights,
-  buyBox?: Record<string, number | undefined> | null,
-  raw?: RawMetrics | null,
-): YourVerdictBreakdown {
-  const incomeEstimated = (components.unverified_income_cap ?? 0) > 0
-  const rows: YourVerdictRow[] = []
-  let total = 0
-  for (const factor of SCORE_FACTORS) {
-    const targetKey = FACTOR_TARGET_KEY[factor]
-    const target = targetKey && buyBox ? buyBox[targetKey] : undefined
-    const rawVal = raw ? raw[factor] : undefined
-    let comp: number | undefined
-    let targeted = false
-    if (target != null && target > 0 && rawVal != null) {
-      comp = clamp((rawVal / target) * 100)
-      targeted = true
-    } else {
-      comp = components[factor]
-    }
-    const weight = weights[factor] ?? 0
-    if (comp == null) {
-      rows.push({ factor, weightPct: Math.round(weight * 100), score: 0, contribution: 0, targeted, capped: false })
-      continue
-    }
-    let capped = false
-    if (INCOME_FACTORS.has(factor) && incomeEstimated) {
-      const clamped = Math.min(comp, UNVERIFIED_INCOME_FACTOR_CEILING)
-      capped = clamped < comp
-      comp = clamped
-    }
-    total += comp * weight
-    rows.push({
-      factor,
-      weightPct: Math.round(weight * 100),
-      score: Math.round(comp),
-      contribution: Math.round(comp * weight * 10) / 10,
-      targeted,
-      capped,
-    })
-  }
-  return { rows, total: clamp(Math.round(total)) }
+/** True when weights cover all 7 factors and sum to ~1.0 (AI-side helper). */
+export function weightsAreValid(weights: Partial<ScoreWeights>): weights is ScoreWeights {
+  const keys = SCORE_FACTORS.every((f) => typeof weights[f] === 'number')
+  if (!keys) return false
+  const sum = SCORE_FACTORS.reduce((acc, f) => acc + (weights[f] as number), 0)
+  return Math.abs(sum - 1.0) <= 0.01
 }
 
 export type VerdictCategory =
@@ -242,33 +87,164 @@ export type VerdictCategory =
   | 'not_recommended'
 
 /** Same thresholds as backend ScoreCategory. */
-export function categoryForScore(score: number): VerdictCategory {
-  if (score >= 80) return 'strong_opportunity'
-  if (score >= 60) return 'worth_investigating'
-  if (score >= 40) return 'market_price'
+export function categoryForScore(score: number | null): VerdictCategory {
+  const s = score ?? 0
+  if (s >= 80) return 'strong_opportunity'
+  if (s >= 60) return 'worth_investigating'
+  if (s >= 40) return 'market_price'
   return 'not_recommended'
 }
 
-/** True when weights cover all 7 factors and sum to ~1.0 (backend accepts ±0.01). */
-export function weightsAreValid(weights: Partial<ScoreWeights>): weights is ScoreWeights {
-  const keys = SCORE_FACTORS.every((f) => typeof weights[f] === 'number')
-  if (!keys) return false
-  const sum = SCORE_FACTORS.reduce((acc, f) => acc + (weights[f] as number), 0)
-  return Math.abs(sum - 1.0) <= 0.01
+// ══════════════════════════════════════════════════════════════════════════════
+// "Your Verdict" — buy-box FIT model (twin of backend app/agent/verdict.py)
+// ══════════════════════════════════════════════════════════════════════════════
+
+/** The five buy-box targets that drive Your Verdict. Keys match lib/buybox.ts. */
+export type FitTargetKey =
+  | 'cash_flow_min' | 'cap_rate_min' | 'discount_min' | 'days_on_market_min' | 'grm_max'
+
+/** Same-unit raw metric per factor, for a single property. */
+export interface FitRaw {
+  cash_flow?: number | null
+  cap_rate?: number | null
+  discount?: number | null
+  days?: number | null
+  grm?: number | null
+}
+
+interface FitCfg { raw: keyof FitRaw; bad: number; higher: boolean; income: boolean }
+
+/** Per-factor fit config — bad anchors reused from scorer.py bands. Sync with verdict.py. */
+export const FIT_CONFIG: Record<FitTargetKey, FitCfg> = {
+  cash_flow_min:      { raw: 'cash_flow', bad: -3000, higher: true,  income: true },
+  cap_rate_min:       { raw: 'cap_rate',  bad: 1.0,   higher: true,  income: true },
+  discount_min:       { raw: 'discount',  bad: -10,   higher: true,  income: false },
+  days_on_market_min: { raw: 'days',      bad: 0,     higher: true,  income: false },
+  grm_max:            { raw: 'grm',       bad: 18,    higher: false, income: true },
+}
+
+export const RANK_CEILING = 150
+export const INCOME_FACTOR_CEILING = 50
+const BLEND_AVG = 0.65
+const BLEND_WORST = 0.35
+
+// Friendly label per buy-box factor (components translate via i18n keys).
+export const FIT_LABEL: Record<FitTargetKey, string> = {
+  cash_flow_min: 'Cash Flow',
+  cap_rate_min: 'Cap Rate',
+  discount_min: 'Price Discount',
+  days_on_market_min: 'Days Listed',
+  grm_max: 'GRM',
+}
+
+function targetIsValid(key: FitTargetKey, t: number): boolean {
+  const cfg = FIT_CONFIG[key]
+  return cfg.higher ? t > cfg.bad : (t > 0 && t < cfg.bad)
+}
+
+/** (key, target) pairs for the buy-box factors with a valid target set. */
+function activeTargets(buyBox?: Partial<Record<FitTargetKey, number | undefined>> | null): [FitTargetKey, number][] {
+  const out: [FitTargetKey, number][] = []
+  if (!buyBox) return out
+  for (const key of Object.keys(FIT_CONFIG) as FitTargetKey[]) {
+    const t = buyBox[key]
+    if (t != null && targetIsValid(key, Number(t))) out.push([key, Number(t)])
+  }
+  return out
+}
+
+/** One factor's fit, 0–RANK_CEILING (0 when the raw metric is missing). */
+function factorFit(key: FitTargetKey, target: number, raw: FitRaw, incomeEstimated: boolean): number {
+  const cfg = FIT_CONFIG[key]
+  const rv = raw[cfg.raw]
+  let fit: number
+  if (rv == null) {
+    fit = 0
+  } else {
+    fit = cfg.higher
+      ? ((Number(rv) - cfg.bad) / (target - cfg.bad)) * 100
+      : ((cfg.bad - Number(rv)) / (cfg.bad - target)) * 100
+    fit = clamp(fit, 0, RANK_CEILING)
+  }
+  if (cfg.income && incomeEstimated) fit = Math.min(fit, INCOME_FACTOR_CEILING)
+  return fit
 }
 
 /**
- * Recompute the cap_rate + cash_flow components from live financing-derived
- * values, leaving all other components (discount, grm, confidence, etc.) at
- * their stored backend values. Used by PropertyPage when the FinancingWorkbench
- * inputs change so both verdicts react live.
+ * "Your Verdict" = 0.65 × average(fits) + 0.35 × worst(fit) over the factors the
+ * broker set a target for (weak-spot aware). No targets → returns `aiScore`.
+ * Clamped 0–100 for display. Mirrors backend compute_fit_score / fit_score_expr.
  */
-export function withLiveFinancials(
-  base: ScoreComponents,
-  live: { capRatePct?: number | null; monthlyCashFlow?: number | null },
-): ScoreComponents {
-  const next: ScoreComponents = { ...base }
-  if (live.capRatePct !== undefined) next.cap_rate = capRateComponent(live.capRatePct)
-  if (live.monthlyCashFlow !== undefined) next.cash_flow = cashFlowComponent(live.monthlyCashFlow)
-  return next
+export function computeFitScore(
+  buyBox: Partial<Record<FitTargetKey, number | undefined>> | null | undefined,
+  raw: FitRaw,
+  incomeEstimated = false,
+  aiScore: number | null = null,
+): number | null {
+  const targets = activeTargets(buyBox)
+  if (targets.length === 0) return aiScore
+  const fits = targets.map(([k, t]) => factorFit(k, t, raw, incomeEstimated))
+  const avg = fits.reduce((a, b) => a + b, 0) / fits.length
+  const worst = Math.min(...fits)
+  return clamp(Math.round(BLEND_AVG * avg + BLEND_WORST * worst))
+}
+
+export interface FitRow {
+  key: FitTargetKey
+  label: string
+  target: number        // the broker's own number
+  fit: number           // 0-100 (display clamp)
+  isWorst: boolean       // the weak spot weighted extra in the blend
+  capped: boolean        // estimated-income ceiling lowered this fit
+}
+
+export interface FitBreakdown {
+  rows: FitRow[]
+  total: number         // === computeFitScore(...) for the same inputs
+}
+
+/**
+ * The per-factor breakdown behind Your Verdict — the "how did I get this number?"
+ * answer. Emits one row per target the broker set, marks the worst factor (which
+ * the blend weights extra), and returns the same total as computeFitScore.
+ */
+export function buildFitRows(
+  buyBox: Partial<Record<FitTargetKey, number | undefined>> | null | undefined,
+  raw: FitRaw,
+  incomeEstimated = false,
+): FitBreakdown {
+  const targets = activeTargets(buyBox)
+  if (targets.length === 0) return { rows: [], total: 0 }
+
+  const rawFits = targets.map(([k, t]) => ({
+    key: k,
+    target: t,
+    rankFit: factorFit(k, t, raw, incomeEstimated),
+  }))
+  const worstVal = Math.min(...rawFits.map(f => f.rankFit))
+  const avg = rawFits.reduce((a, f) => a + f.rankFit, 0) / rawFits.length
+  const total = clamp(Math.round(BLEND_AVG * avg + BLEND_WORST * worstVal))
+
+  let worstMarked = false
+  const rows: FitRow[] = rawFits.map(f => {
+    const cfg = FIT_CONFIG[f.key]
+    const rv = raw[cfg.raw]
+    const uncapped = rv == null ? 0 : clamp(
+      cfg.higher
+        ? ((Number(rv) - cfg.bad) / (f.target - cfg.bad)) * 100
+        : ((cfg.bad - Number(rv)) / (cfg.bad - f.target)) * 100,
+      0, RANK_CEILING,
+    )
+    const isWorst = !worstMarked && f.rankFit === worstVal
+    if (isWorst) worstMarked = true
+    return {
+      key: f.key,
+      label: FIT_LABEL[f.key],
+      target: f.target,
+      fit: clamp(Math.round(f.rankFit)),
+      isWorst,
+      capped: cfg.income && incomeEstimated && uncapped > INCOME_FACTOR_CEILING,
+    }
+  })
+  return { rows, total }
 }

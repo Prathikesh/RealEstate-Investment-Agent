@@ -1,14 +1,16 @@
 """
-Unit tests for "Your Verdict" scoring (app/agent/verdict.py compute_weighted_score).
+Unit tests for "Your Verdict" — the buy-box FIT model (app/agent/verdict.py).
 
 Pure-Python, no DB — run with:  .venv/bin/pytest tests/test_verdict.py -q
 
-These lock in the behaviour the client's two Loom bug reports were about:
-  * "I set Days Listed to 100% but the verdict is 30 / never passes ~55" — a
-    days-listed (or discount) driven verdict must be free to reach 100 and is NOT
-    crushed by the unverified-income guard.
-  * fabricated (estimated) rent must still not be able to inflate the yield
-    factors (cap_rate / cash_flow / grm).
+These lock in the behaviour the client's bug reports were about:
+  * A strict buy box RANKS listings, it never hard-filters them to nothing
+    (that's enforced in the route; here we assert the score is always produced).
+  * A NEGATIVE cash-flow target (e.g. −600/mo) is honoured, not silently dropped
+    (the old raw/target model ignored any target ≤ 0).
+  * A single dealbreaker pulls the score down (weak-spot blend), so four good
+    numbers can't hide one terrible one.
+  * Fabricated (estimated) rent still can't inflate the yield factors.
 """
 import sys
 from pathlib import Path
@@ -16,89 +18,89 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.agent.verdict import (  # noqa: E402
-    SCORE_FACTORS,
-    UNVERIFIED_INCOME_FACTOR_CEILING,
-    compute_weighted_score,
+    INCOME_FACTOR_CEILING,
+    compute_fit_score,
 )
 
 
-def only(factor: str) -> dict[str, float]:
-    """Weights that put 100% on a single factor (sums to 1.0)."""
-    return {f: (1.0 if f == factor else 0.0) for f in SCORE_FACTORS}
+# ── Ranking / target-relative behaviour ───────────────────────────────────────
+
+def test_days_target_met_scores_full():
+    """days target=30, a 60-day listing beats it → single-factor fit → 100."""
+    assert compute_fit_score({"days_on_market_min": 30}, {"days": 60}) == 100
 
 
-def base_components(**overrides) -> dict:
-    comps = {f: 30.0 for f in SCORE_FACTORS}
-    comps["unverified_income_cap"] = 0.0
-    comps.update(overrides)
-    return comps
+def test_negative_cash_flow_target_is_honoured():
+    """A −600/mo target is valid (bad=−3000); +100/mo beats it → high score.
+
+    The OLD model required target>0 and did raw/target*100, so this case scored 0
+    or was skipped entirely — the client's exact complaint."""
+    assert compute_fit_score({"cash_flow_min": -600}, {"cash_flow": 100}) == 100
 
 
-# ── The core client bug: days-listed strategy must work ───────────────────────
+def test_below_target_scores_proportionally():
+    """cap target=6 (bad=1); a 3.5% listing → (3.5-1)/(6-1)=50%."""
+    assert compute_fit_score({"cap_rate_min": 6}, {"cap_rate": 3.5}) == 50
 
-def test_days_target_scores_100_when_beaten():
-    """Set days target=30, a 60-day listing → dom_bonus factor scores 100."""
-    comps = base_components(dom_bonus=30.0)  # stored band would give only 30
-    score = compute_weighted_score(
-        comps, only("dom_bonus"),
-        buy_box={"days_on_market_min": 30},
-        raw={"dom_bonus": 60},
+
+def test_grm_is_lower_is_better():
+    """GRM target≤10 (bad=18); grm=14 → (18-14)/(18-10)=50%."""
+    assert compute_fit_score({"grm_max": 10}, {"grm": 14}) == 50
+
+
+# ── Weak-spot blend: one dealbreaker pulls the score down ──────────────────────
+
+def test_weak_spot_pulls_score_down():
+    """cap great (fit 125), discount terrible (fit ~33): blend well below the mean."""
+    # cap: (6-1)/(5-1)=125 ; discount: (0+10)/(20+10)=33.33
+    # avg=79.17, worst=33.33 -> 0.65*79.17 + 0.35*33.33 = 63.1
+    score = compute_fit_score(
+        {"cap_rate_min": 5, "discount_min": 20},
+        {"cap_rate": 6, "discount": 0},
     )
-    assert score == 100
+    assert score == 63
 
 
-def test_days_driven_verdict_exceeds_59_even_with_estimated_income():
-    """The old global cap pinned this at 59; now a non-income strategy is free."""
-    comps = base_components(dom_bonus=30.0, unverified_income_cap=59.0)
-    score = compute_weighted_score(
-        comps, only("dom_bonus"),
-        buy_box={"days_on_market_min": 30},
-        raw={"dom_bonus": 90},
+# ── Estimated-rent guard still holds on yield factors ──────────────────────────
+
+def test_estimated_income_caps_yield_factor():
+    """Estimated rent → cash-flow fit capped at the income ceiling (50)."""
+    score = compute_fit_score(
+        {"cash_flow_min": 500}, {"cash_flow": 2000}, income_estimated=True,
     )
-    assert score == 100  # not clamped to 59
-
-
-# ── The guard still holds: estimated rent can't inflate the yield factors ──────
-
-def test_estimated_income_caps_a_yield_factor():
-    comps = base_components(cash_flow=90.0, unverified_income_cap=59.0)
-    score = compute_weighted_score(comps, only("cash_flow"))
-    assert score == UNVERIFIED_INCOME_FACTOR_CEILING  # 90 → 50
+    assert score == INCOME_FACTOR_CEILING  # 50
 
 
 def test_disclosed_income_is_not_capped():
-    comps = base_components(cash_flow=90.0, unverified_income_cap=0.0)
-    score = compute_weighted_score(comps, only("cash_flow"))
-    assert score == 90
-
-
-def test_estimated_income_cap_is_scoped_not_global():
-    """Half discount (100) + half cash_flow (100→50 est.) = 75, above the old 59."""
-    comps = base_components(discount=100.0, cash_flow=100.0, unverified_income_cap=59.0)
-    weights = {f: 0.0 for f in SCORE_FACTORS}
-    weights["discount"] = 0.5
-    weights["cash_flow"] = 0.5
-    score = compute_weighted_score(comps, weights)
-    assert score == 75
-
-
-def test_estimated_income_caps_target_relative_yield_too():
-    """A cash-flow TARGET can't dodge the guard: raw beats target → 100 → capped 50."""
-    comps = base_components(cash_flow=10.0, unverified_income_cap=59.0)
-    score = compute_weighted_score(
-        comps, only("cash_flow"),
-        buy_box={"cash_flow_min": 500},
-        raw={"cash_flow": 2000},  # 2000/500*100 = 400 → clamp 100 → cap 50
+    score = compute_fit_score(
+        {"cash_flow_min": 500}, {"cash_flow": 2000}, income_estimated=False,
     )
-    assert score == UNVERIFIED_INCOME_FACTOR_CEILING
+    assert score == 100  # beats target, no cap
 
 
-# ── Misc invariants ───────────────────────────────────────────────────────────
+def test_estimated_guard_is_scoped_to_yield_only():
+    """A discount target (not a yield factor) is free even when income is estimated."""
+    score = compute_fit_score(
+        {"discount_min": 10}, {"discount": 20}, income_estimated=True,
+    )
+    assert score == 100  # discount beats target, no income cap
 
-def test_none_components_returns_none():
-    assert compute_weighted_score(None, only("discount")) is None
+
+# ── Fallbacks / invariants ────────────────────────────────────────────────────
+
+def test_no_targets_falls_back_to_ai_score():
+    assert compute_fit_score({}, {}, ai_score=73) == 73
 
 
-def test_no_buy_box_matches_stored_components():
-    comps = base_components(discount=80.0)
-    assert compute_weighted_score(comps, only("discount")) == 80
+def test_no_targets_no_ai_score_is_none():
+    assert compute_fit_score({}, {}) is None
+
+
+def test_missing_raw_metric_scores_zero_not_crash():
+    """A listing with no cap_rate can't be verified against the target → 0, not error."""
+    assert compute_fit_score({"cap_rate_min": 6}, {"cap_rate": None}) == 0
+
+
+def test_zero_days_target_means_off():
+    """days=0 is out-of-span (bad=0) → treated as 'no target' → AI fallback."""
+    assert compute_fit_score({"days_on_market_min": 0}, {"days": 40}, ai_score=55) == 55

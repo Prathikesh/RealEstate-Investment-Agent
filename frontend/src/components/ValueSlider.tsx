@@ -25,11 +25,14 @@ export interface ValueSliderProps {
   // to -$1,000/mo). "Off" is then an *empty* box only, not `<= 0`. Default false
   // keeps every other field's "0 = off" behaviour byte-for-byte unchanged.
   allowNegative?: boolean
+  // Shows a "≥" / "≤" chip next to the label so the target direction is explicit
+  // ("cash flow ≥ −700" = at least −$700/mo → any positive number satisfies it).
+  direction?: 'min' | 'max'
 }
 
 export function ValueSlider({
   label, desc, color, value, onChange,
-  min, max, step, prefix, suffix, compact, allowNegative,
+  min, max, step, prefix, suffix, compact, allowNegative, direction,
 }: ValueSliderProps) {
   const active = allowNegative ? value != null : value != null && value > 0
   // The handle sits at min(value, max); the typed number can exceed the track max.
@@ -54,7 +57,18 @@ export function ValueSlider({
         <div className="flex items-center gap-2 min-w-0">
           <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
           <div className="min-w-0">
-            <span className="text-sm font-semibold text-ink">{label}</span>
+            <span className="text-sm font-semibold text-ink">
+              {label}
+              {direction && (
+                <span
+                  className="ml-1.5 inline-flex items-center justify-center rounded px-1 text-[11px] font-bold tabular-nums align-middle"
+                  style={{ color, backgroundColor: `${color}1A` }}
+                  title={direction === 'min' ? 'at least this' : 'at most this'}
+                >
+                  {direction === 'min' ? '≥' : '≤'}
+                </span>
+              )}
+            </span>
             {desc && !compact && <span className="block text-[11px] text-muted leading-snug">{desc}</span>}
           </div>
         </div>

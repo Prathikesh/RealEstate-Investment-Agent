@@ -15,6 +15,7 @@ export type BuyBox = {
   cap_rate_min?: number
   discount_min?: number
   days_on_market_min?: number
+  grm_max?: number              // max GRM (lower = better)
   price_drop_min?: number       // min $ cut since listing
   price_drop_pct_min?: number   // min % cut since listing
   price_max?: number
@@ -24,13 +25,13 @@ export const BUYBOX_KEY = 'plexa.buybox'
 
 /** Every target a buy box can set (must match PropertyFilters + backend). */
 export const BUYBOX_KEYS: (keyof BuyBox)[] = [
-  'cash_flow_min', 'cap_rate_min', 'discount_min', 'days_on_market_min',
+  'cash_flow_min', 'cap_rate_min', 'discount_min', 'days_on_market_min', 'grm_max',
   'price_drop_min', 'price_drop_pct_min', 'price_max',
 ]
 
-/** The subset that also feeds target-relative scoring (mirrors verdict.ts). */
+/** The subset that also feeds target-relative fit scoring (mirrors verdict.ts). */
 export const BUYBOX_SCORING_KEYS: (keyof BuyBox)[] = [
-  'cash_flow_min', 'cap_rate_min', 'discount_min', 'days_on_market_min',
+  'cash_flow_min', 'cap_rate_min', 'discount_min', 'days_on_market_min', 'grm_max',
 ]
 
 /**
@@ -51,6 +52,9 @@ export interface BuyBoxField {
   prefix?: string
   suffix: string
   scored: boolean
+  // Target direction shown next to the label: 'min' → "≥" (at least this),
+  // 'max' → "≤" (at most this). Makes "cash flow ≥ −700" read unambiguously.
+  direction: 'min' | 'max'
   // When true, 0 and negative targets are valid (not treated as "off"). Only cash
   // flow uses this — an investor may accept break-even or a small monthly loss.
   allowNegative?: boolean
@@ -58,27 +62,32 @@ export interface BuyBoxField {
 
 export const BUYBOX_FIELDS: BuyBoxField[] = [
   {
-    key: 'cash_flow_min', label: 'Cash Flow', color: '#10B981', scored: true,
+    key: 'cash_flow_min', label: 'Cash Flow', color: '#10B981', scored: true, direction: 'min',
     desc: 'Monthly profit after mortgage, taxes & expenses',
     min: -1000, max: 3000, step: 50, prefix: '$', suffix: '/mo', allowNegative: true,
   },
   {
-    key: 'cap_rate_min', label: 'Cap Rate', color: '#0EA5E9', scored: true,
+    key: 'cap_rate_min', label: 'Cap Rate', color: '#0EA5E9', scored: true, direction: 'min',
     desc: 'Annual return — net income vs. purchase price',
     min: 0, max: 15, step: 0.5, suffix: '%',
   },
   {
-    key: 'discount_min', label: 'Price Discount', color: '#2563EB', scored: true,
+    key: 'discount_min', label: 'Price Discount', color: '#2563EB', scored: true, direction: 'min',
     desc: 'How far below comparable sales it is priced',
     min: 0, max: 30, step: 1, suffix: '%',
   },
   {
-    key: 'days_on_market_min', label: 'Days Listed', color: '#EC4899', scored: true,
+    key: 'days_on_market_min', label: 'Days Listed', color: '#EC4899', scored: true, direction: 'min',
     desc: 'Days on market — longer means more seller leverage',
     min: 0, max: 180, step: 5, suffix: 'days',
   },
   {
-    key: 'price_drop_min', label: 'Price Cut', color: '#64748B', scored: false,
+    key: 'grm_max', label: 'GRM', color: '#8B5CF6', scored: true, direction: 'max',
+    desc: 'Gross rent multiplier — price ÷ annual rent (lower is better)',
+    min: 0, max: 18, step: 0.5, suffix: 'x',
+  },
+  {
+    key: 'price_drop_min', label: 'Price Cut', color: '#64748B', scored: false, direction: 'min',
     desc: 'Price cut since listing — a motivated-seller signal',
     min: 0, max: 100000, step: 2500, prefix: '$', suffix: 'cut',
   },

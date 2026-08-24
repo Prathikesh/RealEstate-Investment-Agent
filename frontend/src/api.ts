@@ -230,6 +230,7 @@ export interface PropertyFilters {
   cash_flow_min?: number
   discount_min?: number
   days_on_market_min?: number
+  grm_max?: number
   price_drop_min?: number
   price_drop_pct_min?: number
   your_score_min?: number
