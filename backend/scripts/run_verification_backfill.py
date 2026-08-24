@@ -11,20 +11,45 @@ Safe to Ctrl-C and rerun any time: progress is durable via last_verified_at,
 so a rerun just picks up wherever the backlog query leaves off.
 
 Usage:
-    python scripts/run_verification_backfill.py [--concurrency 6] [--chunk-size 500] [--limit 2000]
+    python scripts/run_verification_backfill.py [--concurrency 6] [--chunk-size 100] [--limit 2000]
+
+Note on chunk size: verify_batch() creates a fresh set of Scrapfly-client
+scraper instances per call and tears them down at the end (see
+app/agent/verifier.py). The Scrapfly SDK's async_scrape() isn't natively
+async — it runs a synchronous requests call in a background thread pool
+(ThreadPoolExecutor), so a call that hangs past the SDK's own internal
+timeout doesn't free its worker thread (confirmed live: a run froze
+completely, 0% CPU, after ~43 hours in one oversized chunk — consistent
+with a slow thread leak eventually exhausting the pool). Keeping chunk_size
+modest bounds how long any one batch of scrapers lives, so recycling them
+between chunks caps how much leakage can accumulate before a reset. Run
+this script under scripts/run_verification_backfill_supervised.sh for a
+second line of defense — it force-restarts the process if it ever goes
+quiet, regardless of the underlying cause.
 """
 from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import time
 
 from app.agent.verifier import verify_batch
 from app.database import AsyncSessionLocal
 from app.scheduler import _api_keys, _select_verification_batch
 
+# Written on clean completion (backlog drained or --limit reached) so the
+# supervisor script can tell "done" apart from "died and needs restart"
+# without having to parse log text.
+DONE_SENTINEL = "/tmp/verification_backfill.done"
+
 
 async def main(concurrency: int, chunk_size: int, limit: int | None) -> None:
+    try:
+        os.remove(DONE_SENTINEL)
+    except FileNotFoundError:
+        pass
+
     start = time.time()
     total_done = 0
     totals: dict[str, int] = {}
@@ -70,12 +95,14 @@ async def main(concurrency: int, chunk_size: int, limit: int | None) -> None:
 
     elapsed_total = time.time() - start
     print(f"\n=== Backfill done: {total_done} properties in {elapsed_total/3600:.2f}h — {totals} ===")
+    with open(DONE_SENTINEL, "w") as f:
+        f.write(f"done at {time.time()}\n")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--concurrency", type=int, default=6)
-    parser.add_argument("--chunk-size", type=int, default=500)
+    parser.add_argument("--chunk-size", type=int, default=100)
     parser.add_argument("--limit", type=int, default=None, help="stop after this many properties total (default: drain full backlog)")
     args = parser.parse_args()
     asyncio.run(main(args.concurrency, args.chunk_size, args.limit))

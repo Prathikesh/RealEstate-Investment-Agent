@@ -422,19 +422,23 @@ async def verify_batch(
 ) -> dict[str, int]:
     """
     A rollback expires every object in a SQLAlchemy session's identity map,
-    not just the one that failed — so sharing one long-lived session across
-    a whole batch means a single dropped connection on item N turns every
-    subsequent item's attribute access (even `prop.id`) into a lazy-load
-    that crashes with MissingGreenlet outside of an awaited context. Fixed
-    by giving each property its own fresh session and commit (mirrors
-    scheduler.py's `_save()` pattern, just at per-item granularity — each
-    item already costs several seconds of network time, so a session per
-    item is negligible overhead and far more resilient here). This is also
-    what makes `concurrency` > 1 safe: every concurrent task owns its own
-    session, so there's no shared-transaction state to corrupt.
+    not just the one that failed — so a single shared session for the whole
+    batch would turn one dropped connection into a MissingGreenlet crash on
+    every subsequent item. Each of `concurrency` worker tasks below owns its
+    own session instead, so a failure only ever affects that worker's
+    current item — but that session is reused across many properties within
+    the worker (recreated only after an error), not opened fresh per
+    property. Confirmed live this matters: opening a brand-new physical
+    connection per property under 6-way concurrency (thousands of
+    connect/disconnect cycles over a large batch) reproducibly triggered
+    connection-establishment hangs against the shared managed Postgres
+    within roughly an hour, consistent with connection-churn throttling
+    rather than a slow leak — cut the connection count from O(properties) to
+    O(concurrency) by keeping one session alive per worker for its own
+    lifetime instead.
 
     `scrapers` (the Scrapfly-backed client instances) ARE shared across
-    concurrent tasks — each detail fetch uses its own one-off Scrapfly
+    concurrent workers — each detail fetch uses its own one-off Scrapfly
     session id, so concurrent detail fetches don't collide. The one
     exception is CentrisScraper.search_by_address()'s underlying
     scrape_listings() calls, which reuse a single shared search session for
@@ -452,34 +456,56 @@ async def verify_batch(
     property_ids = [p.id for p in properties]  # capture before any lazy-load risk
     total = len(property_ids)
     scrapers = make_scrapers(api_keys)
-    sem = asyncio.Semaphore(max(1, concurrency))
     done = 0
     lock = asyncio.Lock()
 
-    async def _run_one(i: int, pid) -> None:
+    queue: asyncio.Queue = asyncio.Queue()
+    for item in enumerate(property_ids, 1):
+        queue.put_nowait(item)
+
+    async def _worker(worker_id: int) -> None:
         nonlocal done
-        async with sem:
-            try:
-                async with AsyncSessionLocal() as item_session:
-                    prop = await item_session.get(Property, pid)
+        session = AsyncSessionLocal()
+        try:
+            while True:
+                try:
+                    i, pid = queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    return
+
+                try:
+                    prop = await session.get(Property, pid)
                     if prop is not None:
-                        outcome = await verify_property(item_session, prop, scrapers)
-                        await item_session.commit()
+                        outcome = await verify_property(session, prop, scrapers)
+                        await session.commit()
                         async with lock:
                             stats[outcome.value] += 1
-            except Exception as exc:
-                logger.warning(f"[verify] {i}/{total} failed for property {pid}: {exc}")
+                except Exception as exc:
+                    logger.warning(f"[verify] worker {worker_id} item {i}/{total} failed for property {pid}: {exc}")
+                    async with lock:
+                        stats["errors"] += 1
+                    try:
+                        await session.rollback()
+                    except Exception:
+                        pass
+                    # The session (and its underlying connection) may be in
+                    # a broken state after certain errors — recreate rather
+                    # than risk reusing a wedged connection for the rest of
+                    # this worker's queue.
+                    await session.close()
+                    session = AsyncSessionLocal()
+
+                await asyncio.sleep(delay_seconds)
                 async with lock:
-                    stats["errors"] += 1
-            await asyncio.sleep(delay_seconds)
-            async with lock:
-                done += 1
-                current_done = done
-            if progress_cb:
-                progress_cb(current_done, total, stats)
+                    done += 1
+                    current_done = done
+                if progress_cb:
+                    progress_cb(current_done, total, stats)
+        finally:
+            await session.close()
 
     try:
-        await asyncio.gather(*(_run_one(i, pid) for i, pid in enumerate(property_ids, 1)))
+        await asyncio.gather(*(_worker(w) for w in range(max(1, concurrency))))
     finally:
         await close_scrapers(scrapers)
 
