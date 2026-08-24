@@ -13,6 +13,7 @@ import Dashboard from './pages/Dashboard'
 import Properties from './pages/Properties'
 import PropertyPage from './pages/PropertyPage'
 import AnalysisPage from './pages/AnalysisPage'
+import CmhcUnderwritingPage from './pages/CmhcUnderwritingPage'
 import Settings from './pages/Settings'
 import SavedProperties from './pages/SavedProperties'
 import SavedSearches from './pages/SavedSearches'
@@ -38,6 +39,7 @@ export default function App() {
                 <Route path="properties"     element={<Properties />} />
                 <Route path="properties/:id" element={<PropertyPage />} />
                 <Route path="analyze/:id"    element={<AnalysisPage />} />
+                <Route path="underwriting/:id" element={<CmhcUnderwritingPage />} />
                 <Route path="watching"       element={<SavedProperties />} />
                 <Route path="saved"          element={<SavedProperties />} />
                 <Route path="alerts"         element={<MarketAlerts />} />

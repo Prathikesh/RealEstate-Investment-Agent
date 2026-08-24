@@ -6,7 +6,7 @@ import {
   ArrowLeft, ExternalLink, RefreshCw, MapPin, Calendar,
   Building2, Ruler, AlertCircle, TrendingUp,
   Clock, BarChart2, Bookmark, BookmarkCheck,
-  ChevronLeft, ChevronRight, Sparkles, CircleDollarSign, ShieldCheck,
+  ChevronLeft, ChevronRight, Sparkles, CircleDollarSign, ShieldCheck, Landmark,
 } from 'lucide-react'
 import {
   BarChart, Bar, AreaChart, Area,
@@ -23,6 +23,7 @@ import { useLang } from '../context/LanguageContext'
 import FinancingWorkbench from '../components/FinancingWorkbench'
 import { STRATEGY_WEIGHTS } from '../lib/verdict'
 import { buildFactorRows, buildScoreLedger, componentsForProperty, type LedgerRow } from '../lib/propertyVerdict'
+import { isCmhcUnderwritingEligible } from '../lib/cmhcUnderwriting'
 
 // Code-split: MapLibre (~210KB gzip) loads only when the Zoning tab renders.
 const ZoningMap = lazy(() => import('../components/ZoningMap'))
@@ -335,6 +336,15 @@ export default function PropertyPage() {
             <BarChart2 size={13} />
             Deep Analysis
           </Link>
+          {isCmhcUnderwritingEligible(prop) && (
+            <Link
+              to={`/underwriting/${prop.id}`}
+              className="inline-flex items-center gap-1.5 px-3 py-2 bg-teal-700 hover:bg-teal-600 text-white text-sm font-semibold rounded-xl transition-all duration-150 active:scale-95"
+            >
+              <Landmark size={13} />
+              CMHC Underwriting
+            </Link>
+          )}
           {/* Save / Bookmark */}
           <button
             onClick={toggleSaved}
@@ -1382,6 +1392,24 @@ function FinancialsTab({ prop, t, pricePerSqft, onScenarioChange }: {
 }) {
   return (
     <div className="space-y-5">
+
+      {/* ── CMHC MLI underwriting entry card — 4+ unit properties only ── */}
+      {isCmhcUnderwritingEligible(prop) && (
+        <Link
+          to={`/underwriting/${prop.id}`}
+          className="card flex items-center justify-between gap-3 border-teal-200 bg-teal-50/50 hover:bg-teal-50 transition-colors duration-150"
+        >
+          <div className="flex items-center gap-3">
+            <span className="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-teal-700/10 text-teal-700">
+              <Landmark size={16} />
+            </span>
+            <div>
+              <p className="text-sm font-semibold text-ink">4+ unit property — CMHC MLI insured financing may apply</p>
+              <p className="text-xs text-muted">Open the full underwriting tool: benchmarked expenses, mortgage sizing, DSCR, CMHC premium →</p>
+            </div>
+          </div>
+        </Link>
+      )}
 
       {/* ── Financing Workbench — single source for all financial values ── */}
       <FinancingWorkbench prop={prop} pricePerSqft={pricePerSqft} onScenarioChange={onScenarioChange} />
