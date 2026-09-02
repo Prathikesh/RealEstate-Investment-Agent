@@ -36,10 +36,20 @@ function BenchmarkRow({ label, line, unit }: { label: string; line: BenchmarkedL
   )
 }
 
-export default function IncomeAnalysisTab({ inputs, update, defaultTier }: {
+export interface CapRateSource {
+  bandLowPct: number
+  bandHighPct: number
+  label: string
+  quarter: string
+  cityKey: string
+  caveat: string
+}
+
+export default function IncomeAnalysisTab({ inputs, update, defaultTier, capRateSource }: {
   inputs: CmhcUnderwritingInputs
   update: Updater
   defaultTier: CmhcBuildingTier
+  capRateSource?: CapRateSource | null
 }) {
   const units = inputs.rentRoll.length
   const rentRollSummary = summarizeRentRoll(inputs.rentRoll)
@@ -249,6 +259,14 @@ export default function IncomeAnalysisTab({ inputs, update, defaultTier }: {
         <InputRow label="Capitalization Rate">
           <NumField label="Capitalization Rate" value={inputs.capRatePct} onChange={v => update('capRatePct', v)} suffix="%" width="w-20" />
         </InputRow>
+        {capRateSource && (
+          <p className="text-[11px] text-muted/70 -mt-1 mb-1">
+            Source: {capRateSource.label} — {capRateSource.quarter},{' '}
+            {capRateSource.cityKey.charAt(0).toUpperCase() + capRateSource.cityKey.slice(1)}.
+            Institutional band {capRateSource.bandLowPct.toFixed(2)}–{capRateSource.bandHighPct.toFixed(2)}% (midpoint used as the default);
+            directional for small plexes — adjust as needed. Cap rate varies by city.
+          </p>
+        )}
         <Row label="Underwritten Value" value={fmt$(underwrittenValue)} sub={fmt$(perUnit(underwrittenValue, units)) + '/unit'} bold />
         <InputRow label="CAPEX Adjustment">
           <NumField label="CAPEX Adjustment" value={inputs.capexAdjustment} onChange={v => update('capexAdjustment', v)} suffix="$" />

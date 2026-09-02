@@ -43,6 +43,25 @@ export default function CmhcUnderwritingPage() {
 
   const eligible = prop ? isCmhcUnderwritingEligible(prop) : null
 
+  // Per-city market cap rate (Colliers band) sourced by the backend pipeline.
+  // Answers the underwriter's "where does the cap rate come from?" — it seeds
+  // the valuation default and shows its source, and it varies by city.
+  const capRateInfo = useMemo(() => {
+    const mb = prop?.market_benchmark
+    if (!mb) return null
+    const bandLowPct = mb.band_low * 100
+    const bandHighPct = mb.band_high * 100
+    return {
+      defaultPct: Math.round(((bandLowPct + bandHighPct) / 2) * 100) / 100,
+      bandLowPct,
+      bandHighPct,
+      label: mb.source_label,
+      quarter: mb.source_quarter,
+      cityKey: mb.city_key,
+      caveat: mb.caveat,
+    }
+  }, [prop?.market_benchmark])
+
   const defaults = useMemo(() => {
     if (!prop) return null
     const estUnits = prop.unit_count ?? UNITS_BY_TYPE[prop.property_type] ?? 4
@@ -55,9 +74,10 @@ export default function CmhcUnderwritingPage() {
       schoolTax: prop.school_taxes_annual,
       purchasePrice: prop.asking_price ?? 0,
       seedMonthlyRentPerUnit,
+      capRatePctDefault: capRateInfo?.defaultPct,
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prop?.id])
+  }, [prop?.id, capRateInfo])
 
   const [inputs, setInputs] = useState<CmhcUnderwritingInputs | null>(null)
 
@@ -146,7 +166,7 @@ export default function CmhcUnderwritingPage() {
       </div>
 
       <div className="tab-enter">
-        {tab === 'income' && <IncomeAnalysisTab inputs={inputs} update={update} defaultTier={defaultBenchmarkTier(inputs.rentRoll.length)} />}
+        {tab === 'income' && <IncomeAnalysisTab inputs={inputs} update={update} defaultTier={defaultBenchmarkTier(inputs.rentRoll.length)} capRateSource={capRateInfo} />}
         {tab === 'rentRoll' && <RentRollTab inputs={inputs} update={update} />}
         {tab === 'amortization' && (
           <Suspense fallback={<div className="card animate-pulse h-64" />}>
