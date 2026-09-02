@@ -132,15 +132,18 @@ export interface ReplacementReserveCounts {
 }
 
 export function computeReplacementReserveBenchmark(tier: CmhcBuildingTier, counts: ReplacementReserveCounts): number {
+  // CMHC benchmarks: appliances ($60 each) and A/C units ($190 each) are annual
+  // allowances; only the elevator ($315) is quoted per month. So appliances and
+  // A/C are added as-is per year, and the elevator is annualized (× 12).
   const t = CMHC_QC_BENCHMARK_TIERS[tier]
-  const elevatorMonthly = t.replacementReserve.perElevatorPerMonth != null
-    ? t.replacementReserve.perElevatorPerMonth * counts.elevatorCount
+  const elevatorAnnual = t.replacementReserve.perElevatorPerMonth != null
+    ? t.replacementReserve.perElevatorPerMonth * counts.elevatorCount * 12
     : 0
-  const monthly =
-    t.replacementReserve.perAppliancePerMonth * counts.applianceCount +
-    t.replacementReserve.perHeatPumpOrAcPerMonth * counts.heatPumpOrAcCount +
-    elevatorMonthly
-  return monthly * 12
+  return (
+    t.replacementReserve.perAppliancePerYear * counts.applianceCount +
+    t.replacementReserve.perAcPerYear * counts.heatPumpOrAcCount +
+    elevatorAnnual
+  )
 }
 
 export interface ExpenseActuals {

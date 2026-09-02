@@ -161,7 +161,14 @@ describe('expense benchmarking — greater-of-actual-or-benchmark rule', () => {
 })
 
 describe('replacement reserve benchmark — Concrete tier has no separate elevator line', () => {
-  it('wood-frame tier adds an elevator component', () => {
+  it('appliances and A/C are annual allowances, not monthly ($60/appliance/yr, $190/AC/yr)', () => {
+    // Per CMHC's Quebec benchmark + the client walkthrough: $60 per appliance
+    // per YEAR and $190 per A/C per YEAR (only the elevator is per month).
+    expect(computeReplacementReserveBenchmark('wood_frame_le11', { applianceCount: 5, heatPumpOrAcCount: 0, elevatorCount: 0 })).toBeCloseTo(300, 2)
+    expect(computeReplacementReserveBenchmark('wood_frame_le11', { applianceCount: 0, heatPumpOrAcCount: 1, elevatorCount: 0 })).toBeCloseTo(190, 2)
+    expect(computeReplacementReserveBenchmark('wood_frame_le11', { applianceCount: 0, heatPumpOrAcCount: 0, elevatorCount: 0 })).toBe(0)
+  })
+  it('wood-frame tier adds an elevator component (elevator is per month → × 12)', () => {
     const withElevator = computeReplacementReserveBenchmark('wood_frame_le11', { applianceCount: 5, heatPumpOrAcCount: 0, elevatorCount: 1 })
     const withoutElevator = computeReplacementReserveBenchmark('wood_frame_le11', { applianceCount: 5, heatPumpOrAcCount: 0, elevatorCount: 0 })
     expect(withElevator - withoutElevator).toBeCloseTo(315 * 12, 2)
