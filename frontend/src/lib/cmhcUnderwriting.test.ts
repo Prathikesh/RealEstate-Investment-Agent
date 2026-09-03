@@ -17,11 +17,11 @@ import {
 } from './cmhcUnderwriting'
 
 describe('eligibility', () => {
-  it('is eligible for quadruplex/quintuplex_plus for-sale properties only', () => {
-    expect(isCmhcUnderwritingEligible({ property_type: 'quadruplex', listing_type: 'for_sale' })).toBe(true)
+  it('is eligible for quintuplex_plus for-sale properties only (5+ units)', () => {
     expect(isCmhcUnderwritingEligible({ property_type: 'quintuplex_plus', listing_type: 'for_sale' })).toBe(true)
+    expect(isCmhcUnderwritingEligible({ property_type: 'quadruplex', listing_type: 'for_sale' })).toBe(false)
     expect(isCmhcUnderwritingEligible({ property_type: 'triplex', listing_type: 'for_sale' })).toBe(false)
-    expect(isCmhcUnderwritingEligible({ property_type: 'quadruplex', listing_type: 'for_rent' })).toBe(false)
+    expect(isCmhcUnderwritingEligible({ property_type: 'quintuplex_plus', listing_type: 'for_rent' })).toBe(false)
   })
 })
 

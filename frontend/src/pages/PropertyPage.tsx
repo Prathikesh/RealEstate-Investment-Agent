@@ -1393,7 +1393,7 @@ function FinancialsTab({ prop, t, pricePerSqft, onScenarioChange }: {
   return (
     <div className="space-y-5">
 
-      {/* ── CMHC MLI underwriting entry card — 4+ unit properties only ── */}
+      {/* ── CMHC MLI underwriting entry card — 5+ unit properties only ── */}
       {isCmhcUnderwritingEligible(prop) && (
         <Link
           to={`/underwriting/${prop.id}`}
@@ -1404,7 +1404,7 @@ function FinancialsTab({ prop, t, pricePerSqft, onScenarioChange }: {
               <Landmark size={16} />
             </span>
             <div>
-              <p className="text-sm font-semibold text-ink">4+ unit property — CMHC MLI insured financing may apply</p>
+              <p className="text-sm font-semibold text-ink">5+ unit property — CMHC MLI insured financing may apply</p>
               <p className="text-xs text-muted">Open the full underwriting tool: benchmarked expenses, mortgage sizing, DSCR, CMHC premium →</p>
             </div>
           </div>

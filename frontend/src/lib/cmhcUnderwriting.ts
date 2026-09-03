@@ -1,7 +1,7 @@
 /**
  * CMHC MLI (multi-unit insured lending) underwriting math — mirrors the
  * client-provided "Multi-Res Income Analysis Template" workbook, formula for
- * formula, for 4+ unit properties (quadruplex / quintuplex_plus).
+ * formula, for 5+ unit properties (quintuplex_plus).
  *
  * A few things fixed relative to the source spreadsheet (found by directly
  * inspecting its live formulas, not just its printed values):
@@ -32,7 +32,9 @@ import { CMHC_QC_BENCHMARK_TIERS, type CmhcBuildingTier } from './cmhcQuebecBenc
 
 // ── A. Eligibility ───────────────────────────────────────────────────────────
 
-export const CMHC_ELIGIBLE_PROPERTY_TYPES = new Set(['quadruplex', 'quintuplex_plus'])
+// CMHC MLI is offered for 5+ unit buildings only (a quadruplex is still
+// financed residentially), so eligibility is quintuplex_plus.
+export const CMHC_ELIGIBLE_PROPERTY_TYPES = new Set(['quintuplex_plus'])
 
 export function isCmhcUnderwritingEligible(prop: { property_type: string; listing_type: string }): boolean {
   return CMHC_ELIGIBLE_PROPERTY_TYPES.has(prop.property_type) && prop.listing_type === 'for_sale'

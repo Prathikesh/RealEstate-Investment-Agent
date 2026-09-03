@@ -13,6 +13,7 @@ import { defaultBenchmarkTier } from '../lib/cmhcQuebecBenchmarks'
 import IncomeAnalysisTab from '../components/cmhc/IncomeAnalysisTab'
 import RentRollTab from '../components/cmhc/RentRollTab'
 import { useCmhcT } from '../components/cmhc/i18n'
+import { AppWordmark } from '../components/QuartisLogo'
 
 const AmortizationTab = lazy(() => import('../components/cmhc/AmortizationTab'))
 const YieldMaintenanceTab = lazy(() => import('../components/cmhc/YieldMaintenanceTab'))
@@ -137,6 +138,11 @@ export default function CmhcUnderwritingPage() {
 
   return (
     <div className="p-6 space-y-5 max-w-[1400px] mx-auto animate-fade-in print:p-0">
+      {/* Print-only brand header for the exported report */}
+      <div className="hidden print:flex items-center justify-between border-b border-surface-border pb-3 mb-1">
+        <AppWordmark iconSize={22} />
+        <span className="text-[11px] text-muted">{new Date().toLocaleDateString()}</span>
+      </div>
       <div className="flex items-center justify-between print:hidden">
         <button type="button" onClick={backToProperty} className="group inline-flex items-center gap-1.5 text-sm text-muted hover:text-ink transition-colors">
           <ArrowLeft size={14} className="transition-transform duration-200 group-hover:-translate-x-0.5" /> {t('backToProperty')}

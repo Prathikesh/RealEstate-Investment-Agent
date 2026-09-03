@@ -79,9 +79,9 @@ function Nav({ t, scrolled, menuOpen, setMenuOpen, loggedIn }: { t: Copy; scroll
   return (
     <header className={`fixed inset-x-0 top-0 z-50 transition-all duration-300 ${scrolled ? 'bg-white/90 backdrop-blur-md border-b border-surface-border shadow-sm' : 'bg-transparent'}`}>
       <nav className="max-w-7xl mx-auto px-5 sm:px-8 h-16 flex items-center justify-between">
-        <Link to="/" className="flex items-center gap-2.5">
-          <span className="w-9 h-9 rounded-xl bg-accent flex items-center justify-center shadow-md shadow-accent/30"><AppIcon size={19} className="text-white" /></span>
-          <span className={`text-lg font-extrabold tracking-tight ${scrolled ? 'text-ink' : 'text-white'}`}>PlexAI</span>
+        <Link to="/" className="flex items-center gap-2">
+          <AppIcon size={30} />
+          <span className={`text-xl font-extrabold tracking-tight ${scrolled ? 'text-ink' : 'text-white'}`}>PlexAi</span>
         </Link>
         <div className="hidden md:flex items-center gap-8">
           {links.map(l => (<a key={l.href} href={l.href} className={`text-sm font-semibold transition-colors ${scrolled ? 'text-muted hover:text-ink' : 'text-slate-300 hover:text-white'}`}>{l.label}</a>))}
@@ -462,7 +462,7 @@ function Footer({ t, loggedIn }: { t: Copy; loggedIn: boolean }) {
       <div className="max-w-7xl mx-auto px-5 sm:px-8 pt-14 pb-8">
         <div className="grid gap-10 md:grid-cols-[1.4fr_repeat(3,1fr)]">
           <div className="max-w-xs">
-            <div className="flex items-center gap-2.5"><span className="w-9 h-9 rounded-xl bg-accent flex items-center justify-center"><AppIcon size={19} className="text-white" /></span><span className="text-lg font-extrabold tracking-tight text-white">PlexAI</span></div>
+            <div className="flex items-center gap-2"><AppIcon size={30} /><span className="text-xl font-extrabold tracking-tight text-white">PlexAi</span></div>
             <p className="mt-4 text-sm text-slate-400 leading-relaxed">{t.footer.tagline}</p>
             <Link to={loggedIn ? '/dashboard' : '/register'} className="mt-5 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-accent text-white text-sm font-bold hover:bg-accent-hover transition-colors">{loggedIn ? t.nav.dashboard : t.cta.cta1} <ArrowRight size={15} /></Link>
           </div>

@@ -253,3 +253,35 @@
     appearance: textfield;
   }
 }
+
+/* ── Print / PDF report format ─────────────────────────────────────────────
+   Turns the CMHC underwriting screen into a clean, paper-friendly report:
+   app chrome hidden, form controls flattened to plain values, colours kept. */
+@media print {
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+
+  html, body { background: #fff !important; }
+
+  /* Flatten inputs/selects so their values read as printed text, not fields */
+  .input, .select {
+    border-color: transparent !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    -webkit-appearance: none !important;
+    appearance: none !important;
+    color: #111827 !important;
+    font-weight: 600;
+  }
+  select.select { background-image: none !important; }
+
+  /* Interactive-only chrome never prints */
+  button { display: none !important; }
+
+  /* Flat cards that don't split awkwardly across pages */
+  .card { box-shadow: none !important; }
+  section.card, .card { break-inside: avoid; }
+
+  /* A little breathing room between the stacked report sections */
+  @page { margin: 14mm; }
+}
