@@ -106,14 +106,17 @@ export function buildDefaultInputs(opts: {
     reserveCounts: { applianceCount: '0', heatPumpOrAcCount: '0', elevatorCount: '0' },
 
     structuralReservePctForNcf: '0',
-    // Seeded from the property's per-city Colliers band midpoint when known
-    // (falls back to a neutral default for cities without a band).
-    capRatePct: opts.capRatePctDefault != null ? String(opts.capRatePctDefault) : '5.5',
+    // Seeded from the property's per-city Colliers band midpoint. Left blank for
+    // cities without a published band — the broker enters a cap rate rather than
+    // us inventing one (the UI prompts for it).
+    capRatePct: opts.capRatePctDefault != null ? String(opts.capRatePctDefault) : '',
     capexAdjustment: '0',
     appraisedValue: opts.purchasePrice > 0 ? String(Math.round(opts.purchasePrice)) : '',
     purchasePrice: opts.purchasePrice > 0 ? String(Math.round(opts.purchasePrice)) : '',
 
-    mortgage1: { loanAmount: '', ratePct: '5.50', termYears: '5', amortYears: '25' },
+    // Amortization defaults to the CMHC MLI norm (up to 40 yr) rather than a
+    // conventional 25 — matches how these deals are actually underwritten.
+    mortgage1: { loanAmount: '', ratePct: '5.50', termYears: '5', amortYears: '40' },
     mortgage2Enabled: false,
     mortgage2: { loanAmount: '0', ratePct: '8.00', termYears: '1', amortYears: '25' },
 

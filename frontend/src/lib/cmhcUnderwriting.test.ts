@@ -12,6 +12,7 @@ import {
   calcNetCashFlow, calcUnderwrittenValue, canadianEffectiveMonthlyRate, monthlyMortgagePayment,
   calcDSCR, calcLTV, cmhcApplicationFee, cmhcPremiumRate, cmhcPremiumAmount, calcAverageRentPerUnit,
   calcBreakevenRentPerUnit, buildAmortizationSchedule, balanceAfterNPayments, calcYieldMaintenance,
+  requiredDscrForTerm, loanFromDscr, sizeCmhcFirstMortgage,
   type OperatingExpenseLines, type RentRollUnit,
 } from './cmhcUnderwriting'
 
@@ -89,6 +90,27 @@ describe('golden deal — 4-unit, $288,339 commercial revenue, 6% vacancy, 7% ca
     expect(result.amortSurchargePct).toBe(0)
     expect(result.premiumAmount).toBeCloseTo(44550, 2)
     expect(result.insurable).toBe(true)
+  })
+})
+
+describe('loan sizing — DSCR-constrained, matching the 1212 Patriotes deal ($1.2M loan)', () => {
+  it('DSCR requirement follows the term (1.30x ≤5yr, 1.20x ≥10yr)', () => {
+    expect(requiredDscrForTerm(5)).toBe(1.30)
+    expect(requiredDscrForTerm(10)).toBe(1.20)
+  })
+  it('sizes the loan the NOI can service at the target DSCR (Anthony: NOI $80,858 → ~$1.2M at 4.25%/40yr)', () => {
+    const loan = loanFromDscr(80858, 4.25, 40, 1.30)
+    expect(loan).toBeGreaterThan(1_180_000)
+    expect(loan).toBeLessThan(1_220_000)
+  })
+  it('takes the LESSER of the DSCR loan and the LTV cap', () => {
+    // Underwritten value $1.9M, 85% LTV cap = $1.615M → DSCR ($1.2M) binds.
+    const dscrBound = sizeCmhcFirstMortgage({ noi: 80858, annualRatePct: 4.25, amortYears: 40, termYears: 5, value: 1_900_000 })
+    expect(dscrBound.boundBy).toBe('dscr')
+    // A tiny value makes the LTV cap bind instead.
+    const ltvBound = sizeCmhcFirstMortgage({ noi: 80858, annualRatePct: 4.25, amortYears: 40, termYears: 5, value: 500_000 })
+    expect(ltvBound.boundBy).toBe('ltv')
+    expect(ltvBound.loan).toBeCloseTo(425_000, 0) // 500k × 85%
   })
 })
 
