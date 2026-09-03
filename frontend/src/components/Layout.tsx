@@ -10,7 +10,7 @@ import { useAuth } from '../auth/AuthContext'
 import PageViewTracker from '../analytics/PageViewTracker'
 import ScrapeProgressBar from './ScrapeProgressBar'
 import CompareBar from './CompareBar'
-import { QuartisIcon } from './QuartisLogo'
+import { AppWordmark } from './QuartisLogo'
 
 const NAV = [
   { to: '/dashboard',  Icon: LayoutDashboard, labelKey: 'dashboard' },
@@ -73,13 +73,8 @@ export default function Layout() {
                         bg-white border-r border-surface-border shadow-sm overflow-hidden">
 
           {/* Logo */}
-          <Link to="/" className="flex items-center h-16 shrink-0" title="PlexAI">
-            <span className="grid place-items-center w-[76px] shrink-0">
-              <span className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center shadow-md">
-                <QuartisIcon size={20} className="text-white" />
-              </span>
-            </span>
-            <span className="font-black text-lg text-ink tracking-tight whitespace-nowrap">PlexAI</span>
+          <Link to="/" className="flex items-center h-16 shrink-0 pl-5" title="PlexAi">
+            <AppWordmark iconSize={40} />
           </Link>
 
           {/* Primary nav */}
@@ -129,11 +124,9 @@ export default function Layout() {
       </aside>
 
       {/* ── Mobile top bar ─────────────────────────────────────────────── */}
-      <div className="md:hidden fixed top-0 left-0 right-0 z-40 h-14 bg-white border-b border-surface-border flex items-center px-4 gap-3 shadow-sm">
-        <div className="w-8 h-8 rounded-xl bg-accent flex items-center justify-center shadow-md">
-          <QuartisIcon size={14} className="text-white" />
-        </div>
-        <span className="font-black text-sm text-ink tracking-wide flex-1">PlexAI</span>
+      <div className="md:hidden print:hidden fixed top-0 left-0 right-0 z-40 h-14 bg-white border-b border-surface-border flex items-center px-4 gap-3 shadow-sm">
+        <AppWordmark iconSize={28} />
+        <div className="flex-1" />
         <div className="flex items-center gap-1 p-0.5 bg-surface rounded-lg border border-surface-border">
           {(['fr', 'en'] as const).map(l => (
             <button key={l} onClick={() => setLang(l)}
@@ -150,7 +143,7 @@ export default function Layout() {
 
       {/* Mobile nav drawer */}
       {mobileOpen && (
-        <div className="md:hidden fixed inset-0 z-30 pt-14">
+        <div className="md:hidden print:hidden fixed inset-0 z-30 pt-14">
           <div className="absolute inset-0 bg-black/20" onClick={() => setMobileOpen(false)} />
           <div className="relative bg-white w-56 h-full shadow-xl p-3 space-y-0.5">
             {NAV.map(({ to, Icon, labelKey }) => (
@@ -193,7 +186,7 @@ export default function Layout() {
       )}
 
       {/* ── Main content ─────────────────────────────────────────────────── */}
-      <main className="flex-1 overflow-y-auto min-w-0 md:pt-0 pt-14">
+      <main className="flex-1 overflow-y-auto min-w-0 md:pt-0 pt-14 print:pt-0 print:overflow-visible">
         <PageViewTracker />
         <ScrapeProgressBar />
         {/* Content scaled to the calibrated 125% on desktop. Applied here (not

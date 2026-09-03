@@ -30,7 +30,7 @@ const EN: Dict = {
   disclaimer: "Informational underwriting worksheet based on CMHC's 2025-26 published Quebec benchmarks and the MLI premium/fee schedule. Not a commitment to lend — confirm current rates, fees and eligibility with CMHC and your lender before submitting an application.",
   errTitle: 'CMHC underwriting tool unavailable',
   errLoad: 'Could not load this property.',
-  errEligibility: 'CMHC MLI underwriting is only available for quadruplex / quintuplex+ properties currently for sale.',
+  errEligibility: 'CMHC MLI underwriting is only available for quintuplex+ (5+ unit) properties currently for sale.',
   returnToProperty: 'Return to property',
   back: 'Back',
 
@@ -247,7 +247,7 @@ const FR: Dict = {
   disclaimer: "Feuille de travail informative fondée sur les barèmes SCHL 2025-2026 pour le Québec et la grille de primes et de frais MLI. Ne constitue pas un engagement de prêt — confirmez les taux, frais et l'admissibilité auprès de la SCHL et de votre prêteur avant de soumettre une demande.",
   errTitle: 'Outil d\'analyse SCHL indisponible',
   errLoad: 'Impossible de charger cette propriété.',
-  errEligibility: 'L\'analyse SCHL (MLI) n\'est offerte que pour les quadruplex / quintuplex et plus actuellement à vendre.',
+  errEligibility: 'L\'analyse SCHL (MLI) n\'est offerte que pour les quintuplex et plus (5 logements et plus) actuellement à vendre.',
   returnToProperty: 'Retour à la propriété',
   back: 'Retour',
 
