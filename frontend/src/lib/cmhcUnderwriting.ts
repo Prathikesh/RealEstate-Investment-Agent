@@ -132,15 +132,18 @@ export interface ReplacementReserveCounts {
 }
 
 export function computeReplacementReserveBenchmark(tier: CmhcBuildingTier, counts: ReplacementReserveCounts): number {
+  // CMHC benchmarks: appliances ($60 each) and A/C units ($190 each) are annual
+  // allowances; only the elevator ($315) is quoted per month. So appliances and
+  // A/C are added as-is per year, and the elevator is annualized (× 12).
   const t = CMHC_QC_BENCHMARK_TIERS[tier]
-  const elevatorMonthly = t.replacementReserve.perElevatorPerMonth != null
-    ? t.replacementReserve.perElevatorPerMonth * counts.elevatorCount
+  const elevatorAnnual = t.replacementReserve.perElevatorPerMonth != null
+    ? t.replacementReserve.perElevatorPerMonth * counts.elevatorCount * 12
     : 0
-  const monthly =
-    t.replacementReserve.perAppliancePerMonth * counts.applianceCount +
-    t.replacementReserve.perHeatPumpOrAcPerMonth * counts.heatPumpOrAcCount +
-    elevatorMonthly
-  return monthly * 12
+  return (
+    t.replacementReserve.perAppliancePerYear * counts.applianceCount +
+    t.replacementReserve.perAcPerYear * counts.heatPumpOrAcCount +
+    elevatorAnnual
+  )
 }
 
 export interface ExpenseActuals {
@@ -249,6 +252,46 @@ export function calcDSCR(noi: number, annualDebtService: number): number | null 
 
 export function calcLTV(loanAmount: number, value: number): number | null {
   return value > 0 ? (loanAmount / value) * 100 : null
+}
+
+// ── Loan sizing ───────────────────────────────────────────────────────────────
+// A CMHC MLI 1st mortgage is sized as the LESSER of (a) the amount the NOI can
+// service at the required DSCR and (b) the LTV cap on value — "based on CCD and
+// Value" in the source workbook. DSCR requirement follows the term: 1.30x for a
+// 5-yr term, 1.20x for a 10-yr term (per the client's underwriter walkthrough).
+
+/** CMHC MLI standard maximum loan-to-value for a purchase. */
+export const CMHC_MAX_LTV_PCT = 85
+
+export function requiredDscrForTerm(termYears: number): number {
+  return termYears >= 10 ? 1.20 : 1.30
+}
+
+/** Largest principal whose annual payment (at rate/amort) the NOI covers at the target DSCR. */
+export function loanFromDscr(noi: number, annualRatePct: number, amortYears: number, dscrTarget: number): number {
+  if (noi <= 0 || annualRatePct <= 0 || amortYears <= 0 || dscrTarget <= 0) return 0
+  const maxMonthlyPayment = (noi / dscrTarget) / 12
+  const r = canadianEffectiveMonthlyRate(annualRatePct)
+  const n = amortYears * 12
+  const paymentPerDollar = (r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1)
+  return maxMonthlyPayment / paymentPerDollar
+}
+
+export interface SizedLoan {
+  loan: number
+  dscrTarget: number
+  boundBy: 'dscr' | 'ltv'
+}
+
+export function sizeCmhcFirstMortgage(opts: {
+  noi: number; annualRatePct: number; amortYears: number; termYears: number; value: number; maxLtvPct?: number
+}): SizedLoan {
+  const dscrTarget = requiredDscrForTerm(opts.termYears)
+  const dscrLoan = loanFromDscr(opts.noi, opts.annualRatePct, opts.amortYears, dscrTarget)
+  const ltvLoan = Math.max(0, opts.value) * ((opts.maxLtvPct ?? CMHC_MAX_LTV_PCT) / 100)
+  return dscrLoan <= ltvLoan
+    ? { loan: dscrLoan, dscrTarget, boundBy: 'dscr' }
+    : { loan: ltvLoan, dscrTarget, boundBy: 'ltv' }
 }
 
 /** $150/unit under 100 units; $15,000 flat + $100/unit over 100 for the excess; capped at $50,000. */

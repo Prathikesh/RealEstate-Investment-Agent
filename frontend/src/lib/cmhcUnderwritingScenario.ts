@@ -80,6 +80,7 @@ export function buildDefaultInputs(opts: {
   schoolTax: number | null
   purchasePrice: number
   seedMonthlyRentPerUnit: number
+  capRatePctDefault?: number
 }): CmhcUnderwritingInputs {
   const units = Math.max(1, opts.unitCount)
   return {
@@ -91,22 +92,31 @@ export function buildDefaultInputs(opts: {
     commercialAnnual: '0',
     lockersAnnual: '0',
     vacantUnits: '0',
-    vacancyPct: '5',
+    // CMHC MLI standard vacancy for an all-residential building is 3%.
+    vacancyPct: '3',
 
     municipalTax: opts.municipalTax != null ? String(opts.municipalTax) : '0',
     schoolTax: opts.schoolTax != null ? String(opts.schoolTax) : '0',
     water: '0', gas: '0', hydroCommon: '0', insurance: '0', elevatorOperating: '0',
 
     managementActual: '', salariesActual: '', maintenanceActual: '', otherCostsActual: '', replacementReserveActual: '',
-    reserveCounts: { applianceCount: String(units), heatPumpOrAcCount: '0', elevatorCount: '0' },
+    // Replacement reserve only applies to items the owner actually supplies
+    // (appliances included in the lease, A/C units, elevators). Default to
+    // none — the broker enters the real counts on the deal.
+    reserveCounts: { applianceCount: '0', heatPumpOrAcCount: '0', elevatorCount: '0' },
 
     structuralReservePctForNcf: '0',
-    capRatePct: '5.5',
+    // Seeded from the property's per-city Colliers band midpoint. Left blank for
+    // cities without a published band — the broker enters a cap rate rather than
+    // us inventing one (the UI prompts for it).
+    capRatePct: opts.capRatePctDefault != null ? String(opts.capRatePctDefault) : '',
     capexAdjustment: '0',
     appraisedValue: opts.purchasePrice > 0 ? String(Math.round(opts.purchasePrice)) : '',
     purchasePrice: opts.purchasePrice > 0 ? String(Math.round(opts.purchasePrice)) : '',
 
-    mortgage1: { loanAmount: '', ratePct: '5.50', termYears: '5', amortYears: '25' },
+    // Amortization defaults to the CMHC MLI norm (up to 40 yr) rather than a
+    // conventional 25 — matches how these deals are actually underwritten.
+    mortgage1: { loanAmount: '', ratePct: '5.50', termYears: '5', amortYears: '40' },
     mortgage2Enabled: false,
     mortgage2: { loanAmount: '0', ratePct: '8.00', termYears: '1', amortYears: '25' },
 

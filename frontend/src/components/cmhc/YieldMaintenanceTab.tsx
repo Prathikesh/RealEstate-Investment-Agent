@@ -1,12 +1,14 @@
 import { useEffect } from 'react'
 import { RotateCcw } from 'lucide-react'
-import { Panel, Row, InputRow, NumField, StatTile, fmt$, toNum } from './primitives'
+import { Panel, Row, Field, FieldGrid, NumField, StatTile, fmt$, toNum } from './primitives'
 import { calcYieldMaintenance } from '../../lib/cmhcUnderwriting'
 import type { CmhcUnderwritingInputs } from '../../lib/cmhcUnderwritingScenario'
+import { useCmhcT } from './i18n'
 
 type Updater = <K extends keyof CmhcUnderwritingInputs>(key: K, value: CmhcUnderwritingInputs[K]) => void
 
 export default function YieldMaintenanceTab({ inputs, update }: { inputs: CmhcUnderwritingInputs; update: Updater }) {
+  const t = useCmhcT()
   const ym = inputs.yieldMaintenance
   const setYm = (patch: Partial<typeof ym>) => update('yieldMaintenance', { ...ym, ...patch })
 
@@ -35,53 +37,50 @@ export default function YieldMaintenanceTab({ inputs, update }: { inputs: CmhcUn
   return (
     <div className="space-y-5">
       <Panel
-        title="Yield Maintenance Calculator"
+        title={t('ymTitle')}
         icon={<RotateCcw size={13} />}
-        aside={<span className="text-[11px] text-muted/70">Prepayment penalty when breaking an existing CMHC-insured mortgage</span>}
+        aside={<span className="text-[11px] text-muted/70">{t('ymAside')}</span>}
       >
-        <InputRow label="Outstanding Balance">
-          <NumField label="Outstanding Balance" value={ym.outstandingBalance} onChange={v => setYm({ outstandingBalance: v })} suffix="$" />
-        </InputRow>
-        <InputRow label="Remaining Term" sub="months">
-          <NumField label="Remaining Term (months)" value={ym.remainingTermMonths} onChange={v => setYm({ remainingTermMonths: v })} width="w-24" />
-        </InputRow>
-        <InputRow label="Remaining Amortization" sub="months">
-          <NumField label="Remaining Amortization (months)" value={ym.remainingAmortMonths} onChange={v => setYm({ remainingAmortMonths: v })} width="w-24" />
-        </InputRow>
-        <InputRow label="Mortgage Rate" sub="the existing (old) rate on this loan">
-          <NumField label="Mortgage Rate" value={ym.mortgageRatePct} onChange={v => setYm({ mortgageRatePct: v })} suffix="%" width="w-20" />
-        </InputRow>
-        <InputRow label="GOC Bond Yield" sub="matching the remaining term, as of today">
-          <NumField label="Bond Yield" value={ym.bondYieldPct} onChange={v => setYm({ bondYieldPct: v })} suffix="%" width="w-20" />
-        </InputRow>
+        <FieldGrid>
+          <Field label={t('outstandingBalance')}>
+            <NumField label={t('outstandingBalance')} value={ym.outstandingBalance} onChange={v => setYm({ outstandingBalance: v })} suffix="$" width="w-full" />
+          </Field>
+          <Field label={t('remainingTerm')} sub={t('months')}>
+            <NumField label={t('remainingTerm')} value={ym.remainingTermMonths} onChange={v => setYm({ remainingTermMonths: v })} width="w-full" />
+          </Field>
+          <Field label={t('remainingAmort')} sub={t('months')}>
+            <NumField label={t('remainingAmort')} value={ym.remainingAmortMonths} onChange={v => setYm({ remainingAmortMonths: v })} width="w-full" />
+          </Field>
+          <Field label={t('mortgageRate')} sub={t('mortgageRateSub')}>
+            <NumField label={t('mortgageRate')} value={ym.mortgageRatePct} onChange={v => setYm({ mortgageRatePct: v })} suffix="%" width="w-full" />
+          </Field>
+          <Field label={t('bondYield')} sub={t('bondYieldSub')}>
+            <NumField label={t('bondYield')} value={ym.bondYieldPct} onChange={v => setYm({ bondYieldPct: v })} suffix="%" width="w-full" />
+          </Field>
+        </FieldGrid>
       </Panel>
 
       {result ? (
         <>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            <StatTile label="Monthly Payment" value={fmt$(result.monthlyPayment)} />
-            <StatTile label="Balance at Maturity" value={fmt$(result.balanceAtMaturity)} />
+            <StatTile label={t('monthlyPayment')} value={fmt$(result.monthlyPayment)} />
+            <StatTile label={t('ymBalanceMaturity')} value={fmt$(result.balanceAtMaturity)} />
             <StatTile
-              label="Yield Maintenance Penalty" value={fmt$(result.penalty)}
+              label={t('ymPenalty')} value={fmt$(result.penalty)}
               valueClass={result.penalty > 0 ? 'text-score-notrecommended' : 'text-score-strong'}
             />
           </div>
-          <Panel title="Detail" icon={<RotateCcw size={13} />}>
-            <Row label="Value at Payout (discounted at bond yield)" value={fmt$(result.valueAtPayout)} />
-            <Row label="Less: Outstanding Balance" value={fmt$(outstandingBalance)} negative />
-            <Row label="Yield Maintenance Penalty" value={fmt$(result.penalty)} bold red={result.penalty > 0} />
+          <Panel title={t('ymDetail')} icon={<RotateCcw size={13} />}>
+            <Row label={t('ymValuePayout')} value={fmt$(result.valueAtPayout)} />
+            <Row label={t('ymLessBalance')} value={fmt$(outstandingBalance)} negative />
+            <Row label={t('ymPenalty')} value={fmt$(result.penalty)} bold red={result.penalty > 0} />
           </Panel>
         </>
       ) : (
-        <p className="text-sm text-muted px-1">Fill in all five fields above to calculate the prepayment penalty.</p>
+        <p className="text-sm text-muted px-1">{t('ymEmpty')}</p>
       )}
 
-      <p className="text-[11px] text-muted/70 leading-relaxed px-1">
-        Plug in the outstanding balance, remaining term and amortization, the mortgage's original rate, and the current
-        GOC bond yield matching the remaining term. When the bond yield has dropped below the mortgage rate, the lender's
-        penalty compensates for the interest-rate spread they'd lose on early repayment; when the bond yield is at or
-        above the mortgage rate, the penalty floors at $0.
-      </p>
+      <p className="text-[11px] text-muted/70 leading-relaxed px-1">{t('ymFootnote')}</p>
     </div>
   )
 }

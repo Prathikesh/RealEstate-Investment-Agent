@@ -36,9 +36,9 @@ export interface CmhcBenchmarkTier {
   /** "Other Costs" (advertising, permits, garbage, snow, landscaping, security…), % of EGI. */
   otherCostsPctEgi: number
   replacementReserve: {
-    perAppliancePerMonth: number      // fridge, stove, dishwasher, washer, dryer — each counted separately
-    perHeatPumpOrAcPerMonth: number   // wall heat pump / air conditioner unit
-    /** null = no separate elevator reserve line for this tier (already folded into maintenancePupa). */
+    perAppliancePerYear: number       // fridge, stove, dishwasher, washer, dryer — each counted separately, $/yr
+    perAcPerYear: number              // wall heat pump / air conditioner unit, $/yr
+    /** $/month per elevator; null = no separate elevator reserve line for this tier (already folded into maintenancePupa). */
     perElevatorPerMonth: number | null
   }
 }
@@ -51,7 +51,7 @@ export const CMHC_QC_BENCHMARK_TIERS: Record<CmhcBuildingTier, CmhcBenchmarkTier
     managementPctEgi: 4.5,
     salariesPupa: 250,
     otherCostsPctEgi: 1,
-    replacementReserve: { perAppliancePerMonth: 60, perHeatPumpOrAcPerMonth: 190, perElevatorPerMonth: 315 },
+    replacementReserve: { perAppliancePerYear: 60, perAcPerYear: 190, perElevatorPerMonth: 315 },
   },
   wood_frame_12plus: {
     label: 'Wood Frame — 12 units or more',
@@ -60,7 +60,7 @@ export const CMHC_QC_BENCHMARK_TIERS: Record<CmhcBuildingTier, CmhcBenchmarkTier
     managementPctEgi: 5,
     salariesPupa: 400,
     otherCostsPctEgi: 1,
-    replacementReserve: { perAppliancePerMonth: 60, perHeatPumpOrAcPerMonth: 190, perElevatorPerMonth: 315 },
+    replacementReserve: { perAppliancePerYear: 60, perAcPerYear: 190, perElevatorPerMonth: 315 },
   },
   concrete: {
     label: 'Concrete',
@@ -69,7 +69,7 @@ export const CMHC_QC_BENCHMARK_TIERS: Record<CmhcBuildingTier, CmhcBenchmarkTier
     managementPctEgi: 5,
     salariesPupa: 670,
     otherCostsPctEgi: 1,
-    replacementReserve: { perAppliancePerMonth: 60, perHeatPumpOrAcPerMonth: 190, perElevatorPerMonth: null },
+    replacementReserve: { perAppliancePerYear: 60, perAcPerYear: 190, perElevatorPerMonth: null },
   },
 }
 

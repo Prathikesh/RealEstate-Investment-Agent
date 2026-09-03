@@ -12,6 +12,7 @@ import {
   calcNetCashFlow, calcUnderwrittenValue, canadianEffectiveMonthlyRate, monthlyMortgagePayment,
   calcDSCR, calcLTV, cmhcApplicationFee, cmhcPremiumRate, cmhcPremiumAmount, calcAverageRentPerUnit,
   calcBreakevenRentPerUnit, buildAmortizationSchedule, balanceAfterNPayments, calcYieldMaintenance,
+  requiredDscrForTerm, loanFromDscr, sizeCmhcFirstMortgage,
   type OperatingExpenseLines, type RentRollUnit,
 } from './cmhcUnderwriting'
 
@@ -92,6 +93,27 @@ describe('golden deal — 4-unit, $288,339 commercial revenue, 6% vacancy, 7% ca
   })
 })
 
+describe('loan sizing — DSCR-constrained, matching the 1212 Patriotes deal ($1.2M loan)', () => {
+  it('DSCR requirement follows the term (1.30x ≤5yr, 1.20x ≥10yr)', () => {
+    expect(requiredDscrForTerm(5)).toBe(1.30)
+    expect(requiredDscrForTerm(10)).toBe(1.20)
+  })
+  it('sizes the loan the NOI can service at the target DSCR (Anthony: NOI $80,858 → ~$1.2M at 4.25%/40yr)', () => {
+    const loan = loanFromDscr(80858, 4.25, 40, 1.30)
+    expect(loan).toBeGreaterThan(1_180_000)
+    expect(loan).toBeLessThan(1_220_000)
+  })
+  it('takes the LESSER of the DSCR loan and the LTV cap', () => {
+    // Underwritten value $1.9M, 85% LTV cap = $1.615M → DSCR ($1.2M) binds.
+    const dscrBound = sizeCmhcFirstMortgage({ noi: 80858, annualRatePct: 4.25, amortYears: 40, termYears: 5, value: 1_900_000 })
+    expect(dscrBound.boundBy).toBe('dscr')
+    // A tiny value makes the LTV cap bind instead.
+    const ltvBound = sizeCmhcFirstMortgage({ noi: 80858, annualRatePct: 4.25, amortYears: 40, termYears: 5, value: 500_000 })
+    expect(ltvBound.boundBy).toBe('ltv')
+    expect(ltvBound.loan).toBeCloseTo(425_000, 0) // 500k × 85%
+  })
+})
+
 describe('CMHC premium LTV band boundaries (source cell J76 — note the 86% top, not 85%)', () => {
   const cases: Array<[number, number | null]> = [
     [65, 1.75], [65.01, 2.00], [70, 2.00], [70.01, 2.25],
@@ -161,7 +183,14 @@ describe('expense benchmarking — greater-of-actual-or-benchmark rule', () => {
 })
 
 describe('replacement reserve benchmark — Concrete tier has no separate elevator line', () => {
-  it('wood-frame tier adds an elevator component', () => {
+  it('appliances and A/C are annual allowances, not monthly ($60/appliance/yr, $190/AC/yr)', () => {
+    // Per CMHC's Quebec benchmark + the client walkthrough: $60 per appliance
+    // per YEAR and $190 per A/C per YEAR (only the elevator is per month).
+    expect(computeReplacementReserveBenchmark('wood_frame_le11', { applianceCount: 5, heatPumpOrAcCount: 0, elevatorCount: 0 })).toBeCloseTo(300, 2)
+    expect(computeReplacementReserveBenchmark('wood_frame_le11', { applianceCount: 0, heatPumpOrAcCount: 1, elevatorCount: 0 })).toBeCloseTo(190, 2)
+    expect(computeReplacementReserveBenchmark('wood_frame_le11', { applianceCount: 0, heatPumpOrAcCount: 0, elevatorCount: 0 })).toBe(0)
+  })
+  it('wood-frame tier adds an elevator component (elevator is per month → × 12)', () => {
     const withElevator = computeReplacementReserveBenchmark('wood_frame_le11', { applianceCount: 5, heatPumpOrAcCount: 0, elevatorCount: 1 })
     const withoutElevator = computeReplacementReserveBenchmark('wood_frame_le11', { applianceCount: 5, heatPumpOrAcCount: 0, elevatorCount: 0 })
     expect(withElevator - withoutElevator).toBeCloseTo(315 * 12, 2)
