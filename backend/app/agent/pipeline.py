@@ -35,6 +35,7 @@ from app.models.property import AnalysisConfidence, ListingType, Property, Score
 from app.models.zoning import ZoningZone
 from app.services.calc_client import analyze as calc_engine_analyze
 from app.services.address_index import geocode_address
+from app.scrapers.geocoder import geocode as geocode_nominatim
 from geoalchemy2.elements import WKTElement
 
 logger = logging.getLogger(__name__)
@@ -71,12 +72,26 @@ class InvestmentPipeline:
         # coordinates (Realtor.ca ships them; Centris/ReMax don't). Without a
         # point the zoning stage can't match a zone — this makes every scraped
         # property zonable, not just Realtor's.
+        #
+        # geocode_address() is backed by mtl_address_index.tsv.gz — Montreal
+        # only (see address_index.py's docstring). Confirmed live: for a
+        # multi-city corpus this leaves the large majority of properties
+        # (everything outside Montreal) with no location at all, silently
+        # skipping zoning/assessment/flood-constraint matching for them —
+        # not a "no match found" result, just never checked. Nominatim
+        # (already used elsewhere for scraper-side geocoding, see
+        # app/scrapers/geocoder.py) covers the whole province, so it's a
+        # direct fallback for exactly the addresses the offline index misses.
         if prop.location is None and prop.full_address:
             coords = geocode_address(prop.full_address)
+            source = "address index"
+            if not coords:
+                coords = await geocode_nominatim(prop.full_address, prop.city)
+                source = "Nominatim"
             if coords:
                 lat, lng = coords
                 prop.location = WKTElement(f"POINT({lng} {lat})", srid=4326)
-                logger.info(f"  Geocoded from address index → ({lat:.5f}, {lng:.5f})")
+                logger.info(f"  Geocoded from {source} → ({lat:.5f}, {lng:.5f})")
 
         # Rentals: asking_price is a monthly rent, not a purchase price — every
         # stage below (comps, financial calculator, scorer) treats it as one,
