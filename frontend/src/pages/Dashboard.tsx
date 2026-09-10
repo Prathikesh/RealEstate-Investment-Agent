@@ -9,6 +9,7 @@ import { fetchStats, fetchProperties } from '../api'
 import { useLang } from '../context/LanguageContext'
 import { useAuth } from '../auth/AuthContext'
 import PropertyCardGrid from '../components/PropertyCardGrid'
+import AnalyzePropertyBar from '../components/AnalyzePropertyBar'
 
 function fmtCAD(v: number | null): string {
   if (v == null) return '—'
@@ -205,6 +206,9 @@ export default function Dashboard() {
           />
         </div>
       </div>
+
+      {/* ── Analyze any property (on-demand lookup) ─────────────────────── */}
+      <AnalyzePropertyBar />
 
       {/* ── Top opportunities ──────────────────────────────────────────── */}
       <div className="space-y-3">

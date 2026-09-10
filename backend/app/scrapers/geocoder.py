@@ -64,6 +64,7 @@ CITY_CENTROIDS: dict[str, tuple[float, float]] = {
 # ── In-memory cache to avoid redundant geocoding ─────────────────────────────
 
 _cache: dict[str, Optional[tuple[float, float]]] = {}
+_cache_muni: dict[str, tuple[Optional[str], Optional[str]]] = {}
 _lock = asyncio.Lock()
 _last_call: float = 0.0
 
@@ -104,6 +105,65 @@ async def _nominatim(query: str) -> Optional[tuple[float, float]]:
 
         _cache[query] = result
         return result
+
+
+async def geocode_area(address: str) -> tuple[Optional[str], Optional[str]]:
+    """
+    Resolve a free-text address to (municipality, borough) for building the
+    Centris geography slug used by address search.
+
+    e.g. "8333 Rue Courval, Montréal" -> ("Montréal", "Saint-Léonard"),
+         "123 ch. du Lac, Saint-Sixte" -> ("Saint-Sixte", None).
+    The borough (OSM `suburb`/`city_district`/`borough`) is what makes a
+    big-city search tractable — a bare "Montréal" scope is far too large.
+    Returns (None, None) if Nominatim can't place it. Rate-limited/cached via
+    the shared _nominatim throttle.
+    """
+    global _last_call
+    if not address or not address.strip():
+        return None, None
+    cache_key = f"area::{address.strip().lower()}"
+    if cache_key in _cache_muni:
+        return _cache_muni[cache_key]
+
+    async with _lock:
+        if cache_key in _cache_muni:
+            return _cache_muni[cache_key]
+        wait = 1.1 - (time.monotonic() - _last_call)
+        if wait > 0:
+            await asyncio.sleep(wait)
+
+        muni: Optional[str] = None
+        borough: Optional[str] = None
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(
+                    "https://nominatim.openstreetmap.org/search",
+                    params={
+                        "q": f"{address.strip()}, Quebec, Canada",
+                        "format": "json", "limit": 1, "countrycodes": "ca",
+                        "addressdetails": 1,
+                    },
+                    headers={"User-Agent": "quebec-realestate-investment-platform/1.0"},
+                )
+                data = resp.json()
+                if data:
+                    addr = data[0].get("address", {})
+                    muni = (
+                        addr.get("city") or addr.get("town") or addr.get("village")
+                        or addr.get("municipality") or addr.get("county")
+                    )
+                    borough = (
+                        addr.get("suburb") or addr.get("city_district")
+                        or addr.get("borough") or addr.get("quarter")
+                    )
+        except Exception as exc:
+            logger.warning(f"Nominatim area lookup failed for '{address[:60]}': {exc}")
+        finally:
+            _last_call = time.monotonic()
+
+        _cache_muni[cache_key] = (muni, borough)
+        return muni, borough
 
 
 def city_centroid(city: str) -> Optional[tuple[float, float]]:

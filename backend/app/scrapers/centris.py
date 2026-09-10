@@ -819,6 +819,22 @@ class CentrisScraper(BaseScraper):
                 if label and value and len(label) < 80:
                     result.setdefault(label, value)
 
+        # Pattern 6 — financial-details-table (taxes / assessment). On the
+        # server-rendered (non-JS) page these live in label/value cells that
+        # aren't wrapped in a <table>, so Pattern 3 misses them — pair each
+        # label with its following value cell directly. This is what lets a
+        # plain-HTTP fetch (no headless browser) still pick up municipal /
+        # school taxes and the assessment breakdown.
+        for label_el in soup.select("[class*='financial-details-table__label']"):
+            value_el = label_el.find_next(
+                class_=re.compile(r"financial-details-table__value")
+            )
+            if value_el:
+                label = label_el.get_text(strip=True).lower()
+                value = value_el.get_text(strip=True)
+                if label and value:
+                    result.setdefault(label, value)
+
         return result
 
     # ── Carac dict lookup helpers ─────────────────────────────────────────────
@@ -1007,6 +1023,25 @@ class CentrisScraper(BaseScraper):
         seen: set[str] = set()
         photos: list[str] = []
 
+        # Priority 0: window.MosaicPhotoUrls — Centris inlines the FULL, ordered
+        # gallery as a JS array in the page source (present even without JS
+        # rendering). This is the authoritative list; the DOM <img> fallbacks
+        # below only surface the first photo plus unrelated agent/related-listing
+        # thumbnails on a non-rendered page, so when this is present we use it
+        # exclusively.
+        html = str(soup)
+        m = re.search(r"window\.MosaicPhotoUrls\s*=\s*(\[[^\]]*\])", html)
+        if m:
+            raw = m.group(1)
+            for url in re.findall(r'"(https?://[^"]*media\.ashx[^"]*)"', raw):
+                # Un-escape the JS/HTML-encoded ampersands.
+                url = url.replace("\\u0026", "&").replace("&amp;", "&").replace("\\/", "/")
+                if url not in seen:
+                    seen.add(url)
+                    photos.append(hi_res_photo(url))
+            if photos:
+                return photos
+
         # Priority 1: gallery / carousel images
         for img in soup.select(
             "[class*='gallery'] img, [class*='carousel'] img, "
@@ -1125,7 +1160,9 @@ class CentrisScraper(BaseScraper):
         parts = [p.strip() for p in content.split(",")]
         street_num_idx = None
         for i, part in enumerate(parts):
-            if re.match(r"^\d+[\s\-–]*\d*$", part.strip()):
+            # Civic number, optionally a range and/or a letter suffix:
+            # "3115", "3115 - 3119", "8870 - 8876A", "8876A".
+            if re.match(r"^\d+[A-Za-z]?[\s\-–]*\d*[A-Za-z]?$", part.strip()):
                 street_num_idx = i
                 break
 
