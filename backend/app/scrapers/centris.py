@@ -54,16 +54,20 @@ def hi_res_photo(url: str) -> str:
 
 # URL slug (French) → PropertyType enum value
 PROPERTY_TYPE_MAP: dict[str, str] = {
-    "plex":          "triplex",        # generic plex fallback
-    "duplex":        "duplex",
-    "triplex":       "triplex",
-    "quadruplex":    "quadruplex",
-    "quintuplex":    "quintuplex_plus",
-    "condo":         "condo",
-    "maison":        "single_family",
-    "cottage":       "single_family",
-    "townhouse":     "townhouse",
-    "chalet":        "single_family",
+    "plex":                    "triplex",        # generic plex fallback
+    "duplex":                  "duplex",
+    "triplex":                 "triplex",
+    "quadruplex":              "quadruplex",
+    "quintuplex":              "quintuplex_plus",
+    "multifamilial":           "quintuplex_plus",  # 6+ unit apartment buildings
+    "condo":                   "condo",
+    "loft-studio":             "condo",
+    "maison":                  "single_family",
+    "maison-en-copropriete":   "single_family",  # co-owned house, not a condo unit
+    "maison-mobile":           "single_family",
+    "cottage":                 "single_family",
+    "townhouse":               "townhouse",
+    "chalet":                  "single_family",
 }
 
 # French search URLs (English /en/ returns 404 on Centris)
