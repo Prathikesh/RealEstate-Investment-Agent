@@ -75,10 +75,12 @@ class PropertyDeduplicator:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def process(self, raw: RawProperty) -> tuple[Property, bool]:
+    async def process(self, raw: RawProperty, bypass_scope: bool = False) -> tuple[Property, bool]:
         """
         Upsert one RawProperty into the database.
-        Returns (property, is_new). Out-of-scope cities are skipped -> (None, False).
+        Returns (property, is_new). Out-of-scope cities are skipped -> (None, False),
+        unless bypass_scope=True (on-demand lookups fetch a listing the user
+        explicitly asked for, which may be outside our scheduled scrape cities).
         """
         now = datetime.now(timezone.utc)
 
@@ -94,7 +96,7 @@ class PropertyDeduplicator:
         # Only ingest listings we can fully serve (zoning coverage). A bbox can't
         # exclude on-island suburbs, so we filter by city here — the single choke
         # point every scrape path goes through.
-        if not in_target_cities(raw.city):
+        if not bypass_scope and not in_target_cities(raw.city):
             logger.debug(f"skip out-of-scope city: {raw.city}")
             return None, False
 

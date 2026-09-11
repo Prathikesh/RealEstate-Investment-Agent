@@ -1,11 +1,12 @@
 import { NavLink, Outlet, Link, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Building2, Bookmark, Settings,
-  Bell, Search, FileBarChart2, Menu, X, LogOut, ShieldCheck,
+  Bell, Search, FileBarChart2, Menu, X, LogOut, ShieldCheck, Sun, Moon,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useState } from 'react'
 import { useLang } from '../context/LanguageContext'
+import { useTheme } from '../context/ThemeContext'
 import { useAuth } from '../auth/AuthContext'
 import PageViewTracker from '../analytics/PageViewTracker'
 import ScrapeProgressBar from './ScrapeProgressBar'
@@ -27,20 +28,17 @@ function SideLink({ to, Icon, label }: { to: string; Icon: typeof Bookmark; labe
     <NavLink
       to={to}
       className={({ isActive }) =>
-        clsx('group relative flex items-center h-11 transition-colors', isActive ? 'text-accent' : 'text-muted hover:text-ink')
+        clsx(
+          'group relative flex items-center gap-3 mx-3 px-3 h-11 rounded-xl transition-colors',
+          isActive ? 'bg-accent/10 text-accent font-semibold' : 'text-muted hover:text-ink hover:bg-surface-hover',
+        )
       }
     >
       {({ isActive }) => (
         <>
-          {isActive && <span className="absolute left-0 top-1/2 -translate-y-1/2 h-6 w-1 rounded-r-full bg-accent" />}
-          <span className="grid place-items-center w-[76px] shrink-0">
-            <span className={clsx('grid place-items-center w-10 h-10 rounded-xl transition-colors', isActive ? 'bg-accent/10' : 'group-hover:bg-surface-hover')}>
-              <Icon size={20} />
-            </span>
-          </span>
-          {/* flex-1 + min-w-0 so long FR labels ("Recherches enregistrées") wrap
-              within the rail instead of clipping under overflow-hidden. */}
-          <span className="text-sm font-semibold leading-tight flex-1 min-w-0 pr-4">{label}</span>
+          {isActive && <span className="absolute -left-3 top-1/2 -translate-y-1/2 h-5 w-1 rounded-r-full bg-accent" />}
+          <Icon size={19} className="shrink-0" />
+          <span className="text-sm leading-tight flex-1 min-w-0">{label}</span>
         </>
       )}
     </NavLink>
@@ -51,6 +49,7 @@ function SideLink({ to, Icon, label }: { to: string; Icon: typeof Bookmark; labe
 
 export default function Layout() {
   const { lang, setLang, t } = useLang()
+  const { theme, toggle: toggleTheme } = useTheme()
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -70,7 +69,7 @@ export default function Layout() {
       {/* ── Sidebar (desktop): always-expanded rail ─────────────────────── */}
       <aside className="hidden md:block relative w-[240px] shrink-0 z-30">
         <div className="absolute inset-y-0 left-0 flex flex-col w-[240px]
-                        bg-white border-r border-surface-border shadow-sm overflow-hidden">
+                        bg-surface-card border-r border-surface-border shadow-sm overflow-hidden">
 
           {/* Logo */}
           <Link to="/" className="flex items-center h-16 shrink-0 pl-5" title="PlexAi">
@@ -78,55 +77,60 @@ export default function Layout() {
           </Link>
 
           {/* Primary nav */}
-          <nav className="flex-1 py-2 space-y-1">
+          <nav className="flex-1 py-2 space-y-1 overflow-y-auto">
             {NAV.map(item => <SideLink key={item.to} to={item.to} Icon={item.Icon} label={t(item.labelKey)} />)}
-          </nav>
-
-          {/* Utility nav */}
-          <div className="py-2 space-y-1 border-t border-surface-border">
+            <div className="my-2 mx-5 border-t border-surface-border" />
             <SideLink to="/watching" Icon={Bookmark} label={t('nav_savedProperties')} />
             {user?.role === 'admin' && <SideLink to="/admin" Icon={ShieldCheck} label={t('nav_adminDashboard')} />}
             <SideLink to="/settings" Icon={Settings} label={t('settings')} />
-          </div>
+          </nav>
 
           {/* Account */}
-          <div className="border-t border-surface-border py-3 space-y-2">
-            <div className="flex items-center">
-              <span className="grid place-items-center w-[76px] shrink-0">
-                <span className="w-9 h-9 rounded-full bg-accent/10 text-accent text-xs font-bold grid place-items-center">{initials}</span>
-              </span>
-              <div className="min-w-0 pr-3">
-                <p className="text-xs font-semibold text-ink truncate">{user?.name ?? 'Investor'}</p>
+          <div className="border-t border-surface-border p-3 space-y-2">
+            {/* User card */}
+            <div className="flex items-center gap-2.5 px-2 py-1.5 rounded-xl">
+              <span className="w-9 h-9 rounded-full bg-gradient-to-br from-accent to-indigo-500 text-white text-xs font-bold grid place-items-center shrink-0">{initials}</span>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-bold text-ink truncate">{user?.name ?? 'Investor'}</p>
                 <p className="text-[10px] text-muted truncate">{user?.email}</p>
               </div>
             </div>
 
-            <button onClick={handleLogout}
-              className="w-full flex items-center h-10 text-muted hover:text-ink hover:bg-surface-hover transition-colors">
-              <span className="grid place-items-center w-[76px] shrink-0"><LogOut size={20} /></span>
-              <span className="text-sm font-semibold whitespace-nowrap">{t('logout')}</span>
-            </button>
-
-            <div className="flex items-center">
-              <span className="w-[76px] shrink-0" />
-              <div className="flex gap-1">
+            {/* Controls: theme · language · logout */}
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={toggleTheme}
+                title={theme === 'dark' ? t('theme_light') : t('theme_dark')}
+                className="grid place-items-center w-9 h-9 rounded-lg text-muted hover:text-ink hover:bg-surface-hover transition-colors"
+              >
+                {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
+              </button>
+              <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-surface-hover">
                 {(['fr', 'en'] as const).map(l => (
                   <button key={l} onClick={() => setLang(l)}
-                    className={clsx('px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors',
-                      lang === l ? 'bg-accent text-white' : 'text-muted hover:text-ink hover:bg-surface-hover')}>
+                    className={clsx('px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-widest transition-colors',
+                      lang === l ? 'bg-surface-card text-accent shadow-sm' : 'text-muted hover:text-ink')}>
                     {l}
                   </button>
                 ))}
               </div>
+              <div className="flex-1" />
+              <button onClick={handleLogout} title={t('logout')}
+                className="grid place-items-center w-9 h-9 rounded-lg text-muted hover:text-score-market hover:bg-score-market/10 transition-colors">
+                <LogOut size={17} />
+              </button>
             </div>
           </div>
         </div>
       </aside>
 
       {/* ── Mobile top bar ─────────────────────────────────────────────── */}
-      <div className="md:hidden print:hidden fixed top-0 left-0 right-0 z-40 h-14 bg-white border-b border-surface-border flex items-center px-4 gap-3 shadow-sm">
+      <div className="md:hidden print:hidden fixed top-0 left-0 right-0 z-40 h-14 bg-surface-card border-b border-surface-border flex items-center px-4 gap-2 shadow-sm">
         <AppWordmark iconSize={28} />
         <div className="flex-1" />
+        <button onClick={toggleTheme} className="p-2 rounded-xl text-muted hover:text-ink hover:bg-surface-hover transition-all">
+          {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
+        </button>
         <div className="flex items-center gap-1 p-0.5 bg-surface rounded-lg border border-surface-border">
           {(['fr', 'en'] as const).map(l => (
             <button key={l} onClick={() => setLang(l)}
@@ -145,7 +149,7 @@ export default function Layout() {
       {mobileOpen && (
         <div className="md:hidden print:hidden fixed inset-0 z-30 pt-14">
           <div className="absolute inset-0 bg-black/20" onClick={() => setMobileOpen(false)} />
-          <div className="relative bg-white w-56 h-full shadow-xl p-3 space-y-0.5">
+          <div className="relative bg-surface-card w-56 h-full shadow-xl p-3 space-y-0.5">
             {NAV.map(({ to, Icon, labelKey }) => (
               <NavLink key={to} to={to} onClick={() => setMobileOpen(false)}
                 className={({ isActive }) =>
@@ -189,10 +193,10 @@ export default function Layout() {
       <main className="flex-1 overflow-y-auto min-w-0 md:pt-0 pt-14 print:pt-0 print:overflow-visible">
         <PageViewTracker />
         <ScrapeProgressBar />
-        {/* Content scaled to the calibrated 125% on desktop. Applied here (not
-            on the shell) so the sidebar/app-shell keep native viewport height
-            and the sidebar stays fixed instead of scrolling. */}
-        <div className="animate-fade-in md:[zoom:1.25]">
+        {/* Content zoom on desktop — dialled to ~1.125 (was 1.25) so the UI
+            reads a notch smaller/denser, matching the preferred "90%" feel.
+            Applied here (not on the shell) so the sidebar keeps native height. */}
+        <div className="animate-fade-in md:[zoom:1.125]">
           <Outlet />
         </div>
       </main>

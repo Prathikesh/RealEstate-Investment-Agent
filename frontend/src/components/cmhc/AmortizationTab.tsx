@@ -28,11 +28,11 @@ export default function AmortizationTab({ inputs }: { inputs: CmhcUnderwritingIn
           <div className="inline-flex rounded-lg border border-surface-border overflow-hidden text-xs">
             <button
               type="button" onClick={() => setWhich('1')}
-              className={`px-3 py-1.5 font-semibold ${which === '1' ? 'bg-accent text-white' : 'bg-white text-muted hover:text-ink'}`}
+              className={`px-3 py-1.5 font-semibold ${which === '1' ? 'bg-accent text-white' : 'bg-surface-card text-muted hover:text-ink'}`}
             >{t('firstMortgageShort')}</button>
             <button
               type="button" onClick={() => setWhich('2')} disabled={disabled2}
-              className={`px-3 py-1.5 font-semibold border-l border-surface-border disabled:opacity-40 disabled:cursor-not-allowed ${which === '2' ? 'bg-accent text-white' : 'bg-white text-muted hover:text-ink'}`}
+              className={`px-3 py-1.5 font-semibold border-l border-surface-border disabled:opacity-40 disabled:cursor-not-allowed ${which === '2' ? 'bg-accent text-white' : 'bg-surface-card text-muted hover:text-ink'}`}
             >{t('secondMortgageShort')}</button>
           </div>
         }

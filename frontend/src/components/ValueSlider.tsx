@@ -74,7 +74,7 @@ export function ValueSlider({
         </div>
         {/* Linked number box */}
         <div className={clsx(
-          'flex items-center rounded-lg border bg-white shrink-0 transition-colors',
+          'flex items-center rounded-lg border bg-surface-card shrink-0 transition-colors',
           active ? 'border-surface-border' : 'border-dashed border-surface-border',
         )}>
           {prefix && <span className="pl-2.5 text-xs text-muted select-none">{prefix}</span>}

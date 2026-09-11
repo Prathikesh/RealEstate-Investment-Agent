@@ -251,13 +251,13 @@ export default function Settings() {
               {BUDGETS.map(b => (
                 <button key={b.value} onClick={() => setBudget(budget === b.value ? '' : b.value)}
                   className={clsx('px-3 py-2.5 rounded-xl border text-xs font-semibold text-center transition-all',
-                    budget === b.value ? 'border-accent bg-accent/10 text-accent ring-1 ring-accent/20' : 'border-surface-border text-muted hover:border-accent/40 hover:text-ink bg-white')}>
+                    budget === b.value ? 'border-accent bg-accent/10 text-accent ring-1 ring-accent/20' : 'border-surface-border text-muted hover:border-accent/40 hover:text-ink bg-surface-card')}>
                   {t(b.labelKey)}
                 </button>
               ))}
               <button onClick={() => setBudget(budget === 'custom' ? '' : 'custom')}
                 className={clsx('px-3 py-2.5 rounded-xl border text-xs font-semibold text-center transition-all',
-                  budget === 'custom' ? 'border-accent bg-accent/10 text-accent ring-1 ring-accent/20' : 'border-surface-border text-muted hover:border-accent/40 hover:text-ink bg-white')}>
+                  budget === 'custom' ? 'border-accent bg-accent/10 text-accent ring-1 ring-accent/20' : 'border-surface-border text-muted hover:border-accent/40 hover:text-ink bg-surface-card')}>
                 {t('set_budget_custom')}
               </button>
             </div>
@@ -265,7 +265,7 @@ export default function Settings() {
               <div className="grid grid-cols-2 gap-3 mt-3 animate-fade-in">
                 <label className="block">
                   <span className="block text-[11px] font-semibold text-muted uppercase tracking-wider mb-1.5">{t('set_minPrice')}</span>
-                  <div className="flex items-center rounded-xl border border-surface-border bg-white">
+                  <div className="flex items-center rounded-xl border border-surface-border bg-surface-card">
                     <span className="pl-3 text-sm text-muted">$</span>
                     <input type="number" min={0} step={25000} placeholder={t('set_any')} value={customMin ?? ''}
                       onChange={e => setCustomMin(e.target.value === '' ? undefined : Number(e.target.value))}
@@ -274,7 +274,7 @@ export default function Settings() {
                 </label>
                 <label className="block">
                   <span className="block text-[11px] font-semibold text-muted uppercase tracking-wider mb-1.5">{t('set_maxPrice')}</span>
-                  <div className="flex items-center rounded-xl border border-surface-border bg-white">
+                  <div className="flex items-center rounded-xl border border-surface-border bg-surface-card">
                     <span className="pl-3 text-sm text-muted">$</span>
                     <input type="number" min={0} step={25000} placeholder={t('set_any')} value={customMax ?? ''}
                       onChange={e => setCustomMax(e.target.value === '' ? undefined : Number(e.target.value))}
@@ -290,7 +290,7 @@ export default function Settings() {
               {PROPERTY_TYPES.map(tp => (
                 <button key={tp.value} onClick={() => toggleType(tp.value)}
                   className={clsx('px-4 py-2.5 rounded-xl border text-sm transition-all text-left',
-                    types.includes(tp.value) ? 'bg-accent/10 text-accent border-accent/40 ring-1 ring-accent/20' : 'bg-white text-muted border-surface-border hover:border-accent/40 hover:text-ink')}>
+                    types.includes(tp.value) ? 'bg-accent/10 text-accent border-accent/40 ring-1 ring-accent/20' : 'bg-surface-card text-muted border-surface-border hover:border-accent/40 hover:text-ink')}>
                   <span className="block font-semibold">{t(tp.labelKey)}</span>
                   <span className="text-[10px] font-normal opacity-60">{t(tp.subKey)}</span>
                 </button>
@@ -343,7 +343,7 @@ export default function Settings() {
                 {(['fr', 'en'] as const).map(l => (
                   <button key={l} onClick={() => setLang(l)}
                     className={clsx('py-2.5 rounded-xl border text-sm font-semibold transition-all',
-                      lang === l ? 'bg-accent/10 text-accent border-accent/40 ring-1 ring-accent/20' : 'border-surface-border text-muted hover:border-accent/40 hover:text-ink bg-white')}>
+                      lang === l ? 'bg-accent/10 text-accent border-accent/40 ring-1 ring-accent/20' : 'border-surface-border text-muted hover:border-accent/40 hover:text-ink bg-surface-card')}>
                     {l === 'fr' ? 'Français' : 'English'}
                   </button>
                 ))}
@@ -469,7 +469,7 @@ function ToggleRow({ label, sub, value, onChange, icon }: { label: string; sub: 
       </div>
       <button onClick={() => onChange(!value)} role="switch" aria-checked={value}
         className={clsx('inline-flex shrink-0 items-center w-11 h-6 rounded-full px-0.5 transition-colors duration-200', value ? 'bg-accent' : 'bg-surface-border')}>
-        <span className={clsx('inline-block w-5 h-5 rounded-full bg-white shadow-sm transition-transform duration-200', value ? 'translate-x-5' : 'translate-x-0')} />
+        <span className={clsx('inline-block w-5 h-5 rounded-full bg-surface-card shadow-sm transition-transform duration-200', value ? 'translate-x-5' : 'translate-x-0')} />
       </button>
     </div>
   )
@@ -507,7 +507,7 @@ function CityMultiSelect({ selected, onChange }: { selected: string[]; onChange:
 
   return (
     <div ref={ref} className="relative">
-      <div className="flex flex-wrap items-center gap-1.5 min-h-[46px] px-2 py-2 rounded-xl border border-surface-border bg-white focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/15 transition-all">
+      <div className="flex flex-wrap items-center gap-1.5 min-h-[46px] px-2 py-2 rounded-xl border border-surface-border bg-surface-card focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/15 transition-all">
         {selected.map(c => (
           <span key={c} className="inline-flex items-center gap-1 pl-2.5 pr-1 py-1 rounded-lg bg-accent/10 text-accent text-xs font-semibold">
             {c}
@@ -527,7 +527,7 @@ function CityMultiSelect({ selected, onChange }: { selected: string[]; onChange:
         />
       </div>
       {open && (suggestions.length > 0 || canAddCustom) && (
-        <div className="absolute z-20 mt-2 w-full max-h-56 overflow-auto rounded-xl border border-surface-border bg-white shadow-lg py-1">
+        <div className="absolute z-20 mt-2 w-full max-h-56 overflow-auto rounded-xl border border-surface-border bg-surface-card shadow-lg py-1">
           {canAddCustom && (
             <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => add(query)}
               className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-surface-hover">
@@ -559,7 +559,7 @@ function GoalCards({ selected, onChange }: { selected: string[]; onChange: (v: s
       {GOALS.map(g => {
         const Icon = g.icon, active = selected.includes(g.value), open = expanded === g.value
         return (
-          <div key={g.value} className={clsx('rounded-xl border transition-all', active ? 'border-accent/50 bg-accent/5 ring-1 ring-accent/20' : 'border-surface-border bg-white')}>
+          <div key={g.value} className={clsx('rounded-xl border transition-all', active ? 'border-accent/50 bg-accent/5 ring-1 ring-accent/20' : 'border-surface-border bg-surface-card')}>
             <button type="button" onClick={() => toggle(g.value)} className="w-full flex items-start gap-3 p-3.5 text-left">
               <div className={clsx('w-9 h-9 rounded-lg flex items-center justify-center shrink-0', active ? 'bg-accent/15' : 'bg-surface')}><Icon size={17} className={active ? 'text-accent' : 'text-muted'} /></div>
               <div className="min-w-0 flex-1">

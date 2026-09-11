@@ -19,6 +19,12 @@ class Settings(BaseSettings):
     scrapfly_api_key_3: str = ""
     scrapfly_api_key_4: str = ""
 
+    # On-demand address lookup — Google Programmable Search (Custom Search JSON
+    # API) used to resolve a typed address to a Centris/DuProprio listing URL.
+    # Empty = address search disabled (URL paste still works).
+    google_cse_key: str = ""
+    google_cse_cx: str = ""
+
     # Anthropic (optional — only needed if using Claude for brief generation)
     anthropic_api_key: str = ""
 

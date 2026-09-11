@@ -196,7 +196,7 @@ export default function Compare() {
                           )}
                           <button
                             onClick={() => remove(item.id)}
-                            className="absolute top-2 right-2 w-6 h-6 rounded-full bg-white/90 shadow flex items-center justify-center text-muted hover:text-ink transition-colors"
+                            className="absolute top-2 right-2 w-6 h-6 rounded-full bg-surface-card/90 shadow flex items-center justify-center text-muted hover:text-ink transition-colors"
                           >
                             <X size={11} />
                           </button>
@@ -259,7 +259,7 @@ export default function Compare() {
                       return (
                         <tr key={row.label} className="border-b border-surface-border last:border-0 hover:bg-surface/40 transition-colors">
                           {/* Label cell */}
-                          <td className="px-5 py-3 text-xs font-semibold text-muted sticky left-0 bg-white border-r border-surface-border z-10">
+                          <td className="px-5 py-3 text-xs font-semibold text-muted sticky left-0 bg-surface-card border-r border-surface-border z-10">
                             {row.label}
                           </td>
 

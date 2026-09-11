@@ -133,7 +133,7 @@ export default function SavedProperties() {
               {/* Remove button */}
               <button
                 onClick={() => remove(p.id)}
-                className="absolute top-2 right-2 w-8 h-8 rounded-lg bg-white/90 backdrop-blur flex items-center justify-center shadow text-muted hover:text-red-500 hover:bg-white transition-all opacity-0 group-hover:opacity-100"
+                className="absolute top-2 right-2 w-8 h-8 rounded-lg bg-surface-card/90 backdrop-blur flex items-center justify-center shadow text-muted hover:text-red-500 hover:bg-surface-card transition-all opacity-0 group-hover:opacity-100"
                 title={t('sav_remove')}
               >
                 <Trash2 size={13} />

@@ -13,8 +13,7 @@ import {
 } from '../api'
 import { useLang } from '../context/LanguageContext'
 import { useAuth } from '../auth/AuthContext'
-import { loadBuyBox, cleanBuyBox, BUYBOX_KEYS, BUYBOX_FIELDS, type BuyBox } from '../lib/buybox'
-import { ValueSlider } from '../components/ValueSlider'
+import { loadBuyBox, cleanBuyBox, BUYBOX_KEYS, type BuyBox } from '../lib/buybox'
 import { Sparkles, SlidersHorizontal as SlidersIcon } from 'lucide-react'
 import ScoreBadge from '../components/ScoreBadge'
 import PropertyCardGrid from '../components/PropertyCardGrid'
@@ -55,17 +54,6 @@ const SORT_OPTIONS = [
   { value: 'newest',     labelKey: 'pf_sort_newest' },
   { value: 'days_listed', labelKey: 'pf_sort_longest' },
 ]
-
-// Buy-box field → translation keys (shared factor_*/fdesc_* keys), so the filter
-// panel's buy box localizes just like the Settings one.
-const PF_BUYBOX_LABEL: Record<string, string> = {
-  cash_flow_min: 'factor_cash_flow', cap_rate_min: 'factor_cap_rate', discount_min: 'factor_discount',
-  days_on_market_min: 'factor_dom_bonus', grm_max: 'factor_grm', price_drop_min: 'factor_price_cut',
-}
-const PF_BUYBOX_DESC: Record<string, string> = {
-  cash_flow_min: 'fdesc_cash_flow', cap_rate_min: 'fdesc_cap_rate', discount_min: 'fdesc_discount',
-  days_on_market_min: 'fdesc_dom_bonus', grm_max: 'fdesc_grm', price_drop_min: 'fdesc_price_cut',
-}
 
 // ── Format helpers ────────────────────────────────────────────────────────────
 
@@ -220,7 +208,7 @@ export default function Properties() {
           {/* Rank-by: AI vs My Metrics — the core "analyze every property on your
               own numbers" control. Logged-in brokers only. */}
           {user && (
-            <div className="flex items-center gap-0.5 p-0.5 bg-white border border-surface-border rounded-xl shadow-sm">
+            <div className="flex items-center gap-0.5 p-0.5 bg-surface-card border border-surface-border rounded-xl shadow-sm">
               <button
                 onClick={() => rankBy('ai')}
                 title={lang === 'fr' ? 'Classer par score IA' : 'Rank by the AI score'}
@@ -251,16 +239,16 @@ export default function Properties() {
               'flex items-center gap-1.5 px-3 py-2 rounded-xl border text-sm font-semibold transition-all duration-150',
               showFilters
                 ? 'border-accent bg-accent text-white shadow-md'
-                : 'border-surface-border text-muted bg-white hover:text-ink hover:bg-surface-hover',
+                : 'border-surface-border text-muted bg-surface-card hover:text-ink hover:bg-surface-hover',
             )}
           >
             <SlidersHorizontal size={13} />
             {t('filters')}
             {hasActiveFilters && (
-              <span className={clsx('w-1.5 h-1.5 rounded-full', showFilters ? 'bg-white' : 'bg-accent')} />
+              <span className={clsx('w-1.5 h-1.5 rounded-full', showFilters ? 'bg-surface-card' : 'bg-accent')} />
             )}
           </button>
-          <div className="flex items-center gap-0.5 p-0.5 bg-white border border-surface-border rounded-xl shadow-sm">
+          <div className="flex items-center gap-0.5 p-0.5 bg-surface-card border border-surface-border rounded-xl shadow-sm">
             {([
               { key: 'grid', icon: <LayoutGrid size={14} /> },
               { key: 'list', icon: <List size={14} /> },
@@ -293,7 +281,7 @@ export default function Properties() {
       )}
 
       {/* ── Unified search + sort bar ─────────────────────────────────────── */}
-      <div className="flex gap-2 flex-wrap items-center bg-white border border-surface-border rounded-2xl px-3 py-2 shadow-sm">
+      <div className="flex gap-2 flex-wrap items-center bg-surface-card border border-surface-border rounded-2xl px-3 py-2 shadow-sm">
         <div className="relative flex-1 min-w-[140px] flex items-center gap-2">
           <Search size={15} className="text-muted shrink-0" />
           <input
@@ -306,7 +294,7 @@ export default function Properties() {
             className="w-full text-sm text-ink placeholder:text-muted bg-transparent focus:outline-none"
           />
           {suggestOpen && debouncedAddress.trim().length >= 2 && !!suggestions?.length && (
-            <div className="absolute left-0 right-0 top-full mt-2 bg-white border border-surface-border rounded-xl shadow-lg z-30 max-h-80 overflow-y-auto">
+            <div className="absolute left-0 right-0 top-full mt-2 bg-surface-card border border-surface-border rounded-xl shadow-lg z-30 max-h-80 overflow-y-auto">
               {suggestions.map(s => (
                 <button
                   key={s.id}
@@ -373,7 +361,7 @@ export default function Properties() {
               'flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all duration-150',
               filters.listed_within === opt.value
                 ? 'bg-accent text-white border-accent shadow-sm'
-                : 'bg-white text-muted border-surface-border hover:border-accent/40 hover:text-accent hover:bg-accent/5',
+                : 'bg-surface-card text-muted border-surface-border hover:border-accent/40 hover:text-accent hover:bg-accent/5',
             )}
           >
             {opt.icon}{opt.label}
@@ -403,7 +391,7 @@ export default function Properties() {
               }}
               className={clsx(
                 'flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all duration-150',
-                isActive ? opt.active : `bg-white text-muted border-surface-border ${opt.inactive}`,
+                isActive ? opt.active : `bg-surface-card text-muted border-surface-border ${opt.inactive}`,
               )}
             >
               {opt.icon}{opt.label}
@@ -442,7 +430,7 @@ export default function Properties() {
                     className={clsx(
                       'px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition-all',
                       isOn ? 'bg-accent/10 text-accent border-accent/40 ring-1 ring-accent/20'
-                           : 'bg-white text-muted border-surface-border hover:border-accent/40 hover:text-ink',
+                           : 'bg-surface-card text-muted border-surface-border hover:border-accent/40 hover:text-ink',
                     )}
                   >
                     {t(tp.labelKey)}
@@ -533,34 +521,6 @@ export default function Properties() {
             />
           </label>
 
-          {/* ── Buy-box targets (real numbers) — same control as Settings ───── */}
-          <div className="w-full border-t border-surface-border pt-4 mt-1">
-            <div className="flex items-center gap-2 mb-3">
-              <span className="text-xs font-bold text-ink uppercase tracking-wider">{t('pf_buyBoxTitle')}</span>
-              <span className="text-[11px] text-muted">{t('pf_buyBoxHint')}</span>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-1">
-              {BUYBOX_FIELDS.map(cfg => (
-                <ValueSlider
-                  key={cfg.key}
-                  label={t(PF_BUYBOX_LABEL[cfg.key])}
-                  desc={t(PF_BUYBOX_DESC[cfg.key])}
-                  color={cfg.color}
-                  value={filters[cfg.key]}
-                  onChange={v => setFilter(cfg.key, v == null ? '' : String(v))}
-                  min={cfg.min}
-                  max={cfg.max}
-                  step={cfg.step}
-                  prefix={cfg.prefix}
-                  suffix={cfg.suffix}
-                  allowNegative={cfg.allowNegative}
-                  direction={cfg.direction}
-                />
-              ))}
-            </div>
-            <p className="text-[11px] text-muted/70 mt-1.5">{t('pf_daysNote')}</p>
-          </div>
-
           {/* Multi-site only */}
           <label className="flex flex-col gap-1">
             <span className="text-xs font-medium text-muted">{t('pf_multiOnly')}</span>
@@ -613,8 +573,8 @@ export default function Properties() {
       ) : (
         <div className="relative">
           {isFetching && !isLoading && (
-            <div className="absolute inset-0 bg-white/60 backdrop-blur-[1px] z-10 flex items-start justify-center pt-12 rounded-xl">
-              <div className="flex items-center gap-2 bg-white shadow-card border border-surface-border px-4 py-2 rounded-full text-sm text-muted font-medium">
+            <div className="absolute inset-0 bg-surface-card/60 backdrop-blur-[1px] z-10 flex items-start justify-center pt-12 rounded-xl">
+              <div className="flex items-center gap-2 bg-surface-card shadow-card border border-surface-border px-4 py-2 rounded-full text-sm text-muted font-medium">
                 <svg className="animate-spin w-4 h-4 text-accent" viewBox="0 0 24 24" fill="none">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 000 16v-4l-3 3 3 3v-4a8 8 0 01-8-8z"/>
@@ -684,7 +644,7 @@ export default function Properties() {
             <button
               disabled={data.page <= 1}
               onClick={() => setPage(data.page - 1)}
-              className="p-2 rounded-lg border border-surface-border bg-white text-muted hover:text-ink hover:bg-surface-hover disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="p-2 rounded-lg border border-surface-border bg-surface-card text-muted hover:text-ink hover:bg-surface-hover disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             >
               <ChevronLeft size={14} />
             </button>
@@ -699,7 +659,7 @@ export default function Properties() {
                     'w-8 h-8 rounded-lg text-xs font-medium transition-colors',
                     Number(p) === data.page
                       ? 'bg-accent text-white shadow'
-                      : 'border border-surface-border bg-white text-muted hover:text-ink hover:bg-surface-hover',
+                      : 'border border-surface-border bg-surface-card text-muted hover:text-ink hover:bg-surface-hover',
                   )}
                 >
                   {p}
@@ -709,7 +669,7 @@ export default function Properties() {
             <button
               disabled={data.page >= data.pages}
               onClick={() => setPage(data.page + 1)}
-              className="p-2 rounded-lg border border-surface-border bg-white text-muted hover:text-ink hover:bg-surface-hover disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="p-2 rounded-lg border border-surface-border bg-surface-card text-muted hover:text-ink hover:bg-surface-hover disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             >
               <ChevronRight size={14} />
             </button>
@@ -727,7 +687,7 @@ function GridView({ data, isLoading, rankMode }: { data?: import('../api').Prope
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
         {Array.from({ length: 12 }).map((_, i) => (
-          <div key={i} className="bg-white border border-surface-border rounded-xl overflow-hidden animate-pulse shadow-sm">
+          <div key={i} className="bg-surface-card border border-surface-border rounded-xl overflow-hidden animate-pulse shadow-sm">
             <div className="aspect-video bg-surface-hover" />
             <div className="p-4 space-y-3">
               <div className="h-3 w-24 bg-surface-border rounded" />
@@ -762,7 +722,7 @@ function ListView({
   rankMode: 'ai' | 'your'
 }) {
   return (
-    <div className="bg-white border border-surface-border rounded-xl overflow-hidden shadow-sm">
+    <div className="bg-surface-card border border-surface-border rounded-xl overflow-hidden shadow-sm">
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>

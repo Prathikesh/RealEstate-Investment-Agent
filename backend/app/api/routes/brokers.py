@@ -9,15 +9,19 @@ POST /api/brokers/{id}/watch/{property_id}   — watch a property
 DELETE /api/brokers/{id}/watch/{property_id} — unwatch
 """
 import uuid
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
+from app.auth.deps import get_current_user
 from app.models.broker import Broker, InvestmentStrategy, Language
+from app.models.property import Property
+from app.models.recent_analysis import BrokerRecentAnalysis
 
 router = APIRouter(prefix="/api/brokers", tags=["brokers"])
 
@@ -174,3 +178,123 @@ async def unwatch_property(
         w for w in (broker.watched_property_ids or []) if w != pid
     ]
     return {"status": "unwatched", "property_id": pid}
+
+
+# ── Recent analyses (personal on-demand-lookup history) ─────────────────────────
+
+RECENT_ANALYSES_LIMIT = 12
+# Free tier: how many distinct properties a broker can analyze before Pro.
+FREE_ANALYSIS_LIMIT = 10
+
+
+class RecentAnalysisCard(BaseModel):
+    id:                str
+    full_address:      str
+    city:              Optional[str] = None
+    property_type:     Optional[str] = None
+    asking_price:      Optional[float] = None
+    score:             Optional[int] = None
+    cap_rate:          Optional[float] = None
+    monthly_cash_flow: Optional[float] = None
+    photo:             Optional[str] = None
+    analyzed_at:       Optional[str] = None
+
+
+@router.get("/me/analyses/count")
+async def analyses_count(
+    user: Broker = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """How many distinct properties the broker has analyzed, vs the free limit."""
+    n = await db.scalar(
+        select(func.count()).select_from(BrokerRecentAnalysis)
+        .where(BrokerRecentAnalysis.broker_id == user.id)
+    )
+    count = int(n or 0)
+    return {
+        "count": count,
+        "limit": FREE_ANALYSIS_LIMIT,
+        "remaining": max(0, FREE_ANALYSIS_LIMIT - count),
+        "reached": count >= FREE_ANALYSIS_LIMIT,
+    }
+
+
+@router.post("/me/analyses/{property_id}")
+async def record_analysis(
+    property_id: uuid.UUID,
+    user: Broker = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Record (for the logged-in broker) that they just analyzed this property.
+
+    Deduped per (broker, property): re-analyzing bumps analyzed_at rather than
+    adding a duplicate row. Powers the "My recent analyses" section.
+    """
+    exists = await db.scalar(select(Property.id).where(Property.id == property_id))
+    if not exists:
+        raise HTTPException(status_code=404, detail="Property not found")
+
+    row = await db.scalar(
+        select(BrokerRecentAnalysis).where(
+            BrokerRecentAnalysis.broker_id == user.id,
+            BrokerRecentAnalysis.property_id == property_id,
+        )
+    )
+    if row:
+        row.analyzed_at = datetime.now(timezone.utc)
+    else:
+        db.add(BrokerRecentAnalysis(broker_id=user.id, property_id=property_id))
+    return {"status": "recorded", "property_id": str(property_id)}
+
+
+@router.get("/me/analyses", response_model=list[RecentAnalysisCard])
+async def list_analyses(
+    user: Broker = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[RecentAnalysisCard]:
+    """The logged-in broker's recent analyses, newest-first, as dashboard cards.
+
+    Inner-joins Property, so entries whose property was since deleted simply
+    drop out (no FK, so we lean on the join for that).
+    """
+    rows = (await db.execute(
+        select(Property, BrokerRecentAnalysis.analyzed_at)
+        .join(BrokerRecentAnalysis, BrokerRecentAnalysis.property_id == Property.id)
+        .where(BrokerRecentAnalysis.broker_id == user.id)
+        .order_by(BrokerRecentAnalysis.analyzed_at.desc())
+        .limit(RECENT_ANALYSES_LIMIT)
+    )).all()
+
+    return [
+        RecentAnalysisCard(
+            id=str(p.id),
+            full_address=p.full_address,
+            city=p.city,
+            property_type=p.property_type.value if p.property_type else None,
+            asking_price=p.asking_price,
+            score=p.score,
+            cap_rate=p.cap_rate,
+            monthly_cash_flow=p.monthly_cash_flow,
+            photo=(p.photos[0] if p.photos else None),
+            analyzed_at=analyzed_at.isoformat() if analyzed_at else None,
+        )
+        for p, analyzed_at in rows
+    ]
+
+
+@router.delete("/me/analyses/{property_id}")
+async def delete_analysis(
+    property_id: uuid.UUID,
+    user: Broker = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Remove a property from the logged-in broker's recent analyses."""
+    row = await db.scalar(
+        select(BrokerRecentAnalysis).where(
+            BrokerRecentAnalysis.broker_id == user.id,
+            BrokerRecentAnalysis.property_id == property_id,
+        )
+    )
+    if row:
+        await db.delete(row)
+    return {"status": "deleted", "property_id": str(property_id)}

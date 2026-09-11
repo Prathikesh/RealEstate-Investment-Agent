@@ -819,6 +819,22 @@ class CentrisScraper(BaseScraper):
                 if label and value and len(label) < 80:
                     result.setdefault(label, value)
 
+        # Pattern 6 — financial-details-table (taxes / assessment). On the
+        # server-rendered (non-JS) page these live in label/value cells that
+        # aren't wrapped in a <table>, so Pattern 3 misses them — pair each
+        # label with its following value cell directly. This is what lets a
+        # plain-HTTP fetch (no headless browser) still pick up municipal /
+        # school taxes and the assessment breakdown.
+        for label_el in soup.select("[class*='financial-details-table__label']"):
+            value_el = label_el.find_next(
+                class_=re.compile(r"financial-details-table__value")
+            )
+            if value_el:
+                label = label_el.get_text(strip=True).lower()
+                value = value_el.get_text(strip=True)
+                if label and value:
+                    result.setdefault(label, value)
+
         return result
 
     # ── Carac dict lookup helpers ─────────────────────────────────────────────

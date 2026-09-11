@@ -66,8 +66,9 @@ def full_address_match_key(full_address: str) -> Optional[str]:
     """
     if not full_address:
         return None
-    # civic (optionally a '- civic2' range), optional comma, then street up to next comma.
-    m = re.match(r"^\s*(\d+)\s*(?:-\s*\d+)?\s*,?\s+([^,]+)", full_address)
+    # civic (optionally a '- civic2' range, each civic may carry a letter
+    # suffix like '8876A'), optional comma, then street up to next comma.
+    m = re.match(r"^\s*(\d+)[A-Za-z]?\s*(?:[-–]\s*\d+[A-Za-z]?)?\s*,?\s+([^,]+)", full_address)
     if not m:
         return None
     civic, street = m.group(1), m.group(2)
