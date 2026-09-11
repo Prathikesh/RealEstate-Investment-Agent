@@ -1,14 +1,18 @@
+import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { displayAddress } from '../lib/address'
 import { Link } from 'react-router-dom'
 import {
   Home, Zap, TrendingUp, BarChart2, ArrowDownCircle, Activity, Globe,
   Clock, ChevronRight, Sparkles, Building2,
+  Sunrise, Sun, Sunset, Moon,
 } from 'lucide-react'
 import { fetchStats, fetchProperties } from '../api'
 import { useLang } from '../context/LanguageContext'
 import { useAuth } from '../auth/AuthContext'
 import PropertyCardGrid from '../components/PropertyCardGrid'
+import AnalyzePropertyBar from '../components/AnalyzePropertyBar'
+import RecentAnalyses from '../components/RecentAnalyses'
 
 function fmtCAD(v: number | null): string {
   if (v == null) return '—'
@@ -114,14 +118,52 @@ export default function Dashboard() {
     queryFn: () => fetchProperties({ listing_type: 'for_rent', sort_by: 'newest', page_size: 8 }),
   })
 
+  // Time-of-day greeting, pinned to QUÉBEC (Eastern) time — the product is
+  // Québec-only, so the greeting should reflect local Québec time no matter
+  // where it's viewed from. Rotates among variants for freshness.
+  const firstName = user?.name?.trim().split(/\s+/)[0] || user?.email?.split('@')[0] || ''
+  const { greetKey, GreetIcon } = useMemo(() => {
+    const h = parseInt(
+      new Intl.DateTimeFormat('en-US', { timeZone: 'America/Toronto', hour: '2-digit', hourCycle: 'h23' }).format(new Date()),
+      10,
+    )
+    const bucket =
+      h < 5  ? 'night'
+    : h < 12 ? 'morning'
+    : h < 18 ? 'afternoon'
+    : h < 22 ? 'evening'
+    :          'night'
+    const POOLS: Record<string, string[]> = {
+      morning:   ['dash_greetMorning', 'dash_greetMorning2'],
+      afternoon: ['dash_greetAfternoon', 'dash_greetAfternoon2'],
+      evening:   ['dash_greetEvening', 'dash_greetEvening2'],
+      night:     ['dash_greetNight', 'dash_greetNight2'],
+    }
+    const ICONS: Record<string, typeof Sun> = {
+      morning: Sunrise, afternoon: Sun, evening: Sunset, night: Moon,
+    }
+    const pool = POOLS[bucket]
+    return {
+      greetKey: pool[Math.floor(Math.random() * pool.length)],
+      GreetIcon: ICONS[bucket],
+    }
+  }, [])
+
   return (
     <div className="p-6 space-y-6 max-w-[1400px] mx-auto animate-slide-up">
 
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-ink">{t('dashboard')}</h1>
-          <p className="text-sm text-muted mt-0.5">{t('dash_subtitle')}</p>
+          <h1 className="text-2xl font-bold text-ink">
+            <GreetIcon size={22} className="inline-block align-[-4px] text-accent mr-2" />
+            {t(greetKey)}{firstName ? `, ${firstName}` : ''}
+          </h1>
+          <p className="text-sm text-muted mt-0.5">
+            <span className="font-semibold text-ink">{stats?.new_today ?? 0}</span> {t('dash_sub_new')}
+            {'  ·  '}
+            <span className="font-semibold text-ink">{stats?.strong_opportunities ?? 0}</span> {t('dash_sub_strong')}
+          </p>
         </div>
         <Link
           to="/properties?listed_within=24h"
@@ -205,6 +247,12 @@ export default function Dashboard() {
           />
         </div>
       </div>
+
+      {/* ── Analyze any property (on-demand lookup) ─────────────────────── */}
+      <AnalyzePropertyBar />
+
+      {/* ── My recent analyses (personal history) ───────────────────────── */}
+      <RecentAnalyses />
 
       {/* ── Top opportunities ──────────────────────────────────────────── */}
       <div className="space-y-3">

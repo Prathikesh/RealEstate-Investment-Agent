@@ -22,7 +22,7 @@ function StatTile({ label, value, icon, trend, sparkline }: {
   sparkline?: number[]
 }) {
   return (
-    <div className="bg-white rounded-2xl shadow-card p-5">
+    <div className="bg-surface-card rounded-2xl shadow-card p-5">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-4">
           <div className="w-11 h-11 rounded-xl bg-accent-light flex items-center justify-center text-accent shrink-0">
@@ -124,7 +124,7 @@ function propertyListItems(properties: PropertyViewSummary[], unit: string): Lis
 
 function Card({ title, subtitle, children }: { title: string; subtitle?: string; children: ReactNode }) {
   return (
-    <div className="bg-white rounded-2xl shadow-card p-5">
+    <div className="bg-surface-card rounded-2xl shadow-card p-5">
       <h2 className="text-sm font-bold text-ink">{title}</h2>
       {subtitle && <p className="text-xs text-muted mt-0.5 mb-3">{subtitle}</p>}
       {!subtitle && <div className="mb-3" />}
@@ -375,7 +375,7 @@ export default function AdminDashboard() {
       </div>
 
       {/* ── Users table ──────────────────────────────────────────────────── */}
-      <div className="bg-white rounded-2xl shadow-card overflow-hidden">
+      <div className="bg-surface-card rounded-2xl shadow-card overflow-hidden">
         <div className="p-5 border-b border-surface-border space-y-3">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
@@ -389,7 +389,7 @@ export default function AdminDashboard() {
                 className="px-3 py-1.5 rounded-lg border border-surface-border text-xs w-44 focus:outline-none focus:ring-2 focus:ring-accent"
               />
               <select value={sortBy} onChange={e => setSortBy(e.target.value as SortKey)}
-                className="px-2 py-1.5 rounded-lg border border-surface-border text-xs bg-white focus:outline-none focus:ring-2 focus:ring-accent">
+                className="px-2 py-1.5 rounded-lg border border-surface-border text-xs bg-surface-card focus:outline-none focus:ring-2 focus:ring-accent">
                 {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
               <button onClick={() => users && exportUsersCsv(visibleUsers)} disabled={!users?.length}

@@ -92,7 +92,7 @@ export default function PropertyCardGrid({ property: p, className, rankMode }: P
     <Link
       to={`/properties/${p.id}`}
       className={clsx(
-        'group block bg-white border border-surface-border rounded-2xl overflow-hidden',
+        'group block bg-surface-card border border-surface-border rounded-2xl overflow-hidden',
         'shadow-sm hover:shadow-xl hover:-translate-y-1.5',
         'hover:border-accent/40 hover:ring-2 hover:ring-accent/10',
         'transition-all duration-300 ease-out cursor-pointer',
@@ -189,7 +189,7 @@ export default function PropertyCardGrid({ property: p, className, rankMode }: P
               {showLabel && (
                 <span className={clsx(
                   'px-1.5 py-px rounded-full text-[9px] font-black tracking-wider uppercase shadow-sm',
-                  yourMode ? 'bg-accent text-white' : 'bg-white/90 text-slate-500',
+                  yourMode ? 'bg-accent text-white' : 'bg-surface-card/90 text-slate-500',
                 )}>
                   {yourMode ? 'You' : 'AI'}
                 </span>
@@ -205,7 +205,7 @@ export default function PropertyCardGrid({ property: p, className, rankMode }: P
             title={inCompare ? 'Remove from compare' : isFull ? 'Full (max 3)' : 'Add to compare'}
             className={clsx(
               'w-7 h-7 rounded-full flex items-center justify-center shadow-md transition-all duration-200 active:scale-90',
-              inCompare ? 'bg-accent text-white' : 'bg-white/90 text-slate-500 hover:text-accent hover:bg-white',
+              inCompare ? 'bg-accent text-white' : 'bg-surface-card/90 text-slate-500 hover:text-accent hover:bg-surface-card',
               isFull && !inCompare && 'opacity-40 cursor-not-allowed',
             )}
           >

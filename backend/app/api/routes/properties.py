@@ -544,9 +544,15 @@ async def get_stats(
 @router.get("/map")
 async def get_map_data(
     category: Optional[str] = Query(None),  # "residential" | "commercial" | "land" (comma-separated)
+    limit: int = Query(60000, ge=1, le=100000),
     db: AsyncSession = Depends(get_db),
 ) -> list[dict]:
-    """Lightweight coordinates + score data for the map view. Max 1000 points."""
+    """
+    Lightweight coordinates + score data for the map view. Returns every
+    geocoded, priced listing (the client wants the whole province on the map) —
+    the frontend clusters them with supercluster, so the point count is fine.
+    Payload is kept lean: only the FIRST photo (not the whole array).
+    """
     stmt = select(
         Property.id,
         Property.full_address,
@@ -555,7 +561,7 @@ async def get_map_data(
         Property.score,
         Property.score_category,
         Property.property_type,
-        Property.photos,
+        Property.photos[0].astext.label("photo"),
         func.ST_Y(Property.location).label("lat"),
         func.ST_X(Property.location).label("lng"),
     ).where(
@@ -576,7 +582,7 @@ async def get_map_data(
         if wanted_categories:
             stmt = stmt.where(Property.property_type.in_(wanted_categories))
 
-    stmt = stmt.order_by(Property.score.desc().nullslast()).limit(1000)
+    stmt = stmt.order_by(Property.score.desc().nullslast()).limit(limit)
 
     rows = (await db.execute(stmt)).all()
     return [
@@ -588,7 +594,7 @@ async def get_map_data(
             "score":          row.score,
             "score_category": row.score_category.value if row.score_category else None,
             "property_type":  row.property_type.value if row.property_type else None,
-            "photo":          (row.photos or [None])[0],
+            "photo":          row.photo,
             "lat":            float(row.lat),
             "lng":            float(row.lng),
         }
@@ -919,6 +925,26 @@ async def get_comparables(
 
 
 # ── Trigger re-analysis ───────────────────────────────────────────────────────
+
+# ── On-demand lookup (paste a link / type an address → scrape live + analyze) ──
+@router.post("/lookup")
+async def start_property_lookup(payload: dict, db: AsyncSession = Depends(get_db)) -> dict:
+    text = (payload or {}).get("input", "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="input required")
+    from app.services.property_lookup import start_lookup
+    job = await start_lookup(text, db)
+    return job.to_dict()
+
+
+@router.get("/lookup/{job_id}")
+async def get_property_lookup(job_id: str) -> dict:
+    from app.services.property_lookup import get_job
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="lookup job not found")
+    return job.to_dict()
+
 
 @router.post("/{property_id}/analyze")
 async def trigger_analysis(

@@ -439,8 +439,8 @@ export default function PropertyPage() {
                     className={clsx(
                       'rounded-full transition-all duration-200',
                       i === photoIdx
-                        ? 'w-4 h-1.5 bg-white'
-                        : 'w-1.5 h-1.5 bg-white/50 hover:bg-white/80',
+                        ? 'w-4 h-1.5 bg-surface-card'
+                        : 'w-1.5 h-1.5 bg-surface-card/50 hover:bg-surface-card/80',
                     )}
                   />
                 ))}
@@ -451,7 +451,7 @@ export default function PropertyPage() {
       )}
 
       {/* ── Tabs ─────────────────────────────────────────────────────────── */}
-      <div className="bg-white border border-surface-border rounded-2xl overflow-hidden shadow-card">
+      <div className="bg-surface-card border border-surface-border rounded-2xl overflow-hidden shadow-card">
         <nav className="flex overflow-x-auto bg-surface/50 p-1.5 gap-1">
           {visibleTabs.map(key => (
             <button
@@ -460,8 +460,8 @@ export default function PropertyPage() {
               className={clsx(
                 'flex-1 px-4 py-2.5 text-sm font-semibold rounded-xl whitespace-nowrap transition-all duration-200',
                 effectiveTab === key
-                  ? 'bg-white text-accent shadow-sm border border-surface-border'
-                  : 'text-muted hover:text-ink hover:bg-white/60',
+                  ? 'bg-surface-card text-accent shadow-sm border border-surface-border'
+                  : 'text-muted hover:text-ink hover:bg-surface-card/60',
               )}
             >
               {t(TAB_LABELS[key])}
@@ -714,7 +714,7 @@ function VerdictBanner({ prop }: { prop: PropertyDetail }) {
         const ex = explanations[activeMetric]
         if (!ex) return null
         return (
-          <div className="rounded-xl border border-surface-border bg-white p-4 space-y-2.5 shadow-sm">
+          <div className="rounded-xl border border-surface-border bg-surface-card p-4 space-y-2.5 shadow-sm">
             <div className="flex items-center justify-between">
               <p className="text-sm font-bold text-ink">{t(METRIC_LABEL_KEY[activeMetric] ?? '')} — {t('pp_howCalc')}</p>
               <button onClick={() => setActiveMetric(null)} className="text-muted hover:text-ink text-lg leading-none">×</button>
@@ -958,7 +958,7 @@ function InvestmentReport({ prop }: { prop: PropertyDetail }) {
                 { label: t('pp_roi_appreciation'),   key: 'appreciation'   as const, color: APP_COLOR },
                 { label: t('pp_roi_capitalization'), key: 'capitalization' as const, color: CAP_COLOR },
               ] as const).map((row, i) => (
-                <tr key={row.label} className={i % 2 === 0 ? 'bg-white' : 'bg-surface/40'}>
+                <tr key={row.label} className={i % 2 === 0 ? 'bg-surface-card' : 'bg-surface/40'}>
                   <td className="px-4 py-3 font-bold text-ink flex items-center gap-2">
                     <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: row.color }} />
                     {row.label}
@@ -1885,7 +1885,7 @@ function RebuildField({ value, onChange, suffix, width = 'w-20', label }: {
         onChange={e => onChange(e.target.value)}
         className={clsx(
           width,
-          'rounded-lg border border-surface-border bg-white px-2.5 py-1.5 text-sm text-right font-mono tabular-nums text-ink',
+          'rounded-lg border border-surface-border bg-surface-card px-2.5 py-1.5 text-sm text-right font-mono tabular-nums text-ink',
           'hover:border-accent/50 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/15 transition-colors duration-200',
         )}
       />
@@ -2477,7 +2477,7 @@ function ComparablesTab({ prop, t }: { prop: PropertyDetail; t: (k: string) => s
                   'transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-700/40',
                   on
                     ? 'bg-[#0F766E] border-[#0F766E] text-white'
-                    : 'bg-white border-surface-border text-muted hover:text-ink hover:border-slate-400',
+                    : 'bg-surface-card border-surface-border text-muted hover:text-ink hover:border-slate-400',
                 )}
               >
                 <Icon size={13} strokeWidth={2} />
@@ -2521,7 +2521,7 @@ function ComparablesTab({ prop, t }: { prop: PropertyDetail; t: (k: string) => s
                   key={c.id}
                   aria-label={`Open ${displayAddress(c)}`}
                   className={clsx(
-                    'group block bg-white border border-surface-border rounded-2xl overflow-hidden cursor-pointer',
+                    'group block bg-surface-card border border-surface-border rounded-2xl overflow-hidden cursor-pointer',
                     'hover:shadow-lg hover:-translate-y-1 hover:border-[#0F766E]/40 transition-all duration-250',
                     'focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-700/50',
                   )}
@@ -2543,7 +2543,7 @@ function ComparablesTab({ prop, t }: { prop: PropertyDetail; t: (k: string) => s
                     )}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent pointer-events-none" />
                     {/* Rank badge */}
-                    <div className="absolute top-3 left-3 w-7 h-7 rounded-full bg-white/90 backdrop-blur-sm flex items-center justify-center text-xs font-black text-ink shadow">
+                    <div className="absolute top-3 left-3 w-7 h-7 rounded-full bg-surface-card/90 backdrop-blur-sm flex items-center justify-center text-xs font-black text-ink shadow">
                       {idx + 1}
                     </div>
                     {/* Price diff badge */}
@@ -2557,7 +2557,7 @@ function ComparablesTab({ prop, t }: { prop: PropertyDetail; t: (k: string) => s
                     )}
                     {/* Distance badge */}
                     {c.distance_km != null && (
-                      <div className="absolute bottom-2.5 left-3 inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold bg-white/90 text-ink shadow backdrop-blur-sm">
+                      <div className="absolute bottom-2.5 left-3 inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold bg-surface-card/90 text-ink shadow backdrop-blur-sm">
                         <MapPin size={10} strokeWidth={2.5} className="text-[#0F766E]" />
                         {c.distance_km < 1 ? `${Math.round(c.distance_km * 1000)} m` : `${c.distance_km.toFixed(1)} km`} away
                       </div>
@@ -2738,7 +2738,7 @@ function PriceHistoryTab({ prop, t }: { prop: PropertyDetail; t: (k: string) => 
                         'absolute -left-6 top-1 w-4 h-4 rounded-full border-2 border-white shadow-sm transition-transform duration-200 group-hover:scale-125',
                         meta.dot,
                       )} />
-                      <div className="bg-white border border-surface-border rounded-xl p-4 hover:shadow-md hover:border-accent/20 transition-all duration-200 space-y-2">
+                      <div className="bg-surface-card border border-surface-border rounded-xl p-4 hover:shadow-md hover:border-accent/20 transition-all duration-200 space-y-2">
                         <div className="flex items-start justify-between gap-3">
                           <div className="space-y-1">
                             <span className={clsx('inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold border', meta.badge)}>
@@ -2779,48 +2779,64 @@ function PriceHistoryTab({ prop, t }: { prop: PropertyDetail; t: (k: string) => 
 // ── Loading / error states ────────────────────────────────────────────────────
 
 function PropertySkeleton() {
+  const { t } = useLang()
+  const steps = [
+    { Icon: Building2, label: t('pp_step_fetch') },
+    { Icon: BarChart2, label: t('pp_step_score') },
+    { Icon: Sparkles,  label: t('pp_step_render') },
+  ]
   return (
-    <div className="max-w-5xl mx-auto p-6 space-y-5">
-      {/* Progress bar */}
+    <div className="max-w-5xl mx-auto p-6">
+      {/* Top progress bar */}
       <div className="fixed top-0 left-0 right-0 z-50 h-1 bg-surface-border overflow-hidden">
-        <div className="h-full bg-accent rounded-full progress-loading" />
+        <div className="h-full bg-gradient-to-r from-accent to-indigo-500 rounded-full progress-loading" />
       </div>
 
-      {/* Back link skeleton */}
-      <div className="shimmer h-4 w-32 rounded-lg" />
+      {/* Branded loader */}
+      <div className="flex flex-col items-center text-center py-10 sm:py-14">
+        <div className="relative w-20 h-20">
+          <div
+            className="absolute inset-0 rounded-full animate-spin"
+            style={{ background: 'conic-gradient(from 0deg, transparent 0%, rgba(37,99,235,0.15) 40%, #2563eb 100%)', animationDuration: '1.1s' }}
+          />
+          <div className="absolute inset-[4px] rounded-full bg-surface-card" />
+          <div className="absolute inset-0 grid place-items-center text-accent"><Building2 size={28} /></div>
+        </div>
+        <h2 className="mt-5 text-xl font-bold text-ink">{t('pp_loading_title')}</h2>
+        <p className="mt-1.5 text-sm text-muted max-w-sm">{t('pp_loading_sub')}</p>
 
-      {/* Header card */}
-      <div className="card space-y-5 overflow-hidden">
-        <div className="flex items-start justify-between gap-4">
-          <div className="space-y-3 flex-1">
-            <div className="shimmer h-6 w-3/4 rounded-xl" />
-            <div className="shimmer h-4 w-1/2 rounded-xl" />
-          </div>
-          <div className="shimmer w-24 h-12 rounded-2xl shrink-0" />
-        </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {[0,1,2,3].map(i => <div key={i} className="shimmer h-14 rounded-xl" />)}
-        </div>
-        <div className="flex gap-2 flex-wrap">
-          {[0,1,2,3].map(i => <div key={i} className="shimmer h-9 w-28 rounded-xl" />)}
+        {/* Pipeline — nodes light up in sequence */}
+        <div className="mt-6 flex items-center gap-2 sm:gap-3">
+          {steps.map((s, i) => (
+            <div key={i} className="flex items-center gap-2 sm:gap-3">
+              <div
+                className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-surface-hover border border-surface-border animate-pulse"
+                style={{ animationDelay: `${i * 0.35}s` }}
+              >
+                <s.Icon size={14} className="text-accent" />
+                <span className="text-xs font-semibold text-ink/80">{s.label}</span>
+              </div>
+              {i < steps.length - 1 && <span className="w-5 sm:w-8 h-px bg-surface-border" />}
+            </div>
+          ))}
         </div>
       </div>
 
-      {/* Photo placeholder */}
-      <div className="shimmer rounded-2xl" style={{ aspectRatio: '16/7' }} />
-
-      {/* Tabs */}
-      <div className="card overflow-hidden">
-        <div className="flex gap-1 border-b border-surface-border p-1">
-          {[0,1,2,3].map(i => <div key={i} className="shimmer h-10 w-28 rounded-lg" />)}
-        </div>
-        <div className="p-6 space-y-4">
-          <div className="shimmer h-32 rounded-xl" />
-          <div className="grid grid-cols-3 gap-3">
-            {[0,1,2].map(i => <div key={i} className="shimmer h-20 rounded-xl" />)}
+      {/* Dimmed skeleton preview — the report materializing behind the loader */}
+      <div className="opacity-40 pointer-events-none space-y-5 blur-[1px]">
+        <div className="card space-y-5 overflow-hidden">
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-3 flex-1">
+              <div className="shimmer h-6 w-3/4 rounded-xl" />
+              <div className="shimmer h-4 w-1/2 rounded-xl" />
+            </div>
+            <div className="shimmer w-24 h-12 rounded-2xl shrink-0" />
           </div>
-          <div className="shimmer h-48 rounded-xl" />
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {[0,1,2,3].map(i => <div key={i} className="shimmer h-14 rounded-xl" />)}
+          </div>
         </div>
+        <div className="shimmer rounded-2xl" style={{ aspectRatio: '16/7' }} />
       </div>
     </div>
   )

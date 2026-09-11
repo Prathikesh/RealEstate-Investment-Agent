@@ -241,7 +241,7 @@ export default function MarketAlerts() {
                   className={`flex items-start gap-3 px-4 py-3.5 rounded-xl border text-left transition-all duration-150 ${
                     form.metric === metric
                       ? `${meta.bg} ${meta.border} ${meta.color}`
-                      : 'bg-white border-surface-border text-muted hover:text-ink hover:bg-surface-hover'
+                      : 'bg-surface-card border-surface-border text-muted hover:text-ink hover:bg-surface-hover'
                   }`}
                 >
                   <span className={`mt-0.5 ${form.metric === metric ? meta.color : 'text-muted'}`}>{meta.icon}</span>
@@ -361,7 +361,7 @@ export default function MarketAlerts() {
             { dot: 'bg-red-500',      title: 'Price drops = motivated sellers', desc: 'Often the best negotiation opportunity in any market' },
             { dot: 'bg-blue-500',     title: 'City alerts for target neighborhoods', desc: 'Track specific areas you want to invest in long-term' },
           ].map(tip => (
-            <div key={tip.title} className="flex items-start gap-3 p-3 rounded-xl bg-white border border-surface-border">
+            <div key={tip.title} className="flex items-start gap-3 p-3 rounded-xl bg-surface-card border border-surface-border">
               <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${tip.dot}`} />
               <div>
                 <p className="text-sm font-semibold text-ink">{tip.title}</p>
@@ -440,7 +440,7 @@ function AlertRuleCard({
             title={rule.active ? 'Pause' : 'Resume'}
             className={`relative w-11 h-6 rounded-full transition-all duration-300 ${rule.active ? 'bg-score-strong' : 'bg-surface-border'}`}
           >
-            <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-all duration-300 ${rule.active ? 'left-6' : 'left-1'}`} />
+            <span className={`absolute top-1 w-4 h-4 bg-surface-card rounded-full shadow-sm transition-all duration-300 ${rule.active ? 'left-6' : 'left-1'}`} />
           </button>
           <button
             onClick={() => onDelete(rule.id)}
