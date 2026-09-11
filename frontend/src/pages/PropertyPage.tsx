@@ -163,8 +163,13 @@ export default function PropertyPage() {
   // listing_type='for_rent'), so the Financials tab (5-year projection, cost
   // breakdown, Score Breakdown, FinancingWorkbench) has nothing real to show.
   const isRental = prop.listing_type === 'for_rent'
-  const visibleTabs = isRental ? TAB_KEYS.filter(k => k !== 'financials') : TAB_KEYS
-  const effectiveTab = isRental && activeTab === 'financials' ? 'aiBrief' : activeTab
+  // Commercial/Land have no rental-income structure either — no cap rate,
+  // cash flow, or 5-year projection to show (see InvestmentPipeline's
+  // non-residential branch, which computes a comparable-price-positioning
+  // score instead of the residential financial stack).
+  const isNonResidential = prop.property_type === 'commercial' || prop.property_type === 'land'
+  const visibleTabs = (isRental || isNonResidential) ? TAB_KEYS.filter(k => k !== 'financials') : TAB_KEYS
+  const effectiveTab = (isRental || isNonResidential) && activeTab === 'financials' ? 'aiBrief' : activeTab
 
   return (
     <div className="p-6 space-y-5 max-w-[1600px] mx-auto animate-slide-up">
@@ -225,18 +230,49 @@ export default function PropertyPage() {
               For Rent
             </span>
           ) : (
-            <ScoreBadge score={prop.score} category={prop.score_category} size="lg" />
+            <div className="flex flex-col items-end gap-1.5">
+              {isNonResidential && (
+                <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-slate-700 text-white tracking-widest shadow-md uppercase">
+                  {prop.property_type === 'commercial' ? t('category_commercial') : t('category_land')}
+                </span>
+              )}
+              {/* Commercial/Land DO get a real score here — a comparable-
+                  price-positioning score, not the residential cap-rate/
+                  cash-flow one (see InvestmentPipeline's non-residential
+                  branch and OpportunityScorer.score_non_residential). */}
+              <ScoreBadge score={prop.score} category={prop.score_category} size="lg" />
+            </div>
           )}
         </div>
 
         {/* Key metrics — rentals have no score/cap-rate/cash-flow (asking_price
             is the monthly rent, not a purchase price; see InvestmentPipeline.run(),
-            which skips the financial/scoring stages for listing_type='for_rent') */}
+            which skips the financial/scoring stages for listing_type='for_rent').
+            Commercial/Land have no rental-income structure either — no cap
+            rate/cash flow, just price positioned against comparables (see
+            InvestmentPipeline's non-residential branch). */}
         {prop.listing_type === 'for_rent' ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
             <KeyMetric label="Monthly rent" value={`${fmtCAD(prop.asking_price)}/mo`} prominent />
             {prop.unit_count != null && (
               <KeyMetric label="Units" value={String(prop.unit_count)} />
+            )}
+          </div>
+        ) : isNonResidential ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-1">
+            <KeyMetric label="Asking price" value={fmtCAD(prop.asking_price)} prominent />
+            <KeyMetric
+              label="Below market"
+              value={prop.discount_pct != null
+                ? `${prop.discount_pct > 0 ? '-' : '+'}${Math.abs(prop.discount_pct).toFixed(1)}%`
+                : '—'}
+              valueClass={
+                prop.discount_pct != null && prop.discount_pct > 5 ? 'text-score-strong' :
+                prop.discount_pct != null && prop.discount_pct < 0 ? 'text-score-notrecommended' : undefined
+              }
+            />
+            {prop.lot_sqft != null && (
+              <KeyMetric label="Lot size" value={`${prop.lot_sqft.toLocaleString()} sqft`} />
             )}
           </div>
         ) : (

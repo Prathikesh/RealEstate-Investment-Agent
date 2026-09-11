@@ -161,6 +161,7 @@ async def list_properties(
     address:       Optional[str] = Query(None),
     mls_number:    Optional[str] = Query(None),
     property_type: Optional[str] = Query(None),
+    category:      Optional[str] = Query(None),  # "residential" | "commercial" | "land" (comma-separated)
     listing_type:  Optional[str] = Query(None),  # "for_sale" | "for_rent"
     score_min:     int           = Query(0, ge=0, le=100),
     score_max:     int           = Query(100, ge=0, le=100),
@@ -265,6 +266,21 @@ async def list_properties(
                 pass
         if wanted:
             stmt = stmt.where(Property.property_type.in_(wanted))
+    if category:
+        # Convenience filter for the frontend's Residential/Commercial/Land
+        # toggle — resolves to the right PropertyType set rather than making
+        # the client enumerate all 7 residential enum values itself.
+        category_types = {
+            "residential": [t for t in PropertyType if t not in (PropertyType.COMMERCIAL, PropertyType.LAND)],
+            "commercial":  [PropertyType.COMMERCIAL],
+            "land":        [PropertyType.LAND],
+        }
+        wanted_categories: list[PropertyType] = []
+        for raw_cat in category.split(","):
+            raw_cat = raw_cat.strip().lower()
+            wanted_categories.extend(category_types.get(raw_cat, []))
+        if wanted_categories:
+            stmt = stmt.where(Property.property_type.in_(wanted_categories))
     if listing_type:
         try:
             lt = ListingType(listing_type)
@@ -527,6 +543,7 @@ async def get_stats(
 
 @router.get("/map")
 async def get_map_data(
+    category: Optional[str] = Query(None),  # "residential" | "commercial" | "land" (comma-separated)
     limit: int = Query(60000, ge=1, le=100000),
     db: AsyncSession = Depends(get_db),
 ) -> list[dict]:
@@ -543,13 +560,29 @@ async def get_map_data(
         Property.asking_price,
         Property.score,
         Property.score_category,
+        Property.property_type,
         Property.photos[0].astext.label("photo"),
         func.ST_Y(Property.location).label("lat"),
         func.ST_X(Property.location).label("lng"),
     ).where(
         Property.location.isnot(None),
         Property.asking_price.isnot(None),
-    ).order_by(Property.score.desc().nullslast()).limit(limit)
+    )
+
+    if category:
+        category_types = {
+            "residential": [t for t in PropertyType if t not in (PropertyType.COMMERCIAL, PropertyType.LAND)],
+            "commercial":  [PropertyType.COMMERCIAL],
+            "land":        [PropertyType.LAND],
+        }
+        wanted_categories: list[PropertyType] = []
+        for raw_cat in category.split(","):
+            raw_cat = raw_cat.strip().lower()
+            wanted_categories.extend(category_types.get(raw_cat, []))
+        if wanted_categories:
+            stmt = stmt.where(Property.property_type.in_(wanted_categories))
+
+    stmt = stmt.order_by(Property.score.desc().nullslast()).limit(limit)
 
     rows = (await db.execute(stmt)).all()
     return [
@@ -560,6 +593,7 @@ async def get_map_data(
             "asking_price":   row.asking_price,
             "score":          row.score,
             "score_category": row.score_category.value if row.score_category else None,
+            "property_type":  row.property_type.value if row.property_type else None,
             "photo":          row.photo,
             "lat":            float(row.lat),
             "lng":            float(row.lng),

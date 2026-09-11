@@ -53,6 +53,11 @@ export default function PropertyCardGrid({ property: p, className, rankMode }: P
   // meaningless and hidden (see InvestmentPipeline.run(), which skips the
   // financial/scoring stages entirely for listing_type='for_rent').
   const isRental = p.listing_type === 'for_rent'
+  // Commercial/Land have no rental-income structure at all, so there's no
+  // score/cap-rate/cash-flow to show — see InvestmentPipeline's non-residential
+  // branch, which computes a comparable-price-positioning score instead of
+  // skipping analysis, but never a residential-style investment score.
+  const isNonResidential = p.property_type === 'commercial' || p.property_type === 'land'
 
   // Which verdict this card shows. In "your" mode we surface the broker's own
   // score when it exists, falling back to the AI score for un-scored (legacy)
@@ -125,6 +130,21 @@ export default function PropertyCardGrid({ property: p, className, rankMode }: P
 
         {/* Top-left badges */}
         <div className="absolute top-3 left-3 flex gap-1.5 flex-wrap">
+          {p.property_type === 'commercial' && (
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-slate-700 text-white tracking-widest shadow-md uppercase">
+              {t('category_commercial')}
+            </span>
+          )}
+          {p.property_type === 'land' && (
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-700 text-white tracking-widest shadow-md uppercase">
+              {t('category_land')}
+            </span>
+          )}
+          {!isNonResidential && (
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-white/90 text-slate-500 tracking-widest shadow-md uppercase">
+              {t('category_residential')}
+            </span>
+          )}
           {p.is_new && (
             <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-accent text-white tracking-widest shadow-md uppercase">
               New
@@ -159,7 +179,10 @@ export default function PropertyCardGrid({ property: p, className, rankMode }: P
           )}
         </div>
 
-        {/* Top-right: score + compare */}
+        {/* Top-right: score + compare. Commercial/Land DO get a real score
+            here (comparable-price-positioning — see isNonResidential above
+            and OpportunityScorer.score_non_residential) — only rentals have
+            no score at all. */}
         <div className="absolute top-3 right-3 flex flex-col items-end gap-1.5">
           {!isRental && (
             <div className="flex flex-col items-center gap-0.5">
@@ -262,8 +285,21 @@ export default function PropertyCardGrid({ property: p, className, rankMode }: P
         {!isRental && <div className="border-t border-surface-border" />}
 
         {/* Metrics row — not applicable to rentals (no purchase price, no
-            score/cap-rate; see isRental above) */}
-        {!isRental && (
+            score/cap-rate; see isRental above). Commercial/Land have no
+            cap-rate/cash-flow (no rental income), but discount-vs-comparables
+            IS real for them (see isNonResidential above) — shown alone
+            rather than alongside two permanently-inapplicable columns. */}
+        {!isRental && isNonResidential && (
+          <div className="text-center">
+            <p className={clsx('text-sm tabular-nums', discountClass)}>
+              {p.discount_pct != null
+                ? `${p.discount_pct > 0 ? '↓' : '↑'}${Math.abs(p.discount_pct).toFixed(1)}%`
+                : '—'}
+            </p>
+            <p className="text-[10px] text-muted mt-0.5">vs Market</p>
+          </div>
+        )}
+        {!isRental && !isNonResidential && (
           <div className="grid grid-cols-3 gap-2 text-center">
             <div>
               <p className={clsx('text-sm tabular-nums', capRateClass)}>

@@ -31,7 +31,7 @@ from app.agent.zoning_matcher import ZoningMatcher, current_units
 from app.agent.assessment_matcher import AssessmentMatcher
 from app.agent.constraint_matcher import ConstraintMatcher
 from app.agent.buildable import estimate_max_units
-from app.models.property import AnalysisConfidence, ListingType, Property, ScoreCategory, compute_days_on_market
+from app.models.property import AnalysisConfidence, ListingType, Property, PropertyType, ScoreCategory, compute_days_on_market
 from app.models.zoning import ZoningZone
 from app.services.calc_client import analyze as calc_engine_analyze
 from app.services.address_index import geocode_address
@@ -92,6 +92,90 @@ class InvestmentPipeline:
                 lat, lng = coords
                 prop.location = WKTElement(f"POINT({lng} {lat})", srid=4326)
                 logger.info(f"  Geocoded from {source} → ({lat:.5f}, {lng:.5f})")
+
+        # Commercial/Land: no rental income structure at all (no bedrooms, no
+        # comparable rent), so the residential financial stack (calc engine,
+        # FinancialCalculator, market benchmark, risk assessment, and the
+        # scorer's cap_rate/cash_flow/grm weights) doesn't apply — running it
+        # would produce a fabricated or meaningless number. Comparables,
+        # assessment roll, development constraints, and zoning DO still
+        # apply (all location/geometry-driven, not rent-driven) — comps are
+        # already property_type-scoped (see comparables.py), so a commercial
+        # listing only ever compares to other commercial listings, land to
+        # land. Score becomes a comparable-price-positioning score (see
+        # OpportunityScorer.score_non_residential) instead of being skipped.
+        NON_RESIDENTIAL_TYPES = {PropertyType.COMMERCIAL, PropertyType.LAND}
+        if prop.property_type in NON_RESIDENTIAL_TYPES:
+            comp_set = await self.comp_finder.find(prop)
+            prop.comparable_count = comp_set.count
+            prop.comparable_median_price = comp_set.median_price
+            prop.comparable_mean_price = comp_set.mean_price
+            prop.comparable_ids = [str(c.property_id) for c in comp_set.comparables]
+            logger.info(
+                f"  Comps ({prop.property_type}): {comp_set.count} found | "
+                f"median={comp_set.median_price}"
+            )
+
+            value_gap = discount_pct = None
+            if prop.asking_price and comp_set.median_price:
+                value_gap = comp_set.median_price - prop.asking_price
+                discount_pct = (value_gap / comp_set.median_price) * 100
+            prop.value_gap = round(value_gap, 0) if value_gap is not None else None
+            prop.discount_pct = round(discount_pct, 2) if discount_pct is not None else None
+
+            conf_map = {"high": AnalysisConfidence.HIGH, "medium": AnalysisConfidence.MEDIUM, "low": AnalysisConfidence.LOW}
+            prop.analysis_confidence = conf_map.get(comp_set.confidence, AnalysisConfidence.LOW)
+
+            score = self.scorer.score_non_residential(
+                discount_pct=discount_pct,
+                comparable_count=comp_set.count,
+                analysis_confidence=comp_set.confidence,
+                days_on_market=compute_days_on_market(prop),
+                price_history=prop.price_history,
+            )
+            prop.score = score.total
+            prop.score_category = score.category
+            prop.score_components = score.components
+            logger.info(f"  Score ({prop.property_type}): {score.total}/100 — {score.category.value}")
+
+            # No rental-income concept for these categories — clear any
+            # stale residential financial fields (e.g. a re-analyzed listing
+            # whose type changed) rather than leave a leftover number.
+            prop.cap_rate = None
+            prop.noi_annual = None
+            prop.grm = None
+            prop.monthly_cash_flow = None
+            prop.cash_on_cash_return = None
+            prop.welcome_tax = None
+            prop.down_payment_20pct = None
+            prop.monthly_mortgage = None
+            prop.ai_brief_en = None
+            prop.ai_brief_fr = None
+
+            try:
+                assessment = await self.assessment_matcher.match(prop)
+                if assessment:
+                    prop.assessment_data = assessment
+            except Exception as exc:
+                logger.warning(f"  Assessment match failed: {exc}")
+
+            try:
+                constraints = await self.constraint_matcher.match(prop)
+                prop.development_constraints = constraints or None
+            except Exception as exc:
+                logger.warning(f"  Constraint match failed: {exc}")
+
+            try:
+                zone = await self.zoning_matcher.match(prop)
+                if zone:
+                    prop.zoning_zone_id = zone.id
+                    logger.info(f"  Zoning: {zone.zone_code} ({prop.property_type} — no rebuild economics)")
+            except Exception as exc:
+                logger.warning(f"  Zoning match failed: {exc}")
+
+            prop.needs_reanalysis = False
+            logger.info(f"Pipeline done ({prop.property_type} — comparable-only scoring): {prop.mls_number}")
+            return prop
 
         # Rentals: asking_price is a monthly rent, not a purchase price — every
         # stage below (comps, financial calculator, scorer) treats it as one,

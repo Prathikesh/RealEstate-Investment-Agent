@@ -54,16 +54,32 @@ def hi_res_photo(url: str) -> str:
 
 # URL slug (French) → PropertyType enum value
 PROPERTY_TYPE_MAP: dict[str, str] = {
-    "plex":          "triplex",        # generic plex fallback
-    "duplex":        "duplex",
-    "triplex":       "triplex",
-    "quadruplex":    "quadruplex",
-    "quintuplex":    "quintuplex_plus",
-    "condo":         "condo",
-    "maison":        "single_family",
-    "cottage":       "single_family",
-    "townhouse":     "townhouse",
-    "chalet":        "single_family",
+    "plex":                    "triplex",        # generic plex fallback
+    "duplex":                  "duplex",
+    "triplex":                 "triplex",
+    "quadruplex":              "quadruplex",
+    "quintuplex":              "quintuplex_plus",
+    "multifamilial":           "quintuplex_plus",  # 6+ unit apartment buildings
+    "condo":                   "condo",
+    "loft-studio":             "condo",
+    "maison":                  "single_family",
+    "maison-en-copropriete":   "single_family",  # co-owned house, not a condo unit
+    "maison-mobile":           "single_family",
+    "cottage":                 "single_family",
+    "townhouse":               "townhouse",
+    "chalet":                  "single_family",
+    # Commercial: buildings, storefronts/local commercial, industrial —
+    # none of these have bedrooms/rental-income data the way residential
+    # listings do, so they're a separate PropertyType with their own
+    # (non-financial, comparable-price-based) pipeline path.
+    "batisse-commerciale":     "commercial",
+    "commerce":                "commercial",
+    "local-commercial":        "commercial",
+    "local-industriel":        "commercial",
+    "batisse-industrielle":    "commercial",
+    # Land: lot only, no building — price/zoning/lot-size comparables only.
+    "terrain":                 "land",
+    "terre":                   "land",
 }
 
 # French search URLs (English /en/ returns 404 on Centris)
@@ -71,6 +87,13 @@ SEARCH_URLS: dict[str, str] = {
     "plex":  "https://www.centris.ca/fr/plex~a-vendre",
     "condo": "https://www.centris.ca/fr/condo~a-vendre",
     "house": "https://www.centris.ca/fr/maison~a-vendre",
+    # local-commercial / local-industriel have no dedicated category page on
+    # Centris (404) and are low-volume — caught by the sitemap-based backfill
+    # instead of live incremental discovery.
+    "commercial_building": "https://www.centris.ca/fr/batisse-commerciale~a-vendre",
+    "commercial_business": "https://www.centris.ca/fr/commerce~a-vendre",
+    "commercial_industrial": "https://www.centris.ca/fr/batisse-industrielle~a-vendre",
+    "land": "https://www.centris.ca/fr/terrain~a-vendre",
 }
 
 
@@ -1208,6 +1231,15 @@ class CentrisScraper(BaseScraper):
             street_number = parts[street_num_idx].strip()
             street_name   = parts[street_num_idx + 1].strip()
             full_address  = f"{street_number}, {street_name}, {city}" if city else f"{street_number}, {street_name}"
+        elif city:
+            # Land listings (terrain/terre) confirmed live to often have no
+            # street-level civic address at all in this title — e.g. "Terrain
+            # à vendre à Mirabel" has no "NUM, STREET" segment because rural/
+            # agricultural lots frequently aren't tied to one. full_address is
+            # NOT NULL on the Property model and every caller requires it, so
+            # falling back to city-only (still real, still geocodable) beats
+            # silently dropping every such listing.
+            full_address = city
 
         return full_address, city, neighborhood, street_number, street_name
 

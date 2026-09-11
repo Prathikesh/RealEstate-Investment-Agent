@@ -211,9 +211,17 @@ async def scrape_job() -> None:
             centris_new = 0
 
             # Centris categorizes search by property type (SEARCH_URLS has no
-            # "all types" option) — loop across all three so plex/condo/house
-            # are all covered. city=None (default) already means province-wide.
-            for category in ("plex", "condo", "house"):
+            # "all types" option) — loop across every category so all
+            # supported types are covered. city=None (default) already means
+            # province-wide. Commercial/land added alongside residential;
+            # local-commercial/local-industriel have no dedicated category
+            # page on Centris (404) and are low-volume — the sitemap-based
+            # one-off backfill catches those instead of live discovery.
+            for category in (
+                "plex", "condo", "house",
+                "commercial_building", "commercial_business", "commercial_industrial",
+                "land",
+            ):
                 if centris_new >= CENTRIS_TARGET:
                     break
 

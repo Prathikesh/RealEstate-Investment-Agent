@@ -76,11 +76,22 @@ function PropMarker({ p }: { p: MapProperty }) {
               />
             </div>
           )}
-          {p.score_category && (
-            <div style={{ marginBottom: 8 }}>
-              <span style={{ display: 'inline-block', background: color, color: '#fff', borderRadius: 999, padding: '3px 10px', fontSize: 10, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-                {CATEGORY_LABEL[p.score_category] ?? p.score_category}
-              </span>
+          {/* Category badge + property category (Commercial/Land use a
+              comparable-price-positioning score, not the residential
+              cap-rate/cash-flow model — same 4-tier categories, different
+              underlying signal, so the color coding still applies) */}
+          {(p.score_category || p.property_type === 'commercial' || p.property_type === 'land') && (
+            <div style={{ marginBottom: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {p.score_category && (
+                <span style={{ display: 'inline-block', background: color, color: '#fff', borderRadius: 999, padding: '3px 10px', fontSize: 10, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                  {CATEGORY_LABEL[p.score_category] ?? p.score_category}
+                </span>
+              )}
+              {(p.property_type === 'commercial' || p.property_type === 'land') && (
+                <span style={{ display: 'inline-block', background: '#334155', color: '#fff', borderRadius: 999, padding: '3px 10px', fontSize: 10, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                  {p.property_type === 'commercial' ? 'Commercial' : 'Land'}
+                </span>
+              )}
             </div>
           )}
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 4 }}>

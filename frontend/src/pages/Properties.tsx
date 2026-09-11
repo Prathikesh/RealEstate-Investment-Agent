@@ -31,6 +31,12 @@ const PROPERTY_TYPES = [
   { value: 'condo',           labelKey: 'ptype_condo' },
 ]
 
+const CATEGORY_OPTIONS = [
+  { value: 'residential', labelKey: 'category_residential' },
+  { value: 'commercial',  labelKey: 'category_commercial' },
+  { value: 'land',        labelKey: 'category_land' },
+]
+
 const SCORE_OPTIONS = [
   { value: '',   labelKey: 'pf_quality_any' },
   { value: '80', labelKey: 'pf_quality_great' },
@@ -89,6 +95,7 @@ export default function Properties() {
     address:       params.get('address') ?? undefined,
     mls_number:    params.get('mls_number') ?? undefined,
     property_type: params.get('property_type') ?? undefined,
+    category:      params.get('category') ?? undefined,
     listing_type:  params.get('listing_type') ?? undefined,
     sort_by:       (params.get('sort_by') as PropertyFilters['sort_by']) ?? 'score',
     listed_within: (params.get('listed_within') as PropertyFilters['listed_within']) ?? undefined,
@@ -119,7 +126,7 @@ export default function Properties() {
 
   const { data: mapData, isLoading: mapLoading } = useQuery({
     queryKey: ['properties-map'],
-    queryFn: fetchMapProperties,
+    queryFn: () => fetchMapProperties(),
     enabled: view === 'map',
     staleTime: 5 * 60 * 1000,
   })
@@ -412,6 +419,36 @@ export default function Properties() {
       {/* ── Expanded filters ───────────────────────────────────────────── */}
       {showFilters && (
         <div className="card flex flex-wrap gap-4 items-end">
+          {/* Category — Residential/Commercial/Land. Commercial/Land have no
+              cap-rate/cash-flow score, just a comparable-price-positioning
+              one (see InvestmentPipeline's non-residential branch). */}
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-muted">{t('pf_category')}</span>
+            <div className="flex flex-wrap gap-1.5 max-w-[420px]">
+              {CATEGORY_OPTIONS.map(cat => {
+                const selected = (filters.category?.split(',').filter(Boolean) ?? [])
+                const isOn = selected.includes(cat.value)
+                return (
+                  <button
+                    key={cat.value}
+                    type="button"
+                    onClick={() => {
+                      const next = isOn ? selected.filter(v => v !== cat.value) : [...selected, cat.value]
+                      setFilter('category', next.join(','))
+                    }}
+                    className={clsx(
+                      'px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition-all',
+                      isOn ? 'bg-accent/10 text-accent border-accent/40 ring-1 ring-accent/20'
+                           : 'bg-white text-muted border-surface-border hover:border-accent/40 hover:text-ink',
+                    )}
+                  >
+                    {t(cat.labelKey)}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
           {/* Property type — multi-select (a broker often buys several plex types) */}
           <div className="flex flex-col gap-1">
             <span className="text-xs font-medium text-muted">{t('pf_propertyType')}</span>

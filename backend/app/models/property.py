@@ -38,6 +38,8 @@ class PropertyType(str, enum.Enum):
     SINGLE_FAMILY = "single_family"
     CONDO = "condo"
     TOWNHOUSE = "townhouse"
+    COMMERCIAL = "commercial"
+    LAND = "land"
 
 
 class PropertyStatus(str, enum.Enum):
