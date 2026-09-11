@@ -13,7 +13,7 @@ types (confirmed via a prior production deploy failure this session) —
 so check pg_enum first and only run ALTER TYPE when genuinely missing.
 
 Revision ID: e867753526d8
-Revises: f2a4c8b1d6e3
+Revises: adedb4b3afe0
 Create Date: 2026-09-11 00:00:00.000000
 
 """
@@ -24,7 +24,7 @@ import sqlalchemy as sa
 
 
 revision: str = 'e867753526d8'
-down_revision: Union[str, None] = 'f2a4c8b1d6e3'
+down_revision: Union[str, None] = 'adedb4b3afe0'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
