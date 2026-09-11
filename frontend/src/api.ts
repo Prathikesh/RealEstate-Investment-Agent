@@ -221,6 +221,7 @@ export interface PropertyFilters {
   address?: string
   mls_number?: string
   property_type?: string
+  category?: string  // "residential" | "commercial" | "land" (comma-separated)
   listing_type?: string
   score_min?: number
   score_max?: number
@@ -409,13 +410,14 @@ export interface MapProperty {
   asking_price:   number | null
   score:          number | null
   score_category: string | null
+  property_type:  string | null
   photo:          string | null
   lat:            number
   lng:            number
 }
 
-export async function fetchMapProperties(): Promise<MapProperty[]> {
-  const { data } = await http.get<MapProperty[]>('/properties/map')
+export async function fetchMapProperties(category?: string): Promise<MapProperty[]> {
+  const { data } = await http.get<MapProperty[]>('/properties/map', { params: category ? { category } : undefined })
   return data
 }
 

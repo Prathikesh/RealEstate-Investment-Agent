@@ -75,6 +75,18 @@ WEIGHTS: dict[str, dict[str, float]] = {
         "dom_bonus":       0.13,
         "price_history":   0.07,
     },
+    # Commercial/land: no rental income, so cap_rate/cash_flow/grm don't
+    # exist for these listings — derived by renormalizing "both"'s
+    # discount/confidence/dom_bonus/price_history weights (0.28/0.10/0.13/0.07,
+    # summing to 0.58) up to 1.0, rather than picking new numbers from
+    # scratch. Same relative emphasis as residential scoring, just over the
+    # components that still apply without a FinancialProfile.
+    "non_residential": {
+        "discount":        0.48,
+        "confidence":      0.17,
+        "dom_bonus":       0.23,
+        "price_history":   0.12,
+    },
 }
 
 
@@ -261,4 +273,68 @@ class OpportunityScorer:
             category=category,
             components=components,
             strategy=strategy,
+        )
+
+    def score_non_residential(
+        self,
+        discount_pct: Optional[float],
+        comparable_count: int,
+        analysis_confidence: str,
+        days_on_market: Optional[int] = None,
+        price_history: Optional[list] = None,
+    ) -> ScoreResult:
+        """
+        Comparable-price-positioning score for Commercial/Land listings —
+        there's no rental income for these categories, so cap_rate/cash_flow/
+        grm (and the FinancialProfile they come from) don't apply at all.
+        Reuses the exact same discount/confidence/dom_bonus/price_history
+        component logic as score() above, just without a FinancialProfile,
+        weighted per WEIGHTS["non_residential"].
+        """
+        weights = WEIGHTS["non_residential"]
+        components: dict[str, float] = {}
+
+        discount_score = 0.0
+        if discount_pct is not None:
+            discount_score = _normalize(discount_pct, -10, 20)
+        components["discount"] = round(discount_score, 1)
+
+        confidence_map = {"high": 90.0, "medium": 55.0, "low": 20.0}
+        confidence_score = confidence_map.get(analysis_confidence, 20.0)
+        if comparable_count == 0:
+            confidence_score = 5.0
+        components["confidence"] = round(confidence_score, 1)
+
+        dom_score = 30.0
+        if days_on_market is not None:
+            if days_on_market > 90:
+                dom_score = 80.0
+            elif days_on_market > 45:
+                dom_score = 55.0
+            elif days_on_market < 7:
+                dom_score = 15.0
+        components["dom_bonus"] = round(dom_score, 1)
+
+        ph_score = _price_history_signal(price_history)
+        if price_history and days_on_market is not None and days_on_market > 45:
+            ph_score = max(ph_score, dom_score)
+        components["price_history"] = round(ph_score, 1)
+
+        total = sum(components[key] * weight for key, weight in weights.items())
+        total_int = min(100, max(0, round(total)))
+
+        if total_int >= 80:
+            category = ScoreCategory.STRONG_OPPORTUNITY
+        elif total_int >= 60:
+            category = ScoreCategory.WORTH_INVESTIGATING
+        elif total_int >= 40:
+            category = ScoreCategory.MARKET_PRICE
+        else:
+            category = ScoreCategory.NOT_RECOMMENDED
+
+        return ScoreResult(
+            total=total_int,
+            category=category,
+            components=components,
+            strategy="non_residential",
         )
