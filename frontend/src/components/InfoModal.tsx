@@ -26,7 +26,7 @@ export function InfoModal({
       role="presentation"
     >
       <div
-        className={`w-full ${SIZE_CLASS[size]} max-h-[85vh] overflow-y-auto bg-white border border-surface-border rounded-2xl shadow-card-hover p-6 animate-scale-in`}
+        className={`w-full ${SIZE_CLASS[size]} max-h-[85vh] overflow-y-auto bg-surface-card border border-surface-border rounded-2xl shadow-card-hover p-6 animate-scale-in`}
         onClick={e => e.stopPropagation()}
         role="dialog"
         aria-modal="true"

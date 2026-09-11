@@ -1,4 +1,5 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
+import { ThemeProvider } from './context/ThemeContext'
 import { LanguageProvider } from './context/LanguageContext'
 import { CompareProvider } from './context/CompareContext'
 import { AuthProvider } from './auth/AuthContext'
@@ -23,7 +24,8 @@ import Compare from './pages/Compare'
 
 export default function App() {
   return (
-    <AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
       <LanguageProvider>
         <CompareProvider>
           <Routes>
@@ -56,6 +58,7 @@ export default function App() {
           </Routes>
         </CompareProvider>
       </LanguageProvider>
-    </AuthProvider>
+      </AuthProvider>
+    </ThemeProvider>
   )
 }

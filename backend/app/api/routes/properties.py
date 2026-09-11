@@ -527,9 +527,15 @@ async def get_stats(
 
 @router.get("/map")
 async def get_map_data(
+    limit: int = Query(60000, ge=1, le=100000),
     db: AsyncSession = Depends(get_db),
 ) -> list[dict]:
-    """Lightweight coordinates + score data for the map view. Max 1000 points."""
+    """
+    Lightweight coordinates + score data for the map view. Returns every
+    geocoded, priced listing (the client wants the whole province on the map) —
+    the frontend clusters them with supercluster, so the point count is fine.
+    Payload is kept lean: only the FIRST photo (not the whole array).
+    """
     stmt = select(
         Property.id,
         Property.full_address,
@@ -537,13 +543,13 @@ async def get_map_data(
         Property.asking_price,
         Property.score,
         Property.score_category,
-        Property.photos,
+        Property.photos[0].astext.label("photo"),
         func.ST_Y(Property.location).label("lat"),
         func.ST_X(Property.location).label("lng"),
     ).where(
         Property.location.isnot(None),
         Property.asking_price.isnot(None),
-    ).order_by(Property.score.desc().nullslast()).limit(1000)
+    ).order_by(Property.score.desc().nullslast()).limit(limit)
 
     rows = (await db.execute(stmt)).all()
     return [
@@ -554,7 +560,7 @@ async def get_map_data(
             "asking_price":   row.asking_price,
             "score":          row.score,
             "score_category": row.score_category.value if row.score_category else None,
-            "photo":          (row.photos or [None])[0],
+            "photo":          row.photo,
             "lat":            float(row.lat),
             "lng":            float(row.lng),
         }

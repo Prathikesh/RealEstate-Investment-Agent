@@ -52,7 +52,7 @@ export default function DesjardinsCalculator({ askingPrice }: Props) {
   return (
     <div className="rounded-xl border border-surface-border bg-surface overflow-hidden">
       {/* Header */}
-      <div className="flex items-center gap-3 px-6 py-4 border-b border-surface-border bg-white">
+      <div className="flex items-center gap-3 px-6 py-4 border-b border-surface-border bg-surface-card">
         <img
           src="https://www.desjardins.com/content/dam/desjardins/images/logo/logo-desjardins.svg"
           alt="Desjardins"
@@ -141,7 +141,7 @@ export default function DesjardinsCalculator({ askingPrice }: Props) {
             <select
               value={amort}
               onChange={e => setAmort(Number(e.target.value) as Amortization)}
-              className="w-full rounded-lg border border-surface-border bg-white px-3 py-2.5 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-green-600"
+              className="w-full rounded-lg border border-surface-border bg-surface-card px-3 py-2.5 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-green-600"
             >
               {([5, 10, 15, 20, 25] as Amortization[]).map(y => (
                 <option key={y} value={y}>{y} years</option>
@@ -155,7 +155,7 @@ export default function DesjardinsCalculator({ askingPrice }: Props) {
             <select
               value={freq}
               onChange={e => setFreq(e.target.value as Frequency)}
-              className="w-full rounded-lg border border-surface-border bg-white px-3 py-2.5 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-green-600"
+              className="w-full rounded-lg border border-surface-border bg-surface-card px-3 py-2.5 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-green-600"
             >
               <option value="weekly">Weekly</option>
               <option value="biweekly">Every 2 weeks</option>

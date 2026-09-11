@@ -9,8 +9,10 @@ from app.auth.models import RefreshToken
 from app.analytics.models import UserEvent, EventType
 from app.models.invite import InviteCode
 from app.models.verification import PropertyVerificationLog, VerificationOutcome
+from app.models.recent_analysis import BrokerRecentAnalysis
 
 __all__ = [
+    "BrokerRecentAnalysis",
     "AssessmentParcel",
     "ConstraintZone",
     "Property",

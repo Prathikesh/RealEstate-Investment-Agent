@@ -56,7 +56,7 @@ function VerdictTile({
   return (
     <div className={clsx(
       'flex-1 rounded-xl border p-4 text-center',
-      accent ? 'border-accent/40 bg-accent/5' : 'border-surface-border bg-white',
+      accent ? 'border-accent/40 bg-accent/5' : 'border-surface-border bg-surface-card',
     )}>
       <div className="flex items-center justify-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-muted">
         {icon}{title}

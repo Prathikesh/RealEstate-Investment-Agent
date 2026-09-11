@@ -89,7 +89,7 @@ function Field({ value, onChange, suffix, width = 'w-28', label }: {
         type="text" inputMode="decimal" value={value} aria-label={label}
         onChange={e => onChange(e.target.value)}
         className={clsx(
-          'w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-base sm:text-sm text-right font-mono tabular-nums text-ink',
+          'w-full rounded-md border border-slate-300 bg-surface-card px-2 py-1 text-base sm:text-sm text-right font-mono tabular-nums text-ink',
           'hover:border-slate-400 focus:outline-none transition-colors duration-200',
           suffix && 'pr-6',
         )}
@@ -106,7 +106,7 @@ function Section({ icon: Icon, title, aside, children }: {
   icon: typeof Landmark; title: string; aside?: React.ReactNode; children: React.ReactNode
 }) {
   return (
-    <section className="rounded-lg border border-slate-200 bg-white overflow-hidden">
+    <section className="rounded-lg border border-slate-200 bg-surface-card overflow-hidden">
       <header className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-slate-200">
         <h4 className="inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.1em]" style={{ color: INK_TEAL }}>
           <Icon size={13} strokeWidth={2} style={{ color: TEAL }} />
@@ -306,12 +306,12 @@ export default function FinancingWorkbench({ prop, pricePerSqft, onScenarioChang
   const freqNoun = freq === 'monthly' ? 'per month' : freq === 'biweekly' ? 'every two weeks' : 'per week'
 
   const selectCls =
-    'rounded-md border border-slate-300 bg-white px-2 py-1 text-base sm:text-sm text-ink cursor-pointer ' +
+    'rounded-md border border-slate-300 bg-surface-card px-2 py-1 text-base sm:text-sm text-ink cursor-pointer ' +
     'hover:border-slate-400 focus:outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20 transition-colors duration-200'
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
-    <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+    <div className="rounded-xl border border-slate-200 bg-surface-card shadow-sm overflow-hidden">
 
       {/* Title bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 px-5 sm:px-6 py-4 border-b-2" style={{ borderColor: TEAL }}>

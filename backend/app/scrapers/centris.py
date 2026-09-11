@@ -1017,30 +1017,65 @@ class CentrisScraper(BaseScraper):
 
         return agent_name, agent_phone, agent_email, agency_name
 
+    # Real listing photos are only ever served from Centris's own media hosts.
+    # Confirmed live: the old "skip logo/icon/placeholder/blank" fallback let
+    # through 4 generic site-wide blog thumbnails
+    # (cdn.centris.ca/public/qc/consumersite/images/menu/blog_*.jpg) on every
+    # single property, because nothing about those filenames matched the skip
+    # list. Restricting to these two hosts is a strict allow-list instead —
+    # every genuine listing photo comes from one of them, nothing else does.
+    _PHOTO_HOSTS = ("mspublic.centris.ca", "mediaserver.centris.ca")
+
     @staticmethod
     def _extract_photos(soup: BeautifulSoup) -> list[str]:
-        """Extract all full-size photos, preferring gallery/slideshow images."""
+        """Extract all full-size photos, preferring gallery/slideshow images.
+
+        Confirmed live: the detail page's static DOM only ever renders ~5
+        <img> tags (the initial thumbnail strip) — the rest of the gallery
+        (up to 15+ on a typical listing) is never in the DOM at all. It's
+        injected client-side from a JS global, `window.MosaicPhotoUrls`, a
+        JSON array of every photo's media.ashx URL, embedded inline in a
+        <script> tag. A plain HTTP fetch (no JS execution) still receives
+        this script tag verbatim, so it's readable directly — no headless
+        browser needed. This is checked first since it's the authoritative
+        full set; the old <img>-tag scan is kept below as a fallback for any
+        page that doesn't carry it.
+        """
         seen: set[str] = set()
         photos: list[str] = []
 
-        # Priority 0: window.MosaicPhotoUrls — Centris inlines the FULL, ordered
-        # gallery as a JS array in the page source (present even without JS
-        # rendering). This is the authoritative list; the DOM <img> fallbacks
-        # below only surface the first photo plus unrelated agent/related-listing
-        # thumbnails on a non-rendered page, so when this is present we use it
-        # exclusively.
-        html = str(soup)
-        m = re.search(r"window\.MosaicPhotoUrls\s*=\s*(\[[^\]]*\])", html)
-        if m:
-            raw = m.group(1)
-            for url in re.findall(r'"(https?://[^"]*media\.ashx[^"]*)"', raw):
-                # Un-escape the JS/HTML-encoded ampersands.
-                url = url.replace("\\u0026", "&").replace("&amp;", "&").replace("\\/", "/")
-                if url not in seen:
-                    seen.add(url)
-                    photos.append(hi_res_photo(url))
-            if photos:
-                return photos
+        def _is_real_photo(src: str) -> bool:
+            if not (
+                src and src.startswith("http") and not src.endswith(".svg")
+                and any(host in src for host in CentrisScraper._PHOTO_HOSTS)
+            ):
+                return False
+            # media.ashx serves more than property photos from these same
+            # hosts — t=pi is "property image"; t=c/t=b (confirmed live) are
+            # the listing broker's headshot and the brokerage's office photo,
+            # which the class-based selectors below don't catch since their
+            # actual classes are broker-info-broker-image / -office-image.
+            if "media.ashx" in src and "t=pi" not in src:
+                return False
+            return True
+
+        # Priority 0: the full gallery, from window.MosaicPhotoUrls
+        for script in soup.find_all("script"):
+            text = script.string
+            if not text or "MosaicPhotoUrls" not in text:
+                continue
+            match = re.search(r"window\.MosaicPhotoUrls\s*=\s*(\[.*?\])\s*;", text, re.S)
+            if not match:
+                continue
+            try:
+                urls = _json.loads(match.group(1))
+            except (_json.JSONDecodeError, ValueError):
+                continue
+            for src in urls:
+                if _is_real_photo(src) and src not in seen:
+                    seen.add(src)
+                    photos.append(hi_res_photo(src))
+            break
 
         # Priority 1: gallery / carousel images
         for img in soup.select(
@@ -1048,16 +1083,15 @@ class CentrisScraper(BaseScraper):
             "[class*='slider'] img, [class*='photo'] img"
         ):
             src = img.get("src") or img.get("data-src") or img.get("data-lazy-src", "")
-            if src and src.startswith("http") and not src.endswith(".svg") and src not in seen:
+            if _is_real_photo(src) and src not in seen:
                 seen.add(src)
                 photos.append(hi_res_photo(src))
 
-        # Priority 2: all other images (skip icons/logos)
+        # Priority 2: any other image on the page from Centris's media hosts
+        # (still restricted to the allow-list above, not "everything else")
         for img in soup.select("img[src], img[data-src]"):
             src = img.get("src") or img.get("data-src", "")
-            if (src and src.startswith("http") and not src.endswith(".svg")
-                    and src not in seen
-                    and not any(skip in src for skip in ["logo", "icon", "placeholder", "blank"])):
+            if _is_real_photo(src) and src not in seen:
                 seen.add(src)
                 photos.append(hi_res_photo(src))
 
@@ -1156,13 +1190,16 @@ class CentrisScraper(BaseScraper):
         neighborhood_match = re.search(r"\(([^)]+)\)", content)
         neighborhood = neighborhood_match.group(1).strip() if neighborhood_match else None
 
-        # Street address: find numeric street-number segment
+        # Street address: find numeric street-number segment. Confirmed live
+        # (100% of a sample batch): many civic numbers carry a letter suffix
+        # — "269Z - 271Z", "26Z - 26AZ", "9Z - 19Z", "827 - 827A" — for
+        # subdivided/duplex units sharing a base number. The old digits-only
+        # pattern rejected every one of these, silently dropping full_address
+        # (and with it the whole property, since callers require it).
         parts = [p.strip() for p in content.split(",")]
         street_num_idx = None
         for i, part in enumerate(parts):
-            # Civic number, optionally a range and/or a letter suffix:
-            # "3115", "3115 - 3119", "8870 - 8876A", "8876A".
-            if re.match(r"^\d+[A-Za-z]?[\s\-–]*\d*[A-Za-z]?$", part.strip()):
+            if re.match(r"^\d+[A-Za-z]*(?:[\s\-–]+\d+[A-Za-z]*)?$", part.strip()):
                 street_num_idx = i
                 break
 

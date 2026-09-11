@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { displayAddress } from '../lib/address'
 import { Link } from 'react-router-dom'
@@ -10,6 +11,7 @@ import { useLang } from '../context/LanguageContext'
 import { useAuth } from '../auth/AuthContext'
 import PropertyCardGrid from '../components/PropertyCardGrid'
 import AnalyzePropertyBar from '../components/AnalyzePropertyBar'
+import RecentAnalyses from '../components/RecentAnalyses'
 
 function fmtCAD(v: number | null): string {
   if (v == null) return '—'
@@ -115,14 +117,34 @@ export default function Dashboard() {
     queryFn: () => fetchProperties({ listing_type: 'for_rent', sort_by: 'newest', page_size: 8 }),
   })
 
+  // Time-of-day greeting — uses the VIEWER's local time (so Canadian users see
+  // their own morning/afternoon/evening). Rotates among variants for freshness.
+  const firstName = user?.name?.trim().split(/\s+/)[0] || user?.email?.split('@')[0] || ''
+  const greetKey = useMemo(() => {
+    const h = new Date().getHours()
+    const pool =
+      h < 5  ? ['dash_greetNight', 'dash_greetNight2']
+    : h < 12 ? ['dash_greetMorning', 'dash_greetMorning2']
+    : h < 18 ? ['dash_greetAfternoon', 'dash_greetAfternoon2']
+    : h < 22 ? ['dash_greetEvening', 'dash_greetEvening2']
+    :          ['dash_greetNight', 'dash_greetNight2']
+    return pool[Math.floor(Math.random() * pool.length)]
+  }, [])
+
   return (
     <div className="p-6 space-y-6 max-w-[1400px] mx-auto animate-slide-up">
 
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-ink">{t('dashboard')}</h1>
-          <p className="text-sm text-muted mt-0.5">{t('dash_subtitle')}</p>
+          <h1 className="text-2xl font-bold text-ink">
+            {t(greetKey)}{firstName ? `, ${firstName}` : ''} <span className="inline-block">👋</span>
+          </h1>
+          <p className="text-sm text-muted mt-0.5">
+            <span className="font-semibold text-ink">{stats?.new_today ?? 0}</span> {t('dash_sub_new')}
+            {'  ·  '}
+            <span className="font-semibold text-ink">{stats?.strong_opportunities ?? 0}</span> {t('dash_sub_strong')}
+          </p>
         </div>
         <Link
           to="/properties?listed_within=24h"
@@ -209,6 +231,9 @@ export default function Dashboard() {
 
       {/* ── Analyze any property (on-demand lookup) ─────────────────────── */}
       <AnalyzePropertyBar />
+
+      {/* ── My recent analyses (personal history) ───────────────────────── */}
+      <RecentAnalyses />
 
       {/* ── Top opportunities ──────────────────────────────────────────── */}
       <div className="space-y-3">

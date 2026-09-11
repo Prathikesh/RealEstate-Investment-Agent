@@ -1,38 +1,32 @@
 /** @type {import('tailwindcss').Config} */
 export default {
+  // Theme is driven by CSS variables (see index.css :root / [data-theme=dark]);
+  // colors below reference them with <alpha-value> so bg-accent/10 etc. work.
+  darkMode: ['selector', '[data-theme="dark"]'],
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   theme: {
     extend: {
       colors: {
-        // Page background — subtle cool tint, never flat white
         surface: {
-          DEFAULT: '#EEF2F7',
-          card:    '#FFFFFF',
-          hover:   '#E8EDF5',
-          border:  '#D8E0EC',
-        },
-        // Dark sidebar
-        sidebar: {
-          DEFAULT: '#111827',
-          hover:   '#1F2937',
-          active:  '#1E3A5F',
-          border:  '#1F2937',
-          text:    '#9CA3AF',
-          heading: '#6B7280',
+          DEFAULT: 'rgb(var(--surface) / <alpha-value>)',
+          card:    'rgb(var(--surface-card) / <alpha-value>)',
+          hover:   'rgb(var(--surface-hover) / <alpha-value>)',
+          border:  'rgb(var(--surface-border) / <alpha-value>)',
         },
         accent: {
-          DEFAULT: '#2563EB',
-          hover:   '#1D4ED8',
-          light:   '#EFF6FF',
+          DEFAULT: 'rgb(var(--accent) / <alpha-value>)',
+          hover:   'rgb(var(--accent-hover) / <alpha-value>)',
+          light:   'rgb(var(--accent-light) / <alpha-value>)',
         },
+        // Status colors — same hue in both themes (they read fine on dark).
         score: {
           strong:         '#059669',
           worth:          '#2563EB',
           market:         '#D97706',
           notrecommended: '#DC2626',
         },
-        muted: '#6B7280',
-        ink:   '#111827',
+        muted: 'rgb(var(--muted) / <alpha-value>)',
+        ink:   'rgb(var(--ink) / <alpha-value>)',
       },
       fontFamily: {
         sans: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],

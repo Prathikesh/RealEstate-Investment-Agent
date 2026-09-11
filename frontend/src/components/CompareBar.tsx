@@ -12,7 +12,7 @@ export default function CompareBar() {
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50 px-4 pb-4 pointer-events-none">
       <div className="max-w-4xl mx-auto pointer-events-auto">
-        <div className="bg-white border border-surface-border rounded-2xl shadow-xl px-4 py-3 flex items-center gap-3">
+        <div className="bg-surface-card border border-surface-border rounded-2xl shadow-xl px-4 py-3 flex items-center gap-3">
 
           {/* Icon + label */}
           <div className="flex items-center gap-2 shrink-0">
