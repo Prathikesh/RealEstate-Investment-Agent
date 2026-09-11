@@ -98,11 +98,12 @@ class FinancialCalculator:
         #   2. evaluation_fonciere × city rate     ← good (assessed value, not asking price)
         #   3. asking_price × city rate            ← rough fallback
         eval_fonciere = getattr(prop, "evaluation_fonciere", None)
-        muni_tax   = (
-            prop.municipal_taxes_annual or
-            self._estimate_muni_tax(eval_fonciere, prop.city) if eval_fonciere else
-            self._estimate_muni_tax(price, prop.city)
-        )
+        if prop.municipal_taxes_annual:
+            muni_tax = prop.municipal_taxes_annual
+        elif eval_fonciere:
+            muni_tax = self._estimate_muni_tax(eval_fonciere, prop.city)
+        else:
+            muni_tax = self._estimate_muni_tax(price, prop.city)
         school_tax = (
             prop.school_taxes_annual or
             ((eval_fonciere or price or 0) * SCHOOL_TAX_RATE_FALLBACK)

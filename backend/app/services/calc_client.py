@@ -63,7 +63,7 @@ def _build_payload(prop) -> Optional[dict]:
             "management_fee_pct": "8.0",
         }
 
-    return {
+    payload = {
         "address":              prop.full_address or "Unknown",
         "city":                 city,
         "province":             "QC",
@@ -77,6 +77,19 @@ def _build_payload(prop) -> Optional[dict]:
         "mortgage":             mortgage,
         "rental":               rental,
     }
+
+    # Municipal/welcome tax are legally based on the assessed value, not the
+    # asking price — omitting this field made the calc-engine silently default
+    # municipal_assessment to purchase_price (property_input.py), so every
+    # property's tax figures were computed off the wrong base whenever the
+    # assessed value differs from the listing price (the norm, not the
+    # exception, in Quebec). Only sent when we actually have a disclosed
+    # assessment — otherwise the calc-engine's own fallback still applies.
+    eval_fonciere = getattr(prop, "evaluation_fonciere", None)
+    if eval_fonciere:
+        payload["municipal_assessment"] = str(round(eval_fonciere, 2))
+
+    return payload
 
 
 def _extract(result: dict) -> dict:
