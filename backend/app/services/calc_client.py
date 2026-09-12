@@ -37,11 +37,30 @@ def _build_payload(prop) -> Optional[dict]:
     if not price or price <= 0:
         return None
 
+    # The calc-engine resolves municipality/school-board almost entirely off
+    # postal_code (confirmed live: a fabricated postal code alongside the
+    # correct city text either 422s or, worse, silently resolves to whatever
+    # real city that fake code belongs to — it does not fall back to the
+    # city field). The old "H2L" fallback here is a real Montreal postal
+    # prefix, so any property missing a postal_code (confirmed live: ~99.9%
+    # of production, since none of this session's bulk plain-HTTP scrapes
+    # ever captured one) was silently resolved as being in Montreal —
+    # applying Montreal's extra 3%/4% welcome-tax brackets and Montreal's
+    # school board rate to properties anywhere else in Quebec. Refusing to
+    # call the calc-engine at all without a real postal code means the
+    # pipeline falls back to the local FinancialCalculator instead, which
+    # uses the property's actual city name (MUNICIPAL_TAX_RATES_BY_CITY) —
+    # less precise than the calc-engine, but not confidently wrong.
+    if not prop.postal_code or not prop.postal_code.strip():
+        return None
+    if not prop.city or not prop.city.strip():
+        return None
+
     ptype_key = str(prop.property_type).split(".")[-1]  # e.g. "DUPLEX"
     ptype = _PTYPE_MAP.get(ptype_key, "residential")
 
-    city   = prop.city or "Montreal"
-    postal = (prop.postal_code or "H2L").replace(" ", "")[:6] or "H2L"
+    city   = prop.city
+    postal = prop.postal_code.replace(" ", "")[:6]
 
     down = round(price * _DOWN_PCT, 2)
     mortgage = {
