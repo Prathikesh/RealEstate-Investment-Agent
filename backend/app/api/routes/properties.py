@@ -614,17 +614,26 @@ async def suggest_properties(
     """Address-search autocomplete — as the user types, suggest matching
     listings so they can jump straight to one instead of scanning the list."""
     from app.services.quebec_address import deaccent
+    # full_address is stored comma-separated ("346, boulevard du Plateau,
+    # Gatineau") but nobody types the commas — confirmed live that a plain
+    # single-substring match against the raw query (the old behaviour) made
+    # "346 boulevard du Plateau" (or any query spanning the comma) match
+    # nothing at all, even though the address genuinely exists. Fold commas
+    # to spaces on both sides and require every query word to appear
+    # somewhere in the address (not necessarily contiguously), rather than
+    # the whole query as one literal substring.
     folded_address = func.translate(
         func.lower(Property.full_address),
-        "àâäéèêëîïôöûüùç", "aaaeeeeiioouuuc",
+        "àâäéèêëîïôöûüùç,", "aaaeeeeiioouuuc ",
     )
+    words = [w for w in deaccent(q).lower().replace(",", " ").split() if w]
     stmt = (
         select(Property.id, Property.full_address, Property.city, Property.asking_price, Property.score)
         .where(Property.asking_price.isnot(None))
-        .where(folded_address.contains(deaccent(q).lower()))
-        .order_by(Property.score.desc().nullslast())
-        .limit(limit)
     )
+    for word in words:
+        stmt = stmt.where(folded_address.contains(word))
+    stmt = stmt.order_by(Property.score.desc().nullslast()).limit(limit)
     rows = (await db.execute(stmt)).all()
     return [
         {
