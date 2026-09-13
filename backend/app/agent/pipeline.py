@@ -276,17 +276,25 @@ class InvestmentPipeline:
         # Stage 2b — our financial calculator (provides fallback + comparables analysis)
         fp = self.calculator.calculate(prop, comp_set)
 
-        # Merge calc engine results into FinancialProfile so scorer uses accurate values
+        # Merge calc engine results into FinancialProfile so scorer uses accurate values.
+        # Tax fields specifically: only let the calc-engine override when the
+        # property didn't already disclose its own real tax figure
+        # (fp.taxes_are_estimated) — a disclosed value straight from the
+        # listing is more authoritative than any computed estimate, calc-engine
+        # included. Captured before either branch runs since the municipal
+        # branch below would otherwise flip the flag before the school check
+        # reads it.
+        had_disclosed_taxes = not fp.taxes_are_estimated
         if calc_fields:
             if "cap_rate"          in calc_fields: fp.cap_rate          = calc_fields["cap_rate"]
             if "noi_annual"        in calc_fields: fp.noi_annual        = calc_fields["noi_annual"]
             if "monthly_cash_flow" in calc_fields: fp.monthly_cash_flow = calc_fields["monthly_cash_flow"]
             if "welcome_tax"       in calc_fields: fp.welcome_tax       = calc_fields["welcome_tax"]
             if "monthly_mortgage"  in calc_fields: fp.monthly_mortgage  = calc_fields["monthly_mortgage"]
-            if "municipal_taxes_annual" in calc_fields:
+            if "municipal_taxes_annual" in calc_fields and not had_disclosed_taxes:
                 fp.municipal_taxes_annual = calc_fields["municipal_taxes_annual"]
                 fp.taxes_are_estimated    = False
-            if "school_taxes_annual" in calc_fields:
+            if "school_taxes_annual" in calc_fields and not had_disclosed_taxes:
                 fp.school_taxes_annual = calc_fields["school_taxes_annual"]
 
         logger.info(
@@ -516,12 +524,21 @@ class InvestmentPipeline:
         prop.down_payment_20pct  = fp.down_payment
         prop.monthly_mortgage    = fp.monthly_mortgage
 
-        # Write calc engine tax values directly to property (they're not in FinancialProfile)
+        # Municipal/school tax: write the local calculator's value, which
+        # already reflects the final, correctly-prioritized figure (disclosed
+        # listing value > calc-engine, when the calc-engine actually ran and
+        # there was nothing disclosed > local city-rate estimate as a last
+        # resort — see the merge step above in run(), which decides this
+        # before _update_property is ever called). Previously this was ONLY
+        # ever written when calc_fields provided a value, so a property whose
+        # calc-engine call is skipped entirely (e.g. no real postal_code —
+        # the case for ~99.9% of production) never had these two fields
+        # updated at all on a re-analysis, silently preserving whatever wrong
+        # value was already stored from a prior run.
+        prop.municipal_taxes_annual = fp.municipal_taxes_annual
+        prop.school_taxes_annual    = fp.school_taxes_annual
+
         if calc_fields:
-            if "municipal_taxes_annual" in calc_fields:
-                prop.municipal_taxes_annual = calc_fields["municipal_taxes_annual"]
-            if "school_taxes_annual" in calc_fields:
-                prop.school_taxes_annual = calc_fields["school_taxes_annual"]
             if "down_payment_20pct" in calc_fields:
                 prop.down_payment_20pct = calc_fields["down_payment_20pct"]
 
