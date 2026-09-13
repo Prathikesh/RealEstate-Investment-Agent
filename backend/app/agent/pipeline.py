@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.brief import BriefGenerator
 from app.agent.calculator import FinancialCalculator
+from app.agent.constants import DOWN_PAYMENT_PCT
 from app.agent.comparables import ComparableFinder
 from app.agent.market_benchmark import _ELIGIBLE_TYPES as REBUILD_ELIGIBLE_TYPES
 from app.agent.market_benchmark import MarketBenchmark, MarketBenchmarkComparator
@@ -138,19 +139,42 @@ class InvestmentPipeline:
             prop.score_components = score.components
             logger.info(f"  Score ({prop.property_type}): {score.total}/100 — {score.category.value}")
 
-            # No rental-income concept for these categories — clear any
-            # stale residential financial fields (e.g. a re-analyzed listing
-            # whose type changed) rather than leave a leftover number.
+            # No rental-income concept for these categories, so cap rate /
+            # cash flow / NOI / GRM genuinely don't exist without it — clear
+            # any stale residential value (e.g. a re-analyzed listing whose
+            # type changed) rather than leave a leftover number.
             prop.cap_rate = None
             prop.noi_annual = None
             prop.grm = None
             prop.monthly_cash_flow = None
             prop.cash_on_cash_return = None
-            prop.welcome_tax = None
-            prop.down_payment_20pct = None
-            prop.monthly_mortgage = None
             prop.ai_brief_en = None
             prop.ai_brief_fr = None
+
+            # Welcome tax (droits de mutation) and down payment/mortgage,
+            # unlike the above, don't depend on rental income at all — they
+            # apply to any real estate PURCHASE, commercial and land
+            # included (unlike a rental, this is a genuine sale — asking_price
+            # really is a purchase price). Confirmed live this was wrongly
+            # cleared here too, alongside the rental-income-only fields —
+            # a real commercial property (3945-3951, Rue Sainte-Catherine
+            # Est, Montréal) showed no transfer tax at all despite Centris
+            # disclosing one. Compute them the same way the residential path's
+            # local fallback does — price + assessed value + city is all
+            # the bracket formula needs.
+            if prop.asking_price:
+                prop.welcome_tax = round(
+                    self.calculator._welcome_tax(
+                        prop.asking_price, prop.city, prop.evaluation_fonciere
+                    ), 0
+                )
+                prop.down_payment_20pct = round(prop.asking_price * DOWN_PAYMENT_PCT, 0)
+                loan_amount = prop.asking_price * (1 - DOWN_PAYMENT_PCT)
+                prop.monthly_mortgage = round(self.calculator._monthly_mortgage(loan_amount), 0)
+            else:
+                prop.welcome_tax = None
+                prop.down_payment_20pct = None
+                prop.monthly_mortgage = None
 
             try:
                 assessment = await self.assessment_matcher.match(prop)
