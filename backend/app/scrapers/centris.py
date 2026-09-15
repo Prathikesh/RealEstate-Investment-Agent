@@ -864,6 +864,25 @@ class CentrisScraper(BaseScraper):
 
     @staticmethod
     def _lookup_money(carac: dict[str, str], *keys: str) -> Optional[float]:
+        # Exact-label match first. A search key can be a substring of an
+        # unrelated, differently-scaled field — confirmed live that
+        # "terrain" (the land assessment, in dollars) lost to "superficie
+        # du terrain" (the lot size, in square feet) whenever the latter
+        # happened to be enumerated first in the page's carac dict, since
+        # "terrain" is trivially a substring of "superficie du terrain"
+        # too. A naive substring search silently corrupted
+        # evaluation_fonciere with a square-footage number for any
+        # property disclosing both fields — likely most single-family/plex
+        # listings. Try every key as an exact match before falling back to
+        # substring matching, which some other callers here still rely on
+        # for genuinely fuzzy label variants (e.g. "condo fee" / "frais de
+        # condo" phrasing differences).
+        for key in keys:
+            for label, val in carac.items():
+                if key == label:
+                    digits = re.sub(r"[^\d]", "", val)
+                    if digits and int(digits) > 0:
+                        return float(digits)
         for key in keys:
             for label, val in carac.items():
                 if key in label:
